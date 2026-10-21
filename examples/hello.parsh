@@ -1,0 +1,11 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/hello.parsh world )
+
+(defn greet ($name)
+  (echo hello $name))
+
+(for $name $args
+  (greet $name))
+
+(if (test -d src)
+    (echo "Rust source directory exists"))
