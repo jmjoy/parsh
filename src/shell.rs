@@ -155,9 +155,12 @@ fn builtin(name: &str) -> bool {
             | "exit"
             | "|"
             | "|>"
+            | "|1>"
             | "|>>"
+            | "|1>>"
             | "<|"
             | "|2>"
+            | "|2>>"
     )
 }
 
@@ -501,18 +504,19 @@ impl Shell {
                     exit: true,
                 })
             }
-            "|>" | "|>>" | "<|" | "|2>" => {
+            "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>" => {
                 Self::arity(expr, args, 2, 2)?;
                 let destination = self.scalar(&args[0], env, io)?;
                 let path = self.path(&destination);
+                let append = matches!(name.as_str(), "|>>" | "|1>>" | "|2>>");
                 let file = if name == "<|" {
                     File::open(path)
                 } else {
                     OpenOptions::new()
                         .write(true)
                         .create(true)
-                        .append(name == "|>>")
-                        .truncate(name != "|>>")
+                        .append(append)
+                        .truncate(!append)
                         .open(path)
                 }
                 .map_err(|e| Error::new(&args[0], format!("{name}: {e}")))?;
@@ -520,7 +524,7 @@ impl Shell {
                 let mut redirected = io.clone();
                 match name.as_str() {
                     "<|" => redirected.input = Some(file),
-                    "|2>" => redirected.error = Some(file),
+                    "|2>" | "|2>>" => redirected.error = Some(file),
                     _ => redirected.output = Output::File(file),
                 }
                 self.eval(&args[1], env, mode, &redirected)

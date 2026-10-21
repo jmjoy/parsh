@@ -95,14 +95,23 @@ its value is one program name, without implicit splitting into flags.
 The operators are:
 
 - `|`: connect external commands in a pipeline.
-- `|>`: create or truncate a file and redirect stdout.
-- `|>>`: create or append a file and redirect stdout.
+- `|>`, `|1>`: create or truncate a file and redirect stdout.
+- `|>>`, `|1>>`: create or append a file and redirect stdout.
 - `<|`: read stdin from a file.
 - `|2>`: create or truncate a file and redirect stderr.
+- `|2>>`: create or append a file and redirect stderr.
 
 Redirection always takes the path first and an expression second. Wrappers can
 nest and can enclose an entire pipeline. Pipeline stages in v1 must be external
 command calls; functions and state-changing built-ins run outside pipelines.
+
+For example, write stdout to a fresh log and append stderr to another:
+
+```lisp
+(|1> output.log
+  (|2>> errors.log
+    (make)))
+```
 
 Top-level commands stream output immediately. When an external command or
 pipeline is used as a value, stdout is captured as UTF-8, trailing LF characters

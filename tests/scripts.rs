@@ -182,6 +182,11 @@ fn redirections_compose_with_nested_capture_and_cwd() {
         (<| out.txt (cat))
         (|2> err.txt (sh -c "printf warning >&2"))
         (|> sorted.txt (| (printf "b\na\n") (sort)))
+        (defn report () (sh -c "printf function-output; printf function-error >&2"))
+        (|1> combined-out.txt (|2>> combined-err.txt (report)))
+        (|1>> combined-out.txt
+          (|2>> combined-err.txt
+            (| (sh -c "printf pipeline-output; printf pipeline-error >&2") (cat))))
     "#,
         quote(directory.path().to_str().unwrap())
     ));
@@ -199,6 +204,55 @@ fn redirections_compose_with_nested_capture_and_cwd() {
         fs::read_to_string(directory.path().join("sorted.txt")).unwrap(),
         "a\nb\n"
     );
+    assert_eq!(
+        fs::read_to_string(directory.path().join("combined-out.txt")).unwrap(),
+        "function-outputpipeline-output"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.path().join("combined-err.txt")).unwrap(),
+        "function-errorpipeline-error"
+    );
+}
+
+#[test]
+fn output_redirections_truncate_append_create_and_preserve_the_other_stream() {
+    for (overwrite, append, redirects_stdout) in [
+        ("|>", "|>>", true),
+        ("|1>", "|1>>", true),
+        ("|2>", "|2>>", false),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("existing.txt"), "stale contents").unwrap();
+        let output = run(&format!(
+            r#"
+            (cd {})
+            ({overwrite} existing.txt (sh -c "printf out; printf err >&2"))
+            ({append} existing.txt (sh -c "printf out; printf err >&2"))
+            ({append} new.txt (sh -c "printf out; printf err >&2"))
+            "#,
+            quote(directory.path().to_str().unwrap())
+        ));
+        success(&output);
+        let redirected = if redirects_stdout { "out" } else { "err" };
+        assert_eq!(
+            fs::read_to_string(directory.path().join("existing.txt")).unwrap(),
+            redirected.repeat(2),
+            "{overwrite} then {append}"
+        );
+        assert_eq!(
+            fs::read_to_string(directory.path().join("new.txt")).unwrap(),
+            redirected,
+            "{append} creates a missing file"
+        );
+        assert_eq!(
+            stdout(&output),
+            if redirects_stdout { "" } else { "outoutout" }
+        );
+        assert_eq!(
+            stderr(&output),
+            if redirects_stdout { "errerrerr" } else { "" }
+        );
+    }
 }
 
 #[test]
