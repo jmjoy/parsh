@@ -2,6 +2,7 @@ use std::{
     fs,
     io::{Read, Write},
     os::unix::process::CommandExt,
+    path::Path,
     process::{Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
@@ -19,7 +20,15 @@ fn quote(text: &str) -> String {
 }
 
 fn invoke(args: &[&str], stdin: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsh"))
+    invoke_in(args, stdin, None)
+}
+
+fn invoke_in(args: &[&str], stdin: &str, directory: Option<&Path>) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_parsh"));
+    if let Some(directory) = directory {
+        command.current_dir(directory);
+    }
+    let mut child = command
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -310,6 +319,82 @@ fn scripts_stdin_arguments_shebang_and_exit() {
     let output = run("(do (exit 9) (echo bad)) (echo worse)");
     assert_eq!(output.status.code(), Some(9));
     assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn cli_help_version_and_argument_errors() {
+    for flag in ["-h", "--help"] {
+        let output = invoke(&[flag], "");
+        success(&output);
+        assert!(stderr(&output).is_empty());
+        let help = stdout(&output);
+        for text in ["Usage:", "SOURCE", "FILE", "--help", "--version", "Enter"] {
+            assert!(help.contains(text), "missing {text:?}: {help}");
+        }
+    }
+    for flag in ["-V", "--version"] {
+        let output = invoke(&[flag], "");
+        success(&output);
+        assert_eq!(
+            stdout(&output),
+            concat!("parsh ", env!("CARGO_PKG_VERSION"), "\n")
+        );
+        assert!(stderr(&output).is_empty());
+    }
+    for args in [&["-c"][..], &["--parsh-unknown-option"]] {
+        let output = invoke(args, "");
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert!(stderr(&output).contains("error:"));
+        assert!(stderr(&output).contains("--help"));
+    }
+}
+
+#[test]
+fn cli_passes_all_arguments_after_source_or_script_unchanged() {
+    let source = r#"(printf "<%s>" $args)"#;
+    let directory = tempfile::tempdir().unwrap();
+    let script = directory.path().join("args.parsh");
+    fs::write(&script, source).unwrap();
+    let arguments = [
+        "--help",
+        "-h",
+        "--version",
+        "-V",
+        "-c",
+        "--",
+        "--unknown",
+        "a b",
+        "",
+    ];
+    let expected = "<--help><-h><--version><-V><-c><--><--unknown><a b><>";
+    for prefix in [&["-c", source][..], &[script.to_str().unwrap()], &["-"]] {
+        let mut args = prefix.to_vec();
+        args.extend(arguments);
+        let output = invoke(&args, if prefix == ["-"] { source } else { "" });
+        success(&output);
+        assert_eq!(stdout(&output), expected, "{prefix:?}");
+        assert!(stderr(&output).is_empty());
+    }
+
+    let output = invoke(&["-c", "", "--help"], "");
+    success(&output);
+    assert!(output.stdout.is_empty());
+    let output = invoke(&["-c", "--help"], "");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("top-level expressions must be parenthesized"));
+}
+
+#[test]
+fn cli_double_dash_allows_script_names_that_look_like_options() {
+    let directory = tempfile::tempdir().unwrap();
+    for name in ["--help", "-c"] {
+        fs::write(directory.path().join(name), r#"(printf "<%s>" $args)"#).unwrap();
+        let output = invoke_in(&["--", name, "--version"], "", Some(directory.path()));
+        success(&output);
+        assert_eq!(stdout(&output), "<--version>");
+        assert!(stderr(&output).is_empty());
+    }
 }
 
 #[test]

@@ -22,6 +22,10 @@ otherwise it reads a script from stdin. `parsh -` explicitly reads stdin.
 `$args`; it excludes the script filename. Scripts can start with
 `#!/usr/bin/env parsh` once the binary is on PATH.
 
+Options are parsed by clap. After the script path or `-c SOURCE`, every remaining
+argument is passed through unchanged, including `--help` and `--`.
+Use `parsh -- -script.parsh` for a script filename beginning with `-`.
+
 ## Variables and values
 
 Bare words are text: `123`, `true`, `false`, and `nil` have no special literal

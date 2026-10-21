@@ -21,6 +21,9 @@ cargo run -- script.parsh 'an argument' another
 脚本参数通过列表 `$args` 获取，其中不包含脚本文件名。
 将可执行文件加入 PATH 后，脚本可以使用 `#!/usr/bin/env parsh` 作为首行。
 
+命令行选项由 clap 解析。脚本路径或 `-c SOURCE` 之后的所有参数都会原样传入脚本，
+包括 `--help` 和 `--`。如果脚本文件名以 `-` 开头，可使用 `parsh -- -script.parsh`。
+
 ## 变量与值
 
 裸词表示文本：`123`、`true`、`false` 和 `nil` 都没有特殊的字面量含义。
