@@ -55,6 +55,10 @@ pub trait ExecutionHost {
     fn open(&mut self, cwd: &str, path: &str, mode: FileMode) -> Result<u32, HostError>;
     fn close(&mut self, handle: u32);
     fn chdir(&mut self, cwd: &str, path: &str) -> Result<String, HostError>;
+    /// Available external command names, without running any commands.
+    fn commands(&mut self) -> Result<Vec<String>, HostError> {
+        Ok(Vec::new())
+    }
     /// Absolute paths; directories have a trailing slash.
     fn paths(&mut self) -> Result<Vec<String>, HostError>;
 }

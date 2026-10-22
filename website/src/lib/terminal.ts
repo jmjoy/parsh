@@ -223,6 +223,9 @@ export function mountTerminal(root: HTMLElement): void {
         case "commit":
           commit();
           break;
+        case "completions":
+          terminal.write(`${event.lines.join("\r\n")}\r\n`);
+          break;
         case "value":
           terminal.write(`\x1b[32m${event.text}\x1b[0m\r\n`);
           break;

@@ -13,6 +13,9 @@ enum BrowserEvent {
         dim_prompt: bool,
     },
     Commit,
+    Completions {
+        lines: Vec<String>,
+    },
     Value {
         text: String,
     },
@@ -44,6 +47,7 @@ fn events(events: Vec<Event>) -> Result<JsValue, JsValue> {
                 dim_prompt,
             },
             Event::Commit => BrowserEvent::Commit,
+            Event::Completions { lines } => BrowserEvent::Completions { lines },
             Event::Value(text) => BrowserEvent::Value { text },
             Event::Output { stream, bytes } => BrowserEvent::Output {
                 stream: match stream {

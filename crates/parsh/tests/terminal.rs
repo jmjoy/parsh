@@ -27,6 +27,10 @@ struct Terminal {
 
 impl Terminal {
     fn new() -> Self {
+        Self::configured(|_| {})
+    }
+
+    fn configured(configure: impl FnOnce(&mut Command)) -> Self {
         let pty = openpty(
             Some(&Winsize {
                 ws_row: 24,
@@ -46,6 +50,7 @@ impl Terminal {
             .stdin(Stdio::from(slave.try_clone().unwrap()))
             .stdout(Stdio::from(slave.try_clone().unwrap()))
             .stderr(Stdio::from(slave.try_clone().unwrap()));
+        configure(&mut command);
         // SAFETY: child-only, async-signal-safe session/controlling-tty setup.
         unsafe {
             command.pre_exec(|| {
@@ -387,5 +392,54 @@ fn foreground_pipeline_reads_terminal_and_restores_child_terminal_changes() {
     let offset = terminal.send(b"stty -echo)");
     terminal.expect(b"\x1b[?2004l", offset);
     terminal.ready_after(offset);
+    terminal.exit(0);
+}
+
+#[test]
+fn tab_completes_path_programs_files_and_variables_through_real_terminal_keys() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    let directory = tempfile::tempdir().unwrap();
+    let program = directory.path().join("tab-program");
+    fs::write(&program, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n").unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(directory.path().join("fruits.txt"), "data").unwrap();
+    fs::write(directory.path().join("你好 file.txt"), "data").unwrap();
+    let mut terminal = Terminal::configured(|command| {
+        command
+            .current_dir(directory.path())
+            .env("PATH", directory.path());
+    });
+    let offset = terminal.send(b"tab-pro\tTAB_COMMAND)");
+    let end = terminal.expect(b"\r\nTAB_COMMAND\r\n", offset);
+    terminal.ready_after(end);
+    let offset = terminal.send(b"str fru\t)");
+    let end = terminal.expect(b"\r\n\"fruits.txt\"\r\n", offset);
+    terminal.ready_after(end);
+    let offset = terminal.paste("(let TAB_VALUE retained)");
+    terminal.ready_after(offset);
+    let offset = terminal.send(b"str $TAB_V\t)");
+    let end = terminal.expect(b"\r\n\"retained\"\r\n", offset);
+    terminal.ready_after(end);
+    let offset = terminal.send("str 你\t)".as_bytes());
+    let end = terminal.expect("\r\n\"你好 file.txt\"\r\n".as_bytes(), offset);
+    terminal.ready_after(end);
+    terminal.exit(0);
+}
+
+#[test]
+fn double_tab_prints_candidates_and_keeps_editing_the_same_expression() {
+    let mut terminal = Terminal::new();
+    let offset =
+        terminal.paste("(defn tab-alpha () (str TAB_ALPHA)) (defn tab-alpine () (str TAB_ALPINE))");
+    terminal.ready_after(offset);
+    let offset = terminal.send(b"tab-a\t");
+    terminal.expect(b"(tab-alp", offset);
+    let offset = terminal.send(b"\t");
+    let end = terminal.expect(b"\r\ntab-alpha\r\ntab-alpine\r\n", offset);
+    terminal.expect(b"(tab-alp", end);
+    let offset = terminal.send(b"h\t)");
+    let end = terminal.expect(b"\r\n\"TAB_ALPHA\"\r\n", offset);
+    terminal.ready_after(end);
     terminal.exit(0);
 }

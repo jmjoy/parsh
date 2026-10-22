@@ -442,3 +442,62 @@ for (const locale of ["en", "zh-cn"]) {
     }
   });
 }
+
+test("Tab completes browser commands, temporary files, and session variables", async ({ page }) => {
+  await playground(page);
+  await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
+  await page.keyboard.type("ec");
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText("(echo");
+  await page.keyboard.type("BROWSER_TAB_COMMAND)");
+  await expect.poll(async () =>
+    (await terminal(page).innerText()).split("\n").some(line => line.trim() === "BROWSER_TAB_COMMAND"),
+  ).toBe(true);
+  await page.keyboard.type("cat fru");
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText("(cat fruits.txt");
+  await expect(terminal(page)).not.toContainText("banana");
+  await page.keyboard.type(")");
+  await expect(terminal(page)).toContainText("banana");
+  await paste(page, "(let TAB_VALUE retained)");
+  await page.keyboard.type("str $TAB_V");
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText("(str $TAB_VALUE");
+  await page.keyboard.type(")");
+  await expect(terminal(page)).toContainText('"retained"');
+});
+
+test("double Tab lists candidates and preserves the prompt and further editing", async ({ page }) => {
+  await playground(page);
+  await paste(page, "(defn tab-alpha () (str TAB_ALPHA)) (defn tab-alpine () (str TAB_ALPINE))");
+  await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
+  await page.keyboard.type("tab-a");
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText("(tab-alp");
+  await page.keyboard.press("Tab");
+  await expect.poll(async () =>
+    (await terminal(page).innerText()).split("\n").filter(line => /^tab-alp(ha|ine)$/.test(line.trim())),
+  ).toEqual(["tab-alpha", "tab-alpine"]);
+  await page.keyboard.type("h");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type(")");
+  await expect(terminal(page)).toContainText('"TAB_ALPHA"');
+  await page.keyboard.type("(; ec");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type(")");
+  await expect(terminal(page)).toContainText("(; ec)");
+});
+
+test("Tab quotes Unicode paths and follows directories in the narrow Chinese terminal", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await playground(page, "zh-cn");
+  await paste(page, '(mkdir "folder name") (touch "folder name/你好 file.txt")');
+  await page.getByRole("textbox", { name: "parsh 终端输入" }).focus();
+  await page.keyboard.type("str fol");
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText('"folder name/');
+  await page.keyboard.press("Tab");
+  await page.keyboard.type(")");
+  await expect(terminal(page)).toContainText('"folder name/你好 file.txt"');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

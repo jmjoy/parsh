@@ -71,6 +71,7 @@ export class CoreutilsHost {
           if (!(this.lookup(absolute) instanceof Directory)) throw new HostFailure(`cd: ${path}: not a directory`);
           value = absolute; break;
         }
+        case "commands": value = Array.from(this.commands); break;
         case "paths": value = this.paths(); break;
         default: throw new HostFailure(`unknown host operation: ${operation}`);
       }

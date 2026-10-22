@@ -197,6 +197,13 @@ function or nested expression. Its default is 0.
   Editing and display account for Unicode grapheme clusters and character
   width. Up/Down move between lines and recall session history at the buffer
   boundaries; Ctrl+P/N always browse history.
+- Tab completes built-ins, defined functions, executable commands, file paths,
+  and `$variable` names. A unique match is inserted directly; directories end in
+  `/`. Multiple matches extend the common prefix; press Tab again to list them.
+  Completion works at the cursor, handles quoted paths, and never runs a command.
+  `cd` completes directories only; hidden files require a `.` prefix. Strings do
+  not expand variables, and structural comments are not completed. Pasted tabs
+  remain literal tabs.
 - History recall only restores source. At the end of an already complete
   history entry, press `)` to submit without adding another closing character.
 - Ctrl+C clears the input or interrupts the foreground task. Ctrl+D exits on an
@@ -211,7 +218,7 @@ missing command and 126 for permission denied. Other language errors use 2.
 The initial scope is Linux foreground jobs, including interactive external
 programs and foreground pipelines. There is no background job table, `bg`, `fg`,
 or suspend/resume support; children ignore Ctrl+Z. History is session-local.
-Completion, macros, and persistent configuration are future work.
+Macros and persistent configuration are future work.
 
 ## Development
 

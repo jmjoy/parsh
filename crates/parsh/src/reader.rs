@@ -178,10 +178,7 @@ impl<'a> Reader<'a> {
             }
             Some(ch) => {
                 let mut text = String::from(ch);
-                while self
-                    .peek()
-                    .is_some_and(|c| !c.is_whitespace() && !matches!(c, '(' | ')' | '"'))
-                {
+                while self.peek().is_some_and(word_character) {
                     text.push(self.bump().unwrap());
                 }
                 if let Some(name) = text.strip_prefix('$') {
@@ -194,6 +191,11 @@ impl<'a> Reader<'a> {
         };
         Ok(Expr { kind, offset })
     }
+}
+
+/// Bare words have the same boundaries in the reader and completion scanner.
+pub(crate) fn word_character(ch: char) -> bool {
+    !ch.is_whitespace() && !matches!(ch, '(' | ')' | '"')
 }
 
 /// True only when the source contains one complete list or comment and no tail.

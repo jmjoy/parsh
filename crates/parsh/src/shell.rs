@@ -10,6 +10,7 @@ use std::{
 };
 
 use crate::{
+    completion::Candidate,
     host::{
         CommandOutput, ExecutionHost, FileMode, HostError, HostStreams, MAX_OUTPUT_BYTES,
         OutputChunk, Stream,
@@ -153,31 +154,48 @@ pub struct Shell {
     depth: usize,
 }
 
+const BUILTINS: &[&str] = &[
+    "do", "let", "set", "if", "for", "defn", "list", "str", "eq", "not", "glob", "cd", "export",
+    "exit", "|", "|>", "|1>", "|>>", "|1>>", "<|", "|2>", "|2>>",
+];
+
 fn builtin(name: &str) -> bool {
+    BUILTINS.contains(&name)
+}
+
+fn requires_host(name: &str) -> bool {
     matches!(
         name,
-        "do" | "let"
-            | "set"
-            | "if"
-            | "for"
-            | "defn"
-            | "list"
-            | "str"
-            | "eq"
-            | "not"
-            | "glob"
-            | "cd"
-            | "export"
-            | "exit"
-            | "|"
-            | "|>"
-            | "|1>"
-            | "|>>"
-            | "|1>>"
-            | "<|"
-            | "|2>"
-            | "|2>>"
+        "glob" | "cd" | "|" | "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>"
     )
+}
+
+fn variable_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|ch| ch == '_' || ch.is_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_alphanumeric())
+}
+
+/// Normalize virtual paths using the host's POSIX filesystem rules.
+fn host_path(cwd: &str, path: &str) -> String {
+    let full = if path.starts_with('/') {
+        path.into()
+    } else {
+        format!("{cwd}/{path}")
+    };
+    let mut parts = Vec::new();
+    for part in full.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            part => parts.push(part),
+        }
+    }
+    format!("/{}", parts.join("/"))
 }
 
 impl Shell {
@@ -232,6 +250,147 @@ impl Shell {
             Self::syntax()
         };
         Ok(())
+    }
+
+    pub(crate) fn completion_commands(&mut self, prefix: &str) -> Vec<Candidate> {
+        let mut candidates: Vec<_> = BUILTINS
+            .iter()
+            .copied()
+            .filter(|name| !self.syntax_only || !requires_host(name))
+            .chain(self.functions.keys().map(String::as_str))
+            .filter(|name| name.starts_with(prefix))
+            .map(Candidate::word)
+            .collect();
+        if self.syntax_only {
+            return candidates;
+        }
+        if let Some(host) = &self.host {
+            candidates.extend(
+                host.borrow_mut()
+                    .commands()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|name| name.starts_with(prefix))
+                    .map(Candidate::word),
+            );
+        } else {
+            #[cfg(feature = "native")]
+            if !prefix.contains('/') {
+                // Match the default command search path when PATH is unset.
+                let path = self
+                    .environment
+                    .get(&OsString::from("PATH"))
+                    .cloned()
+                    .unwrap_or_else(|| "/bin:/usr/bin".into());
+                for directory in std::env::split_paths(&path) {
+                    let directory = self.cwd.join(directory);
+                    let Ok(entries) = fs::read_dir(directory) else {
+                        continue;
+                    };
+                    for entry in entries.flatten() {
+                        let Ok(name) = entry.file_name().into_string() else {
+                            continue;
+                        };
+                        if name.starts_with(prefix) && executable_file(&entry.path()) {
+                            candidates.push(Candidate::word(name));
+                        }
+                    }
+                }
+            }
+        }
+        if prefix.contains('/') {
+            candidates.extend(self.completion_paths(prefix, false, true));
+        }
+        candidates
+    }
+
+    pub(crate) fn completion_variables(&self, prefix: &str) -> Vec<Candidate> {
+        let root = self.root.borrow();
+        root.variables
+            .keys()
+            .map(String::as_str)
+            .chain(self.environment.keys().filter_map(|name| name.to_str()))
+            .filter(|name| variable_name(name))
+            .map(|name| format!("${name}"))
+            .filter(|name| name.starts_with(prefix))
+            .map(Candidate::word)
+            .collect()
+    }
+
+    pub(crate) fn completion_paths(
+        &mut self,
+        prefix: &str,
+        directories_only: bool,
+        executable: bool,
+    ) -> Vec<Candidate> {
+        if self.syntax_only {
+            return Vec::new();
+        }
+        let (directory, name) = prefix.rfind('/').map_or(("", prefix), |slash| {
+            (&prefix[..=slash], &prefix[slash + 1..])
+        });
+        let matches = |entry: &str| {
+            entry.starts_with(name) && (!entry.starts_with('.') || name.starts_with('.'))
+        };
+        let mut candidates = Vec::new();
+        if let Some(host) = &self.host {
+            let parent = host_path(&self.host_cwd, directory);
+            let parent = if parent == "/" {
+                parent
+            } else {
+                format!("{parent}/")
+            };
+            for path in host.borrow_mut().paths().unwrap_or_default() {
+                let is_directory = path.ends_with('/');
+                let Some(entry) = path.strip_prefix(&parent) else {
+                    continue;
+                };
+                let entry = entry.trim_end_matches('/');
+                if entry.is_empty()
+                    || entry.contains('/')
+                    || !matches(entry)
+                    || ((directories_only || executable) && !is_directory)
+                {
+                    continue;
+                }
+                candidates.push(Candidate {
+                    text: format!("{directory}{entry}{}", if is_directory { "/" } else { "" }),
+                    directory: is_directory,
+                });
+            }
+        } else {
+            #[cfg(feature = "native")]
+            {
+                let parent = self
+                    .cwd
+                    .join(if directory.is_empty() { "." } else { directory });
+                if let Ok(entries) = fs::read_dir(parent) {
+                    for entry in entries.flatten() {
+                        let Ok(name) = entry.file_name().into_string() else {
+                            continue;
+                        };
+                        if !matches(&name) {
+                            continue;
+                        }
+                        let path = entry.path();
+                        let is_directory = path.is_dir();
+                        if (directories_only && !is_directory)
+                            || (executable && !is_directory && !executable_file(&path))
+                        {
+                            continue;
+                        }
+                        candidates.push(Candidate {
+                            text: format!(
+                                "{directory}{name}{}",
+                                if is_directory { "/" } else { "" }
+                            ),
+                            directory: is_directory,
+                        });
+                    }
+                }
+            }
+        }
+        candidates
     }
 
     pub fn take_output(&mut self) -> Vec<OutputChunk> {
@@ -382,12 +541,7 @@ impl Shell {
             }
         };
         let args = &items[1..];
-        if self.syntax_only
-            && matches!(
-                name.as_str(),
-                "glob" | "cd" | "|" | "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>"
-            )
-        {
+        if self.syntax_only && requires_host(&name) {
             return Err(Error::new(
                 expr,
                 format!(
@@ -777,22 +931,7 @@ impl Shell {
         Self::arity(expr, args, 1, 1)?;
         let pattern = self.scalar(&args[0], env, io)?;
         let absolute = pattern.starts_with('/');
-        let full = if absolute {
-            pattern.clone()
-        } else {
-            format!("{}/{}", self.host_cwd, pattern)
-        };
-        let mut parts = Vec::new();
-        for part in full.split('/') {
-            match part {
-                "" | "." => {}
-                ".." => {
-                    parts.pop();
-                }
-                part => parts.push(part),
-            }
-        }
-        let full = format!("/{}", parts.join("/"));
+        let full = host_path(&self.host_cwd, &pattern);
         let matcher = glob::Pattern::new(&full).map_err(|e| Error::new(expr, e.to_string()))?;
         let options = glob::MatchOptions {
             case_sensitive: true,
@@ -931,10 +1070,7 @@ impl Shell {
     }
 
     fn valid_name(expr: &Expr, name: &str) -> Result<(), Error> {
-        let mut chars = name.chars();
-        if !chars.next().is_some_and(|c| c == '_' || c.is_alphabetic())
-            || !chars.all(|c| c == '_' || c.is_alphanumeric())
-        {
+        if !variable_name(name) {
             Err(Error::new(
                 expr,
                 "invalid variable name; start with a letter or '_', then use letters, digits, or '_'",
@@ -966,6 +1102,11 @@ impl Shell {
     fn path(&self, path: &str) -> PathBuf {
         self.cwd.join(path)
     }
+}
+
+#[cfg(feature = "native")]
+fn executable_file(path: &Path) -> bool {
+    path.is_file() && nix::unistd::access(path, nix::unistd::AccessFlags::X_OK).is_ok()
 }
 
 fn relative_path(cwd: &str, path: &str) -> String {

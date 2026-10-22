@@ -24,6 +24,6 @@ The interactive result is `"hello, world"`. Scripts use exactly the same syntax;
 
 ## Current scope
 
-parsh is an early implementation, version 0.1.0. Native parsh supports Linux foreground jobs, including interactive programs and pipelines. Background jobs, completion, macros, and persistent configuration are future work. The browser playground offers the language core, 29 coreutils commands, temporary files, and command composition.
+parsh is an early implementation, version 0.1.0. Native parsh supports Linux foreground jobs, including interactive programs and pipelines. Interactive Tab completion covers commands, paths, and variables. Background jobs, macros, and persistent configuration are future work. The browser playground offers the language core, 29 coreutils commands, temporary files, and command composition.
 
 Licensed under the [Mulan Permissive Software License, Version 2](https://github.com/jmjoy/parsh/blob/master/LICENSE).

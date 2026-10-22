@@ -47,6 +47,7 @@ Browser pipelines run one stage at a time with buffered output. They report the 
 
 ## Sessions and keys
 
+- Tab completes commands, temporary paths, and `$variable` names. Multiple matches extend the common prefix; press Tab again to list them. For example, `cat fru` followed by Tab completes `fruits.txt`.
 - Enter inserts a newline. A closing outer `)` evaluates the expression.
 - Up/Down move between lines or recall history. Ctrl+P/N always browse history. Press `)` at the end of a complete history entry to run it again.
 - Unicode editing, multiline input, full-script paste, and batch error recovery use the shared native editor model.

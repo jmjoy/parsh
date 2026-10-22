@@ -131,6 +131,9 @@ impl ExecutionHost for BrowserHost {
     fn chdir(&mut self, cwd: &str, path: &str) -> Result<String, HostError> {
         self.call("chdir", &(cwd, path))
     }
+    fn commands(&mut self) -> Result<Vec<String>, HostError> {
+        self.call("commands", &())
+    }
     fn paths(&mut self) -> Result<Vec<String>, HostError> {
         self.call("paths", &())
     }

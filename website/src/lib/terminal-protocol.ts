@@ -8,6 +8,7 @@ export type TerminalEvent =
     }
   | { type: "output"; stream: "stdout" | "stderr"; bytes: number[] }
   | { type: "commit" }
+  | { type: "completions"; lines: string[] }
   | { type: "value" | "diagnostic"; text: string }
   | { type: "exit"; code: number };
 

@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 
 use crate::{
-    repl::{ConsoleBackend, Input, Key, Session, layout},
+    repl::{ConsoleBackend, Input, Key, Session, completion_lines, layout},
     shell::Shell,
 };
 use crossterm::{
@@ -117,6 +117,14 @@ impl Drop for TerminalConsole {
 impl ConsoleBackend for TerminalConsole {
     fn draw(&mut self, input: &Input) -> io::Result<()> {
         TerminalConsole::draw(self, input)
+    }
+    fn completions(&mut self, candidates: &[String]) -> io::Result<()> {
+        self.finish()?;
+        let (width, _) = terminal::size().unwrap_or((80, 24));
+        for line in completion_lines(candidates, usize::from(width)) {
+            queue!(self.output, Print(line), Print("\r\n"))?;
+        }
+        self.output.flush()
     }
     fn pause(&mut self) -> io::Result<()> {
         TerminalConsole::pause(self)

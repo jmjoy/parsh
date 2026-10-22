@@ -1,7 +1,7 @@
 # parsh-wasm
 
 Browser bindings for the shared parsh REPL. Parsing, evaluation, editing,
-history, paste handling, and layout are shared with native parsh, with the
+Tab completion, history, paste handling, and layout are shared with native parsh, with the
 `native` feature disabled. An injected `ExecutionHost` provides WASI commands
 and temporary files inside the website's module Worker.
 

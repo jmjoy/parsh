@@ -1,5 +1,6 @@
 //! Shared interactive editing and evaluation for native and browser terminals.
 use crate::{
+    completion::Completion,
     host::{ExecutionHost, HostError, Stream},
     reader::{self, Diagnostic, Kind, Read, Reader},
     shell::{Shell, Value},
@@ -255,9 +256,27 @@ pub(crate) fn layout(input: &Input, width: usize) -> (Vec<String>, (usize, usize
     (lines, cursor)
 }
 
+pub(crate) fn completion_lines(candidates: &[String], width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for candidate in candidates {
+        let input = Input {
+            body: candidate.clone(),
+            explicit: true,
+            ..Input::default()
+        };
+        let (mut wrapped, _) = layout(&input, width.max(2));
+        if wrapped.last().is_some_and(String::is_empty) {
+            wrapped.pop();
+        }
+        lines.extend(wrapped);
+    }
+    lines
+}
+
 pub(crate) trait ConsoleBackend {
     fn activity(&mut self, _busy: bool) {}
     fn draw(&mut self, input: &Input) -> io::Result<()>;
+    fn completions(&mut self, candidates: &[String]) -> io::Result<()>;
     fn pause(&mut self) -> io::Result<()>;
     fn resume(&mut self) -> io::Result<()>;
     fn value(&mut self, text: &str) -> io::Result<()>;
@@ -272,9 +291,37 @@ pub(crate) struct Session {
     input: Input,
     history: History,
     last_code: i32,
+    completion: Option<(String, usize)>,
 }
 
 impl Session {
+    fn complete(&mut self, shell: &mut Shell, console: &mut impl ConsoleBackend) -> io::Result<()> {
+        let repeated = self
+            .completion
+            .as_ref()
+            .is_some_and(|(body, cursor)| body == &self.input.body && *cursor == self.input.cursor);
+        self.completion = None;
+        let implicit = usize::from(!self.input.explicit);
+        let source = self.input.source();
+        let Some(completion) = Completion::query(shell, &source, self.input.cursor + implicit)
+        else {
+            return Ok(());
+        };
+        if repeated && completion.candidates.len() > 1 {
+            console.completions(&completion.labels())?;
+        } else if let Some(edit) = completion.edit(&source) {
+            let start = edit.range.start - implicit;
+            self.input
+                .body
+                .replace_range(start..edit.range.end - implicit, &edit.text);
+            self.input.cursor = start + edit.cursor;
+        }
+        if completion.candidates.len() > 1 {
+            self.completion = Some((self.input.body.clone(), self.input.cursor));
+        }
+        Ok(())
+    }
+
     fn accept(
         &mut self,
         shell: &mut Shell,
@@ -354,6 +401,7 @@ impl Session {
         console: &mut impl ConsoleBackend,
         text: &str,
     ) -> io::Result<Option<i32>> {
+        self.completion = None;
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
         if self.input.body.trim().is_empty() && normalized.trim_start().starts_with('(') {
             self.input.explicit = true;
@@ -474,15 +522,16 @@ impl Session {
         console: &mut impl ConsoleBackend,
         key: Key,
     ) -> io::Result<Option<i32>> {
+        if !matches!(key, Key::Tab) {
+            self.completion = None;
+        }
         let mut outcome = None;
         match key {
             Key::Character(ch) => outcome = self.input.insert(ch, false),
             Key::Enter => {
                 self.input.insert('\n', false);
             }
-            Key::Tab => {
-                self.input.insert('\t', false);
-            }
+            Key::Tab => self.complete(shell, console)?,
             Key::Left => self.input.left(),
             Key::Right => self.input.right(),
             Key::Backspace => self.input.backspace(),
@@ -548,6 +597,9 @@ pub enum Event {
         dim_prompt: bool,
     },
     Commit,
+    Completions {
+        lines: Vec<String>,
+    },
     Value(String),
     Output {
         stream: Stream,
@@ -580,6 +632,13 @@ impl ConsoleBackend for EventConsole {
             row: cursor.0 - first,
             column: cursor.1,
             dim_prompt: !input.explicit && input.body.trim().is_empty(),
+        });
+        Ok(())
+    }
+    fn completions(&mut self, candidates: &[String]) -> io::Result<()> {
+        self.events.push(Event::Commit);
+        self.events.push(Event::Completions {
+            lines: completion_lines(candidates, self.columns),
         });
         Ok(())
     }
@@ -1051,3 +1110,6 @@ mod host_tests {
         assert_eq!(outputs(&repl.paste("(echo recovered)")), "recovered\n");
     }
 }
+
+#[cfg(test)]
+mod completion_tests;
