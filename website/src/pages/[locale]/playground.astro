@@ -8,7 +8,6 @@ const zh = locale === 'zh-cn';
 ---
 <SiteLayout locale={locale} title={zh ? '在线体验终端 — parsh' : 'Playground — parsh'} description={zh ? '在浏览器中运行真正的 parsh 与 coreutils，体验命令、文件、管道和控制流。' : 'Run parsh and coreutils in your browser. Try commands, files, pipes, and control flow.'} active="playground">
   <main id="main" class="playground-page" data-playground data-locale={locale}>
-    <div class="playground-heading"><div><p class="eyebrow"><span class="status-dot"></span> {zh ? '动手试一试' : 'TRY IT FOR YOURSELF'}</p><h1>{zh ? <>从一个 <span>(</span> 开始。</> : <>Start with <span>(</span></>}</h1></div><p>{zh ? '一个真正的 parsh 会话。运行命令，连接管道，处理临时文件。' : 'A real parsh session. Run commands, connect pipes, and work with temporary files.'}</p></div>
     <div class="playground-grid">
       <div class="playground-main">
         <section class="terminal-panel" aria-label={zh ? 'parsh 交互终端' : 'parsh interactive terminal'}>

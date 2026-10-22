@@ -1,33 +1,6 @@
 .playground-page {
   padding: 58px 0 0;
 }
-.playground-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 45px;
-  margin-bottom: 40px;
-}
-.playground-heading h1 {
-  font-size: 55px;
-  letter-spacing: -2.7px;
-  font-weight: 500;
-  margin: 17px 0 0;
-  line-height: 1.1;
-}
-.playground-heading h1 span {
-  color: var(--accent);
-  font-family: var(--mono);
-  letter-spacing: -7px;
-  margin-left: 5px;
-}
-.playground-heading > p {
-  font-size: 14px;
-  line-height: 1.8;
-  color: var(--muted);
-  max-width: 310px;
-  margin: 0 0 2px;
-}
 .playground-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 266px;
@@ -217,6 +190,13 @@ kbd {
   margin: 0 0 20px;
 }
 .example-list {
+  max-height: 216px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) transparent;
+  padding-right: 10px;
   border-top: 1px solid var(--line);
 }
 .example-button {
@@ -334,9 +314,6 @@ kbd {
   .terminal-mode {
     display: none;
   }
-  .playground-heading h1 {
-    font-size: 48px;
-  }
   .terminal-body {
     height: 420px;
     padding-left: 15px;
@@ -349,16 +326,6 @@ kbd {
   }
 }
 @media (max-width: 800px) {
-  .playground-heading {
-    gap: 25px;
-  }
-  .playground-heading h1 {
-    font-size: 44px;
-  }
-  .playground-heading > p {
-    max-width: 250px;
-    font-size: 12px;
-  }
   .playground-grid {
     grid-template-columns: 1fr;
   }
@@ -391,26 +358,6 @@ kbd {
   }
 }
 @media (max-width: 480px) {
-  .playground-heading {
-    display: block;
-    margin-bottom: 25px;
-  }
-  .playground-heading h1 {
-    font-size: 41px;
-    margin-top: 15px;
-  }
-  .playground-heading > .eyebrow {
-    font-size: 8px;
-  }
-  .playground-heading > p {
-    max-width: none;
-    font-size: 13px;
-    margin-top: 18px;
-  }
-  .playground-heading .eyebrow {
-    font-size: 8px;
-    letter-spacing: 0.7px;
-  }
   .playground-page {
     padding-top: 32px;
   }
