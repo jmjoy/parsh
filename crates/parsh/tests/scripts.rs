@@ -109,6 +109,71 @@ fn literal_atoms_variables_and_parameter_boundaries() {
 }
 
 #[test]
+fn arithmetic_composes_with_command_capture_functions_arguments_and_environment() {
+    let output = run(r#"
+        (let count (+ (printf "  0012 \n") 3))
+        (defn twice (n) (* $n 2))
+        (set count (+ $count 1))
+        (printf "<%s>\n" $count (twice $count) (/ $count 2)
+            (list (+ 1 2) (/ 5 2)) (str result= (/ 8 2)) 00123)
+        (export PARSH_NUMBER (/ 8 2))
+        (printf "<%s>\n" $PARSH_NUMBER)
+        (sh -c "printf '<%s>\\n' \"$PARSH_NUMBER\"")
+        (set PARSH_NUMBER (+ 1 2))
+        (sh -c "printf '<%s>\\n' \"$PARSH_NUMBER\"")
+        (if (= $count 16.0) (printf equal))
+        "#);
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "<16>\n<32>\n<8.0>\n<3>\n<2.5>\n<result=4.0>\n<00123>\n<4.0>\n<4.0>\n<3>\nequal"
+    );
+}
+
+#[test]
+fn numeric_results_are_not_implicitly_printed_in_scripts() {
+    let output = run("(+ 1 2) (/ 8 2) (= 001 1)");
+    success(&output);
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn numeric_failures_have_language_error_status_and_stop_the_script() {
+    for (source, message) in [
+        ("(printf %s (+ 1 invalid))", "invalid number"),
+        ("(/ 1 0)", "division by zero"),
+        ("(+ 9223372036854775807 1)", "integer overflow"),
+        ("(+ 9223372036854775808)", "integer out of range for i64"),
+        ("(* 1e308 1e308)", "number must be finite"),
+        ("(= 1 (list 1))", "expected a number or numeric text"),
+        (
+            "(| (+ 1 2) (cat))",
+            "pipeline stages must be external commands",
+        ),
+    ] {
+        let output = run(&format!("{source} (echo skipped)"));
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{source}: {}",
+            stderr(&output)
+        );
+        assert!(output.stdout.is_empty(), "{source}: {}", stdout(&output));
+        assert!(
+            stderr(&output).contains(message),
+            "{source}: {}",
+            stderr(&output)
+        );
+    }
+    let output = run("(+ 1\n invalid)");
+    assert!(
+        stderr(&output).starts_with("-c:2:2:"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
 fn comments_are_reader_forms_not_evaluated_arguments() {
     let output =
         run(r#"(; $undefined (absent-command) (; nested ")")) (printf "<%s>" (; ignored) yes)"#);

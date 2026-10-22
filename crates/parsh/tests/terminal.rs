@@ -370,9 +370,17 @@ fn unicode_editing_and_history_require_explicit_submission() {
     let offset = terminal.send(b"\x1b[A");
     thread::sleep(Duration::from_millis(80));
     terminal.drain();
-    assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\n甲e\u{301}\r\n"));
+    let recalled = visible_text(&terminal.bytes[offset..]);
+    assert!(recalled.contains("(echo 甲e\u{301}"));
+    assert!(!recalled.contains("(echo 甲e\u{301})"));
+    assert!(!recalled.contains("\r\n甲e\u{301}\r\n"));
     terminal.send(b")");
     let end = terminal.expect("\r\n甲e\u{301}\r\n".as_bytes(), offset);
+    terminal.ready_after(end);
+    let offset = terminal.send(b"\x1b[A");
+    terminal.expect("(echo 甲e\u{301}".as_bytes(), offset);
+    terminal.send(" 追加)".as_bytes());
+    let end = terminal.expect("\r\n甲e\u{301} 追加\r\n".as_bytes(), offset);
     terminal.ready_after(end);
     terminal.exit(0);
 }

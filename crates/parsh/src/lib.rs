@@ -4,6 +4,7 @@ pub mod editor;
 pub mod host;
 #[cfg(feature = "native")]
 pub mod job;
+mod number;
 #[cfg(feature = "native")]
 pub mod process;
 pub mod reader;

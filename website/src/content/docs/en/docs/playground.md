@@ -49,7 +49,7 @@ Browser pipelines run one stage at a time with buffered output. They report the 
 
 - Tab completes commands, temporary paths, and `$variable` names. Multiple matches extend the common prefix; press Tab again to list them. For example, `cat fru` followed by Tab completes `fruits.txt`.
 - Enter inserts a newline. A closing outer `)` evaluates the expression.
-- Up/Down move between lines or recall history. Ctrl+P/N always browse history. Press `)` at the end of a complete history entry to run it again.
+- Up/Down move between lines or recall history. Ctrl+P/N always browse history. Recalling an entry removes its outer closing `)` and places the cursor at the end, ready to append arguments or press `)` to run it again.
 - Unicode editing, multiline input, full-script paste, and batch error recovery use the shared native editor model.
 - Clear and idle Ctrl+C preserve files, bindings, and the working directory.
 - Reset, refresh, or leaving the page ends the temporary session; browser back-forward caching can temporarily preserve a page.

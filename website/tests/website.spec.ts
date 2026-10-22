@@ -101,6 +101,16 @@ test("native submission keys, multiline editing, and history work in the browser
         (await terminal(page).innerText()).split('"hello"').length - 1,
     )
     .toBe(2);
+
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.type(" world)");
+  await expect(terminal(page)).toContainText('"helloworld"');
+
+  await page.keyboard.press("Control+p");
+  await page.keyboard.press("Control+p");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.type(" again)");
+  await expect(terminal(page)).toContainText('"helloworldagain"');
 });
 
 test("bindings, closures, conditions, loops and Unicode retain shared semantics", async ({

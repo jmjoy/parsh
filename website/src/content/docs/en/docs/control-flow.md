@@ -23,14 +23,14 @@ description: "Lexical functions, branching, sequencing, and iteration."
 ```
 
 `if` evaluates only the selected branch. A condition must produce a boolean
-(from `eq` or `not`) or a command status; zero status is true. Text is not
-implicitly a boolean. `do` runs expressions in sequence in the current scope.
+(from `eq`, `=`, or `not`) or a command status; zero status is true. Text and
+numbers are not implicitly booleans. `do` runs expressions in sequence in the current scope.
 `for` evaluates a list and creates a fresh lexical binding for each iteration.
 
 Function names and parameter declarations use bare names. Read parameter and
 local variable values with `$name`. Functions capture their defining lexical
 scope and return the last expression's value. Argument expressions are evaluated
-before parameters are bound. Functions can return lists and booleans as well as
+before parameters are bound. Functions can return numbers, lists, and booleans as well as
 command output.
 When called as a value, stdout is captured throughout the function body: if the
 last expression produces a command status, captured stdout is returned as text;

@@ -40,8 +40,10 @@ description: "The parenthesis prompt, multiline editing, Tab completion, paste, 
   `cd` completes directories only; hidden files require a `.` prefix. Strings do
   not expand variables, and structural comments are not completed. Pasted tabs
   remain literal tabs.
-- History recall only restores source. At the end of an already complete
-  history entry, press `)` to submit without adding another closing character.
+- History keeps complete source. Recalling an entry removes its outer closing
+  `)` from the edit buffer and places the cursor at the end. Append arguments
+  directly, or press `)` to run it again. Returning to your draft restores it
+  unchanged.
 - Ctrl+C clears the input or interrupts the foreground task. Ctrl+D exits on an
   empty buffer and deletes forward otherwise.
 

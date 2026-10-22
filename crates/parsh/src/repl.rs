@@ -164,6 +164,20 @@ impl History {
         self.draft = None;
     }
 
+    fn recall(&self, index: usize, input: &mut Input) {
+        let source = &self.entries[index];
+        input.body.clone_from(source);
+        let mut reader = Reader::new(source);
+        if let Read::Form(expr) = reader.read()
+            && matches!(expr.kind, Kind::List(_) | Kind::Comment)
+        {
+            // Reopen only the outer form; keep the stored source and whitespace.
+            input.body.remove(reader.offset - 1);
+        }
+        input.cursor = input.body.len();
+        input.explicit = true;
+    }
+
     fn previous(&mut self, input: &mut Input) {
         if self.entries.is_empty() {
             return;
@@ -177,9 +191,7 @@ impl History {
             }
         };
         self.index = Some(index);
-        input.body = self.entries[index].clone();
-        input.cursor = input.body.len();
-        input.explicit = true;
+        self.recall(index, input);
     }
 
     fn next(&mut self, input: &mut Input) {
@@ -188,15 +200,14 @@ impl History {
         };
         if index + 1 < self.entries.len() {
             self.index = Some(index + 1);
-            input.body = self.entries[index + 1].clone();
-            input.explicit = true;
+            self.recall(index + 1, input);
         } else {
             self.index = None;
             let (body, explicit) = self.draft.take().unwrap_or_default();
             input.body = body;
+            input.cursor = input.body.len();
             input.explicit = explicit;
         }
-        input.cursor = input.body.len();
     }
 }
 
@@ -452,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn full_source_replaces_implicit_open_and_history_can_submit() {
+    fn full_source_replaces_implicit_open_and_complete_source_can_submit() {
         let mut input = Input::default();
         for ch in "(echo x".chars() {
             input.insert(ch, false);
@@ -462,6 +473,46 @@ mod tests {
         assert!(
             matches!(input.insert(')', false), Some(Outcome::Ready(source)) if source == "(echo x)")
         );
+    }
+
+    #[test]
+    fn history_recall_reopens_only_the_outer_form_and_preserves_the_draft() {
+        for (source, recalled) in [
+            ("(str hello)", "(str hello"),
+            ("(str (str hello))", "(str (str hello)"),
+            (
+                r#"(str "x)" (; ignored (nested)))"#,
+                r#"(str "x)" (; ignored (nested))"#,
+            ),
+            ("(; ignored (; nested))", "(; ignored (; nested)"),
+            ("(str\n  \"甲e\u{301}👩‍💻\")", "(str\n  \"甲e\u{301}👩‍💻\""),
+            (" \n(str hello)\t \n", " \n(str hello\t \n"),
+            ("()", "("),
+        ] {
+            let mut history = History::default();
+            history.add(source.into());
+            let mut input = Input {
+                body: "(str saved)".into(),
+                explicit: true,
+                ..Input::default()
+            };
+
+            history.previous(&mut input);
+            assert_eq!(input.source(), recalled);
+            assert_eq!(input.cursor, input.body.len());
+            assert!(input.explicit);
+            assert_eq!(history.entries, [source]);
+            assert!(matches!(input.insert(')', false), Some(Outcome::Ready(_))));
+
+            history.next(&mut input);
+            assert_eq!(input.source(), "(str saved)");
+            assert_eq!(input.cursor, input.body.len());
+            assert!(input.explicit);
+
+            history.previous(&mut input);
+            assert_eq!(input.source(), recalled);
+            assert_eq!(history.entries, [source]);
+        }
     }
 
     #[test]
@@ -821,6 +872,164 @@ mod syntax_tests {
     }
 
     #[test]
+    fn arithmetic_parses_text_and_preserves_integer_and_float_results() {
+        for (source, expected) in [
+            ("(+)", "0"),
+            ("(*)", "1"),
+            ("(+ 123 2)", "125"),
+            (r#"(+ "1.5" 2)"#, "3.5"),
+            ("(- 10 3 2)", "5"),
+            ("(- 5)", "-5"),
+            ("(- -3.5)", "3.5"),
+            ("(* 2 3 4)", "24"),
+            ("(/ 20 2 4)", "2.5"),
+            ("(/ 5 2)", "2.5"),
+            ("(/ 8 2)", "4.0"),
+            ("(/ 4)", "0.25"),
+            ("(+ 1 2.0 3)", "6.0"),
+            ("(+ 1.0)", "1.0"),
+            ("(* -2)", "-2"),
+            (r#"(+ "\n +00123 \t")"#, "123"),
+            ("(+ .5 1.)", "1.5"),
+            ("(+ 2.5e1 -5)", "20.0"),
+            ("(+ 1E-2)", "0.01"),
+            ("(+ 0.1 0.2)", "0.30000000000000004"),
+            ("(+ -0.0)", "-0.0"),
+            ("(+ 9007199254740992 1)", "9007199254740993"),
+            ("(+ 9223372036854775807)", "9223372036854775807"),
+            ("(+ -9223372036854775808)", "-9223372036854775808"),
+            ("(- -9223372036854775808 -1)", "-9223372036854775807"),
+            ("(str 00123)", r#""00123""#),
+            ("(str (/ 8 2))", r#""4.0""#),
+            (
+                "(list 123 00123 (+ 1 2) (/ 8 2))",
+                r#"("123" "00123" 3 4.0)"#,
+            ),
+        ] {
+            let events = Repl::new().paste(source);
+            assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
+            assert_eq!(values(&events), [expected], "{source}");
+        }
+    }
+
+    #[test]
+    fn numeric_equality_is_distinct_from_typed_equality() {
+        for (source, expected) in [
+            ("(eq 001 1)", "false"),
+            ("(= 001 1.0)", "true"),
+            ("(eq (+ 1 2) 3)", "false"),
+            ("(eq (+ 1 2) (+ 3))", "true"),
+            ("(eq (+ 1 2) (+ 3.0))", "false"),
+            ("(eq (list (+ 3)) (list 3))", "false"),
+            ("(eq (+ 1.0) (+ 1e0))", "true"),
+            ("(= (+ 1 2) 3.0)", "true"),
+            ("(= 3.0 (+ 1 2))", "true"),
+            ("(= 1 1.5)", "false"),
+            ("(= -0.0 0)", "true"),
+            ("(= (+ 0.1 0.2) 0.3)", "false"),
+            ("(= 9007199254740993 9007199254740992.0)", "false"),
+            ("(= 9007199254740992.0 9007199254740993)", "false"),
+            ("(= 9007199254740993 9007199254740993)", "true"),
+            ("(= 9223372036854775807 9223372036854775808.0)", "false"),
+            ("(= -9223372036854775808 -9223372036854775808.0)", "true"),
+        ] {
+            let events = Repl::new().paste(source);
+            assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
+            assert_eq!(values(&events), [expected], "{source}");
+        }
+    }
+
+    #[test]
+    fn numeric_values_survive_bindings_functions_and_left_to_right_evaluation() {
+        let events = Repl::new().paste(
+            r#"
+            (let n (+ 1 2))
+            (defn increment (n) (+ $n 1))
+            (set n (increment $n))
+            (list $n (increment $n) (str $n) (= $n 4.0))
+            (if (= $n 4) (increment $n) (unavailable))
+            (let count (+))
+            (defn next () (set count (+ $count 1)) $count)
+            (list (+ (next) (next)) $count
+                  (- (next) (next)) $count
+                  (* (next) (next)) $count
+                  (/ (next) (next)) $count
+                  (= (next) (next)) $count)
+        "#,
+        );
+        assert!(diagnostics(&events).is_empty(), "{events:?}");
+        assert_eq!(
+            values(&events),
+            [r#"(4 5 "4" true)"#, "5", "(3 2 -1 4 30 6 0.875 8 false 10)"]
+        );
+    }
+
+    #[test]
+    fn numeric_errors_reject_invalid_types_ranges_and_results() {
+        for (source, message) in [
+            (r#"(+ "")"#, "invalid number"),
+            (r#"(+ "1 2")"#, "invalid number"),
+            ("(+ 12tail)", "invalid number"),
+            ("(+ 0x10)", "invalid number"),
+            ("(+ 1_000)", "invalid number"),
+            ("(+ 1.2.3)", "invalid number"),
+            ("(+ NaN)", "invalid number"),
+            ("(+ inf)", "invalid number"),
+            ("(+ 9223372036854775808)", "integer out of range for i64"),
+            ("(+ -9223372036854775809)", "integer out of range for i64"),
+            ("(+ 1e309)", "number must be finite"),
+            ("(* 1e308 1e308)", "number must be finite"),
+            ("(+ 1e308 1e308)", "number must be finite"),
+            ("(- -1e308 1e308)", "number must be finite"),
+            ("(/ 1e308 1e-308)", "number must be finite"),
+            ("(+ (eq a a))", "expected a number or numeric text"),
+            ("(+ (list 1))", "expected a number or numeric text"),
+            ("(+ (do))", "expected a number or numeric text"),
+            ("(= 1 (eq a a))", "expected a number or numeric text"),
+            ("(= 1 no-number)", "invalid number"),
+            ("(/ 0)", "division by zero"),
+            ("(/ 1 -0.0)", "division by zero"),
+            ("(/ -0.0)", "division by zero"),
+            ("(+ 9223372036854775807 1)", "integer overflow"),
+            ("(- -9223372036854775808 1)", "integer overflow"),
+            ("(* 9223372036854775807 2)", "integer overflow"),
+            ("(- -9223372036854775808)", "integer overflow"),
+            ("(+ 9223372036854775807 1 0.0)", "integer overflow"),
+            ("(-)", "expected at least 1 arguments"),
+            ("(/)", "expected at least 1 arguments"),
+            ("(=)", "expected 2 arguments"),
+            ("(= 1)", "expected 2 arguments"),
+            ("(= 1 1 1)", "expected 2 arguments"),
+            (
+                "(if (+ 0) (str yes))",
+                "a condition must be a boolean or command status",
+            ),
+        ] {
+            let events = Repl::new().paste(source);
+            let errors = diagnostics(&events);
+            assert_eq!(errors.len(), 1, "{source}: {events:?}");
+            assert!(errors[0].contains(message), "{source}: {errors:?}");
+            assert!(values(&events).is_empty(), "{source}: {events:?}");
+        }
+        for operator in ["+", "-", "*", "/", "="] {
+            let events = Repl::new().paste(&format!("(defn {operator} () (str invalid))"));
+            assert!(diagnostics(&events)[0].contains("function name is reserved"));
+        }
+    }
+
+    #[test]
+    fn numeric_diagnostics_locate_the_operand_and_halt_only_the_current_batch() {
+        let mut repl = Repl::new();
+        let events = repl.paste("(str before)\n(+ 1\n bad)\n(str skipped)");
+        assert_eq!(values(&events), [r#""before""#]);
+        let errors = diagnostics(&events);
+        assert_eq!(errors.len(), 1, "{events:?}");
+        assert!(errors[0].starts_with("interactive:3:2:"), "{errors:?}");
+        assert!(errors[0].contains("invalid number"), "{errors:?}");
+        assert_eq!(values(&repl.paste("(+ 2 3)")), ["5"]);
+    }
+
+    #[test]
     fn bare_binding_names_and_variable_references_have_distinct_roles() {
         let events = Repl::new().paste(
             r#"
@@ -974,9 +1183,52 @@ mod syntax_tests {
         assert_eq!(values(&repl.input(Key::Character(')'))), ["\"hello\""]);
         let events = repl.input(Key::Previous);
         assert!(
-            matches!(events.last(), Some(Event::Render { lines, .. }) if lines == &["(str hello".to_string(), ")".to_string()])
+            matches!(events.last(), Some(Event::Render { lines, row: 1, column: 0, .. }) if lines == &["(str hello".to_string(), String::new()])
         );
+        assert!(values(&events).is_empty());
         assert_eq!(values(&repl.input(Key::Character(')'))), ["\"hello\""]);
+        assert_eq!(repl.session.history.entries, ["(str hello\n)"]);
+    }
+
+    #[test]
+    fn history_navigation_allows_appending_and_restores_the_implicit_draft() {
+        for (previous, next) in [(Key::Up, Key::Down), (Key::Previous, Key::Next)] {
+            let mut repl = Repl::new();
+            repl.paste("(str first)(str second)");
+            type_text(&mut repl, "str saved");
+            for (key, source) in [
+                (previous, "(str second"),
+                (previous, "(str first"),
+                (next, "(str second"),
+                (next, "(str saved"),
+            ] {
+                let events = repl.input(key);
+                assert!(
+                    events
+                        .iter()
+                        .all(|event| matches!(event, Event::Render { .. })),
+                    "{events:?}"
+                );
+                assert_eq!(repl.session.input.source(), source);
+                assert_eq!(repl.session.input.cursor, repl.session.input.body.len());
+            }
+            assert!(!repl.session.input.explicit);
+            assert_eq!(values(&type_text(&mut repl, ")")), ["\"saved\""]);
+
+            repl.input(previous);
+            let events = type_text(&mut repl, " 你好)");
+            assert_eq!(values(&events), ["\"saved你好\""]);
+            assert!(diagnostics(&events).is_empty());
+            assert_eq!(
+                repl.session.history.entries,
+                [
+                    "(str first)",
+                    "(str second)",
+                    "(str saved)",
+                    "(str saved 你好)"
+                ]
+            );
+        }
     }
 
     #[test]
@@ -1036,9 +1288,9 @@ mod syntax_tests {
         repl.input(Key::End);
         assert_eq!(values(&repl.input(Key::Character(')'))), ["\"bc\""]);
         repl.input(Key::Previous);
-        assert_eq!(repl.session.input.source(), "(str bc)");
+        assert_eq!(repl.session.input.source(), "(str bc");
         repl.input(Key::Previous);
-        assert_eq!(repl.session.input.source(), "(str a)");
+        assert_eq!(repl.session.input.source(), "(str a");
     }
 
     #[test]

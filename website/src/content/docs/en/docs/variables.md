@@ -34,7 +34,8 @@ Environment and working directory changes belong to this parsh session.
 
 Lists expand by one level into external command arguments. Text stays a single
 argument, including spaces and embedded newlines. `list` constructs lists;
-`str` concatenates scalar values. `glob` is explicit, returns sorted paths, and
+`str` concatenates scalar values, converting numbers with the same format used
+for command arguments and environment values. `glob` is explicit, returns sorted paths, and
 returns an empty list when nothing matches. Ordinary words, strings, and variable
 values never undergo implicit globbing, word splitting, or tilde expansion.
 

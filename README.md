@@ -67,6 +67,44 @@ values never undergo implicit globbing, word splitting, or tilde expansion.
 `cd` accepts a path, or defaults to `$HOME`; it updates `$PWD` and `$OLDPWD`.
 Relative commands, glob patterns, and redirections use the current directory.
 
+## Arithmetic
+
+Bare words remain text. `+`, `-`, `*`, `/`, and `=` accept numbers or numeric
+text, including variables and captured command output. Arithmetic returns a
+number; ordinary text such as `00123` keeps its original spelling.
+
+```lisp
+(let count (+ 001 2))
+(+ $count 1)
+(/ 5 2)
+(eq $count 3)
+(= $count 3.0)
+(str 00123)
+```
+
+After the binding, an interactive session displays `4`, `2.5`, `false`, `true`,
+and `"00123"`. `eq` compares types and values, so text, integers, and floats are
+distinct. `=` compares numeric values, including numeric text; it takes exactly
+two arguments and does not use a floating-point tolerance.
+
+Arguments are evaluated once, from left to right, and operations fold left.
+`+` and `*` accept any number of arguments, with `(+)` returning integer `0` and
+`(*)` returning integer `1`. `-` and `/` require at least one argument; one
+argument means negation or reciprocal. Division always returns a float.
+
+Numeric text is trimmed and parsed completely as signed decimal integers,
+decimal fractions, or scientific notation. Leading zeroes are decimal; integer
+text must fit in `i64`. Booleans, nil, and lists are not numeric operands.
+Integer addition, subtraction, and multiplication are exact and check for
+overflow. Each operation involving a float uses `f64`, which can lose integer
+precision and has ordinary floating-point rounding: `(+ 0.1 0.2)` returns
+`0.30000000000000004`. Invalid operands, division by zero, integer overflow,
+and non-finite floats are language errors with exit status `2`.
+Numbers display without quotes; floats retain a decimal point or exponent,
+such as `4.0`. `str`, command arguments, and environment values use that same
+format. Files and `-c` scripts require an explicit command such as `echo` to
+print results.
+
 ## Structured comments
 
 ```lisp
@@ -149,14 +187,14 @@ redirection takes precedence over capturing that expression's output.
 ```
 
 `if` evaluates only the selected branch. A condition must produce a boolean
-(from `eq` or `not`) or a command status; zero status is true. Text is not
-implicitly a boolean. `do` runs expressions in sequence in the current scope.
+(from `eq`, `=`, or `not`) or a command status; zero status is true. Text and
+numbers are not implicitly booleans. `do` runs expressions in sequence in the current scope.
 `for` evaluates a list and creates a fresh lexical binding for each iteration.
 
 Function names and parameter declarations use bare names. Read parameter and
 local variable values with `$name`. Functions capture their defining lexical
 scope and return the last expression's value. Argument expressions are evaluated
-before parameters are bound. Functions can return lists and booleans as well as
+before parameters are bound. Functions can return numbers, lists, and booleans as well as
 command output.
 When called as a value, stdout is captured throughout the function body: if the
 last expression produces a command status, captured stdout is returned as text;
@@ -209,8 +247,10 @@ function or nested expression. Its default is 0.
   `cd` completes directories only; hidden files require a `.` prefix. Strings do
   not expand variables, and structural comments are not completed. Pasted tabs
   remain literal tabs.
-- History recall only restores source. At the end of an already complete
-  history entry, press `)` to submit without adding another closing character.
+- History keeps complete source. Recalling an entry removes its outer closing
+  `)` from the edit buffer and places the cursor at the end. Append arguments
+  directly, or press `)` to run it again. Returning to your draft restores it
+  unchanged.
 - Ctrl+C clears the input or interrupts the foreground task. Ctrl+D exits on an
   empty buffer and deletes forward otherwise.
 

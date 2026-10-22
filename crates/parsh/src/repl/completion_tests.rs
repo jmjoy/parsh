@@ -158,6 +158,16 @@ fn syntax_only_completion_uses_available_builtins_and_current_functions() {
 }
 
 #[test]
+fn numeric_builtins_complete_without_an_execution_host() {
+    for operator in ["+", "-", "*", "/", "="] {
+        let mut repl = Repl::new();
+        type_text(&mut repl, operator);
+        repl.input(Key::Tab);
+        assert_eq!(repl.session.input.body, format!("{operator} "));
+    }
+}
+
+#[test]
 fn double_tab_lists_sorted_unique_candidates_and_then_restores_the_input() {
     let mut repl = Repl::with_host(TestHost::default()).unwrap();
     type_text(&mut repl, "ho");

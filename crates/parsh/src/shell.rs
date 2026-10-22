@@ -9,6 +9,8 @@ use std::{
     },
 };
 
+pub use crate::number::Number;
+
 use crate::{
     completion::Candidate,
     host::{
@@ -30,6 +32,7 @@ use std::{
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Text(String),
+    Number(Number),
     Bool(bool),
     List(Vec<Value>),
     Nil,
@@ -40,6 +43,7 @@ impl Value {
     pub fn text(&self) -> Result<String, String> {
         match self {
             Self::Text(text) => Ok(text.clone()),
+            Self::Number(number) => Ok(number.to_string()),
             Self::Bool(boolean) => Ok(boolean.to_string()),
             Self::Nil => Ok(String::new()),
             Self::List(_) => Err("expected a scalar value, got a list".into()),
@@ -50,6 +54,7 @@ impl Value {
     pub fn display(&self) -> String {
         match self {
             Self::Text(text) => format!("{text:?}"),
+            Self::Number(number) => number.to_string(),
             Self::Bool(boolean) => boolean.to_string(),
             Self::List(values) => format!(
                 "({})",
@@ -156,7 +161,7 @@ pub struct Shell {
 
 const BUILTINS: &[&str] = &[
     "do", "let", "set", "if", "for", "defn", "list", "str", "eq", "not", "glob", "cd", "export",
-    "exit", "|", "|>", "|1>", "|>>", "|1>>", "<|", "|2>", "|2>>",
+    "exit", "+", "-", "*", "/", "=", "|", "|>", "|1>", "|>>", "|1>>", "<|", "|2>", "|2>>",
 ];
 
 fn builtin(name: &str) -> bool {
@@ -466,6 +471,50 @@ impl Shell {
             .map_err(|message| Error::new(expr, message))
     }
 
+    fn number(&mut self, expr: &Expr, env: &Env, io: &Io) -> Result<Number, Error> {
+        match self.value(expr, env, io)? {
+            Value::Number(number) => Ok(number),
+            Value::Text(text) => Number::parse(&text).map_err(|message| Error::new(expr, message)),
+            _ => Err(Error::new(expr, "expected a number or numeric text")),
+        }
+    }
+
+    fn arithmetic(
+        &mut self,
+        expr: &Expr,
+        operator: &str,
+        args: &[Expr],
+        env: &Env,
+        io: &Io,
+    ) -> Result<Value, Error> {
+        Self::arity(
+            expr,
+            args,
+            usize::from(matches!(operator, "-" | "/")),
+            usize::MAX,
+        )?;
+        let Some(first) = args.first() else {
+            return Ok(Value::Number(Number::Int(i64::from(operator == "*"))));
+        };
+        let mut result = self.number(first, env, io)?;
+        if args.len() == 1 {
+            result = match operator {
+                "-" => result.negate(),
+                "/" => Number::Float(1.0).calculate("/", result),
+                _ => Ok(result),
+            }
+            .map_err(|message| Error::new(first, format!("{operator}: {message}")))?;
+        } else {
+            for arg in &args[1..] {
+                let other = self.number(arg, env, io)?;
+                result = result
+                    .calculate(operator, other)
+                    .map_err(|message| Error::new(arg, format!("{operator}: {message}")))?;
+            }
+        }
+        Ok(Value::Number(result))
+    }
+
     fn condition(&mut self, expr: &Expr, env: &Env, io: &Io) -> Result<bool, Error> {
         match self.eval(expr, env, Mode::Condition, io)? {
             Value::Bool(value) => Ok(value),
@@ -654,6 +703,13 @@ impl Shell {
                     result.push_str(&self.scalar(arg, env, io)?);
                 }
                 Ok(Value::Text(result))
+            }
+            "+" | "-" | "*" | "/" => self.arithmetic(expr, &name, args, env, io),
+            "=" => {
+                Self::arity(expr, args, 2, 2)?;
+                let left = self.number(&args[0], env, io)?;
+                let right = self.number(&args[1], env, io)?;
+                Ok(Value::Bool(left.equals(right)))
             }
             "eq" => {
                 Self::arity(expr, args, 2, 2)?;

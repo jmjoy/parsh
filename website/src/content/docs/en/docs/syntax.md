@@ -16,7 +16,7 @@ Strings do not interpolate variables. Variable references use `$name`. Binding
 and assignment targets use bare names, including function parameters, loop
 bindings, and environment settings.
 
-The reader creates text, variable references, and lists of expressions. Evaluation can return text, booleans, lists, nil, or native command statuses. These are different value types even though words such as `true` and `nil` themselves are just text.
+The reader creates text, variable references, and lists of expressions. Evaluation can return text, numbers, booleans, lists, nil, or native command statuses. These are different value types even though words such as `true` and `nil` themselves are just text.
 
 ```parsh
 (eq true true)
@@ -25,6 +25,52 @@ The reader creates text, variable references, and lists of expressions. Evaluati
 ```
 
 The interactive results are `true`, `true`, and `("a" "b c" true)`. Text is displayed with quotes and escapes; nil is not displayed. A file or `-c` script runs expressions without automatically printing their results.
+
+## Arithmetic and numeric equality
+
+`123` is text until a numeric operation parses it. `+`, `-`, `*`, `/`, and `=`
+accept runtime numbers or numeric text. Variables and captured command output
+follow the same rule as bare words and quoted strings.
+
+| Expression | Interactive result |
+| --- | --- |
+| `(+ 123 2)` | `125` |
+| `(+ "1.5" 2)` | `3.5` |
+| `(/ 5 2)` | `2.5` |
+| `(/ 8 2)` | `4.0` |
+| `(str 00123)` | `"00123"` |
+| `(eq (+ 1 2) 3)` | `false` |
+| `(eq (+ 3) (+ 3.0))` | `false` |
+| `(= (+ 1 2) 3)` | `true` |
+| `(= 001 1.0)` | `true` |
+
+Text is trimmed and must parse completely. Supported forms include `+001`,
+`-12`, `.5`, `1.`, and `2.5e1`. Integers use `i64`; a decimal point or exponent
+selects `f64`. Leading zeroes are decimal, not octal. Out-of-range integer text
+is an error rather than being converted to a float. Booleans, nil, and lists
+cannot be used as numbers.
+
+Arguments are evaluated once from left to right; operations fold left.
+`+` and `*` accept any number of arguments, with `(+)` returning integer `0`
+and `(*)` returning integer `1`. `-` and `/` need at least one argument;
+`(- 5)` returns `-5` and `(/ 4)` returns `0.25`. Integer addition, subtraction,
+and multiplication check for overflow. Each step involving a float uses `f64`;
+division always returns a float. A later float does not prevent an earlier
+integer step from overflowing.
+
+`eq` compares types and values, including elements inside lists. Numeric `=`
+takes exactly two arguments, accepts numeric text, and compares integers and
+floats by value without confusing distinct large integers. Float equality is
+exact, with no tolerance: `(= (+ 0.1 0.2) 0.3)` is `false` because `f64` has
+binary rounding error. Arithmetic involving floats can also lose large integer
+precision.
+
+Numbers display without quotes. Floats retain a decimal point or exponent,
+including `4.0` and `-0.0`; `str`, external command arguments, and environment
+values use the same format. Capturing a command or exporting a number produces
+text again. Numbers are not implicitly booleans; use `=` in a condition.
+Invalid operands, division by zero, integer overflow, and non-finite floats
+report a language error at the failing operand with exit status `2`.
 
 ## Structured comments
 
