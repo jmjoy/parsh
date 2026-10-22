@@ -82,7 +82,7 @@ export default defineConfig({
             {
               slug: "docs/playground",
               label: "Playground",
-              translations: { "zh-CN": "语法体验终端" },
+              translations: { "zh-CN": "在线体验终端" },
             },
             {
               slug: "docs/development",

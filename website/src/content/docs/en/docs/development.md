@@ -20,7 +20,7 @@ Use Node.js 24+, pnpm 12.4.2, a current stable Rust toolchain, and wasm-pack 0.1
 Run the following commands from the repository root:
 
 ```console
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32-unknown-unknown wasm32-wasip1
 cargo install wasm-pack --version 0.13.1 --locked
 pnpm install --frozen-lockfile
 pnpm dev
@@ -39,4 +39,4 @@ Browser tests run against the production output; start `pnpm preview --port 4321
 
 Generated WASM, dependencies, build output, and browser test artifacts are ignored by Git. GitHub Actions runs the same checks on pull requests and deploys successful builds on `master` or manual dispatch. Set the repository's Pages source to **GitHub Actions** for the first deployment.
 
-The browser crate disables the root library's default `native` feature. The lexer, evaluator, editing, history, and layout are shared with Linux; the browser has no filesystem or process backend.
+The browser crate disables the root library's default `native` feature. Parsing, evaluation, editing, history, and layout are shared with Linux. An injectable host runs WASI coreutils inside the Worker and supplies a temporary filesystem. `parsh-coreutils` pins the uutils revision; its first build downloads upstream dependencies.

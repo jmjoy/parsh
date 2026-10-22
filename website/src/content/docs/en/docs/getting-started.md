@@ -45,4 +45,4 @@ Type `str "hello, " "parsh")` at the opening-parenthesis prompt. parsh displays 
 
 The first expression binds a value. The second returns text, which an interactive session displays. The third runs the native `echo` program and writes stdout. Script mode does not print expression return values automatically.
 
-The [browser playground](/parsh/en/playground/) supports the first two expressions. See its [capabilities](/parsh/en/docs/playground/) before trying native command examples.
+The [browser playground](/parsh/en/playground/) supports language expressions and coreutils commands. See its [capabilities](/parsh/en/docs/playground/) for the command list and temporary files.

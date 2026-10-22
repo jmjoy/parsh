@@ -43,4 +43,4 @@ cargo run -- script.parsh 'an argument' another
 
 第一个表达式绑定变量。第二个返回文本，交互环境会显示它。第三个调用原生 `echo` 程序并输出到 stdout。脚本模式不会自动打印表达式返回值。
 
-[浏览器终端](/parsh/zh-cn/playground/)支持前两条表达式。尝试原生命令示例前，请阅读[支持范围](/parsh/zh-cn/docs/playground/)。
+[浏览器终端](/parsh/zh-cn/playground/)支持语言表达式和 coreutils 命令；命令清单与临时文件说明见[支持范围](/parsh/zh-cn/docs/playground/)。

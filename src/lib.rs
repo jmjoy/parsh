@@ -1,5 +1,6 @@
 #[cfg(feature = "native")]
 pub mod editor;
+pub mod host;
 #[cfg(feature = "native")]
 pub mod job;
 #[cfg(feature = "native")]

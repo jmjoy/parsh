@@ -44,7 +44,7 @@ test("root redirects to prefixed English and both homepages share navigation", a
   await page.getByRole("link", { name: "切换到简体中文" }).click();
   await expect(page).toHaveURL(/\/parsh\/zh-cn\/$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
-    "你的 Shell",
+    "把 Shell",
   );
   await expect(
     page
@@ -146,29 +146,27 @@ test("paste recovers extra closers and a failed batch allows new input", async (
   await paste(page, "(str first))) (str second)");
   await expect(terminal(page)).toContainText('"second"');
   await expect(terminal(page)).toContainText("unexpected ')'");
-  await paste(page, "(echo unavailable) (str skipped)");
+  await paste(page, "(no-such-command) (str skipped)");
   await expect(terminal(page)).toContainText(
-    "external command 'echo' requires native parsh",
+    "command 'no-such-command' is not available in this playground",
   );
   await expect(terminal(page)).not.toContainText('"skipped"');
   await paste(page, "(str recovered)");
   await expect(terminal(page)).toContainText('"recovered"');
 });
 
-test("native-only forms produce source-tagged diagnostics", async ({
-  page,
-}) => {
+test("unavailable commands produce source-tagged diagnostics and recover", async ({ page }) => {
   await playground(page);
-  for (const source of [
-    "(cd /)",
-    "(glob *)",
-    "(| (cat) (sort))",
-    "(|> file.txt (str text))",
-  ]) {
-    await paste(page, source);
-    await expect(terminal(page)).toContainText("interactive:1:1:");
-    await expect(terminal(page)).toContainText("requires native parsh");
-  }
+  await paste(page, "(no-such-command)");
+  await expect(terminal(page)).toContainText("interactive:1:1:");
+  await expect(terminal(page)).toContainText("is not available in this playground");
+  await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
+  await page.keyboard.press("Control+d");
+  await expect(terminal(page)).toContainText("[exit 127]");
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
+  await paste(page, "(echo recovered)");
+  await expect(terminal(page)).toContainText("recovered");
 });
 
 test("clear and idle Ctrl+C preserve bindings; reset clears them", async ({
@@ -329,3 +327,118 @@ test("missing pages provide working links to both locale homepages", async ({ pa
   await expect(page.getByRole("link", { name: "切换到简体中文" })).toHaveAttribute("href", "/parsh/zh-cn/");
   await expect(page.getByRole("link", { name: "Back to home" })).toHaveAttribute("href", "/parsh/en/");
 });
+
+
+test("coreutils preserve Unicode argv, environment, nested captures, and raw output", async ({ page }) => {
+  await playground(page);
+  await paste(page, String.raw`(echo "你好，parsh 🐑") (export GREETING "你好 🐑") (printenv GREETING)`);
+  await expect(terminal(page)).toContainText("你好，parsh 🐑");
+  await expect(terminal(page)).toContainText("你好 🐑");
+  await paste(page, String.raw`(defn capture () (printf "%s\n" "a value with spaces"))
+(let value (capture))
+(printf "<%s>\\n" $value)`);
+  await expect(terminal(page)).toContainText("<a value with spaces>");
+  await paste(page, String.raw`(printf "no-newline") (str complete) (| (printf "\\377\\000\\101") (base64))`);
+  await expect(terminal(page)).toContainText("no-newline");
+  await expect(terminal(page)).toContainText('"complete"');
+  await expect(terminal(page)).toContainText("/wBB");
+  await paste(page, String.raw`(printf "%0400d\n" 7)`);
+  await expect(terminal(page)).toContainText("000007");
+});
+
+test("file commands, glob, cwd, and all redirection forms share temporary files", async ({ page }) => {
+  await playground(page);
+  await paste(page, String.raw`(mkdir -p demo) (cd demo)
+(|> first.txt (printf "one\ntwo\n"))
+(|1>> first.txt (echo three))
+(cp first.txt copy.txt) (mv copy.txt moved.txt)
+(touch empty.txt .hidden.txt) (str prepared)`);
+  await expect(terminal(page)).toContainText('"prepared"');
+  await paste(page, String.raw`(printf "glob:<%s>\\n" (glob *.txt))`);
+  await expect(terminal(page)).toContainText("glob:<first.txt>");
+  await expect(terminal(page)).toContainText("glob:<moved.txt>");
+  await expect(terminal(page)).not.toContainText("glob:<.hidden.txt>");
+  await paste(page, String.raw`(cat /home/playground/demo/first.txt) (cat ../numbers.txt)`);
+  await expect(terminal(page)).toContainText("three");
+  await expect(terminal(page)).toContainText("30");
+  await paste(page, String.raw`(<| first.txt (sort -r))`);
+  await expect(terminal(page)).toContainText("two");
+  await paste(page, String.raw`(|2> errors.txt (if (cat missing.txt) (echo unexpected) (echo expected-failure)))`);
+  await expect(terminal(page)).toContainText("expected-failure");
+  await paste(page, String.raw`(|2>> errors.txt (if (cat another-missing.txt) (echo unexpected) (echo expected-again))) (cat errors.txt)`);
+  await expect(terminal(page)).toContainText("expected-again");
+  await expect(terminal(page)).toContainText("another-missing.txt: No such file");
+  await paste(page, String.raw`(export PWD /bogus) (str (pwd)) (|> nested.txt (echo (pwd))) (cat nested.txt)`);
+  await expect(terminal(page)).toContainText('"/home/playground/demo"');
+  await paste(page, String.raw`(cd ..) (rm demo/empty.txt) (mkdir disposable) (rmdir disposable) (str (pwd))`);
+  await expect(terminal(page)).toContainText('"/home/playground"');
+});
+
+test("pipelines preserve statuses and redirection file positions across commands", async ({ page }) => {
+  await playground(page);
+  await paste(page, String.raw`(| (sort fruits.txt) (uniq -c))`);
+  await expect(terminal(page)).toContainText("2 apple");
+  await paste(page, String.raw`(if (| (false) (true)) (echo wrong-branch) (echo right-branch))
+(|1> out.txt (do (printf one) (printf two)))
+(|>> out.txt (printf three)) (echo (cat out.txt))`);
+  await expect(terminal(page)).toContainText("right-branch");
+  await expect(terminal(page)).toContainText("onetwothree");
+  await paste(page, String.raw`(|> binary.txt (printf "\\377\\000\\101")) (<| binary.txt (base64))`);
+  await expect(terminal(page)).toContainText("/wBB");
+  await paste(page, String.raw`(| (str invalid) (cat))`);
+  await expect(terminal(page)).toContainText("v1 pipeline stages must be external commands");
+  await paste(page, String.raw`(| (false) (true)) (str skipped-after-failure)`);
+  await expect(terminal(page)).toContainText("false | true exited with status 1");
+  await expect(terminal(page)).not.toContainText('"skipped-after-failure"');
+});
+
+test("clear preserves files while reset recreates the initial filesystem", async ({ page }) => {
+  await playground(page);
+  await paste(page, "(|> retained.txt (echo retained-file))");
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await paste(page, "(cat retained.txt)");
+  await expect(terminal(page)).toContainText("retained-file");
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
+  await paste(page, "(if (test -f retained.txt) (echo stale-file) (echo fresh-files)) (cat fruits.txt)");
+  await expect(terminal(page)).toContainText("fresh-files");
+  await expect(terminal(page)).toContainText("banana");
+});
+
+test("coreutils output and filesystem quotas fail without losing the session", async ({ page }) => {
+  test.setTimeout(30_000);
+  await playground(page);
+  await paste(page, "(let retained yes) (seq 1 2000000)");
+  await expect(terminal(page)).toContainText("exceeds 8 MiB");
+  await paste(page, "(str $retained)");
+  await expect(terminal(page)).toContainText('"yes"');
+  await paste(page, '(|> chunk.txt (seq 1 600000)) (str chunk-ready)');
+  await expect(terminal(page)).toContainText('"chunk-ready"');
+  await paste(page, Array.from({ length: 8 }, (_, index) => `(cp chunk.txt copy${index}.txt)`).join(" "));
+  await expect(terminal(page)).toContainText("virtual files exceed 32 MiB", { timeout: 15_000 });
+  await paste(page, "(echo after-limit)");
+  await expect(terminal(page)).toContainText("after-limit");
+});
+
+for (const asset of ["coreutils.wasm", "coreutils.json"]) {
+  test(`a failed ${asset} load exposes a working retry`, async ({ page }) => {
+    await page.route(`**/wasm/${asset}`, route => route.abort());
+    await page.goto("/parsh/en/playground/");
+    await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "error");
+    await page.unroute(`**/wasm/${asset}`);
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
+    await paste(page, "(echo retried-command)");
+    await expect(terminal(page)).toContainText("retried-command");
+  });
+}
+
+for (const locale of ["en", "zh-cn"]) {
+  test(`coreutils example buttons run in ${locale}`, async ({ page }) => {
+    await playground(page, locale);
+    for (const [example, output] of [["commands", "你好，parsh"], ["pipeline", "2 apple"], ["files", "hello"], ["capture", "found fruits.txt"]]) {
+      await page.locator(`[data-example="${example}"]`).click();
+      await expect(terminal(page)).toContainText(output!);
+    }
+  });
+}

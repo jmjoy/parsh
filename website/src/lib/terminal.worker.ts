@@ -1,3 +1,4 @@
+import { CoreutilsHost } from "./coreutils-host";
 import type {
   WorkerRequest,
   WorkerResponse,
@@ -12,7 +13,7 @@ interface WasmSession {
 }
 interface WasmModule {
   default(options: { module_or_path: string }): Promise<unknown>;
-  Session: new (onActivity: (busy: boolean) => void) => WasmSession;
+  Session: new (onActivity: (busy: boolean) => void, host: CoreutilsHost["call"]) => WasmSession;
 }
 
 let session: WasmSession | undefined;
@@ -22,8 +23,11 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
     if (data.type === "init") {
       const moduleUrl = `${data.base}wasm/parsh.js`;
       const wasm = (await import(/* @vite-ignore */ moduleUrl)) as WasmModule;
-      await wasm.default({ module_or_path: `${data.base}wasm/parsh_bg.wasm` });
-      session = new wasm.Session((busy) => send({ type: "activity", busy }));
+      const [, host] = await Promise.all([
+        wasm.default({ module_or_path: `${data.base}wasm/parsh_bg.wasm` }),
+        CoreutilsHost.load(data.base),
+      ]);
+      session = new wasm.Session((busy) => send({ type: "activity", busy }), host.call);
       send({ type: "ready" });
       send({ type: "events", events: session.resize(data.columns, data.rows) });
       return;

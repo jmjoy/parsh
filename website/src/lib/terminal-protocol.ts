@@ -6,6 +6,7 @@ export type TerminalEvent =
       column: number;
       dim_prompt: boolean;
     }
+  | { type: "output"; stream: "stdout" | "stderr"; bytes: number[] }
   | { type: "commit" }
   | { type: "value" | "diagnostic"; text: string }
   | { type: "exit"; code: number };

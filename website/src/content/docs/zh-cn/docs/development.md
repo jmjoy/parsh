@@ -19,7 +19,7 @@ cargo fmt --check
 以下命令均在项目根目录执行：
 
 ```console
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32-unknown-unknown wasm32-wasip1
 cargo install wasm-pack --version 0.13.1 --locked
 pnpm install --frozen-lockfile
 pnpm dev
@@ -38,4 +38,4 @@ pnpm test
 
 WASM 产物、依赖、构建目录和测试输出不提交到 Git。GitHub Actions 在 PR 上执行检查，在 `master` 推送或手动触发后发布。首次部署需将仓库 Pages 来源设置为 **GitHub Actions**。
 
-浏览器包关闭根库默认的 `native` feature。解析、求值、输入编辑、历史和布局与 Linux 共用；浏览器不提供文件系统或进程后端。
+浏览器包关闭根库默认的 `native` feature。解析、求值、输入编辑、历史和布局与 Linux 共用；可注入的执行后端在 Worker 中运行 WASI coreutils，并提供会话内临时文件系统。`parsh-coreutils` 固定 uutils 提交，首次构建会下载上游依赖。

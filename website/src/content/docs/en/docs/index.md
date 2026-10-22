@@ -5,7 +5,7 @@ description: "A Linux shell built around S-expressions."
 
 **parsh** stands for **parenthesis shell**. It is a Linux shell whose command line and scripts use the same small Lisp dialect.
 
-The prompt is an opening parenthesis. Type `str hello)` to evaluate `(str hello)`. Enter inserts a newline; the closing parenthesis submits the expression.
+The prompt is an opening parenthesis. Type `str hello)` to evaluate `(str hello)`. Enter inserts a newline; closing the outermost parenthesis submits the expression.
 
 ```parsh
 (let name world)
@@ -24,6 +24,6 @@ The interactive result is `"hello, world"`. Scripts use exactly the same syntax;
 
 ## Current scope
 
-parsh is an early implementation, version 0.1.0. Native parsh supports Linux foreground jobs, including interactive programs and pipelines. Background jobs, completion, macros, and persistent configuration are future work. The browser playground offers the language core and expression results.
+parsh is an early implementation, version 0.1.0. Native parsh supports Linux foreground jobs, including interactive programs and pipelines. Background jobs, completion, macros, and persistent configuration are future work. The browser playground offers the language core, 29 coreutils commands, temporary files, and command composition.
 
 Licensed under the [Mulan Permissive Software License, Version 2](https://github.com/jmjoy/parsh/blob/master/LICENSE).

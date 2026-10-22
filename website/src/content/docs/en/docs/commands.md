@@ -4,7 +4,7 @@ description: "Native commands, pipelines, output capture, and file redirection."
 ---
 
 :::note[Native Linux]
-This page describes native parsh. Browser sessions report a capability diagnostic for external commands, pipes, and file operations.
+This page covers command composition in parsh. The browser playground supports a coreutils subset, temporary files, and buffered pipelines; see its [capabilities](/parsh/en/docs/playground/). Other Linux programs require native parsh.
 :::
 
 Command lookup checks built-ins, named functions, then PATH. External programs

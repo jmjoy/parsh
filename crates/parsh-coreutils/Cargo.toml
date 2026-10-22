@@ -1,0 +1,45 @@
+[package]
+name = "parsh-coreutils"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MulanPSL-2.0"
+description = "A small WASI coreutils runner for the parsh playground"
+
+[[bin]]
+name = "parsh-coreutils"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+uucore = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_echo = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_printf = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_pwd = { path = "vendor/pwd" }
+uu_ls = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_cat = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_head = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_tail = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_sort = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_uniq = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_wc = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_seq = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_cut = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_tr = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_tee = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_nl = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_base64 = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_sha256sum = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_basename = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_dirname = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_mkdir = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_rmdir = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_touch = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_cp = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_mv = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_rm = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_test = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_true = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_false = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }
+uu_printenv = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }

@@ -1,46 +1,59 @@
 ---
-title: "语法体验终端"
-description: "浏览器会话支持什么，以及如何开始。"
+title: "在线体验终端"
+description: "在浏览器中运行 parsh、coreutils 和命令管道。"
 ---
 
-[打开交互终端](/parsh/zh-cn/playground/)，体验由 Rust 编译的真正 parsh 解释器。
+[打开交互终端](/parsh/zh-cn/playground/)，运行由 Rust 编译为 WebAssembly 的真正 parsh 解释器与 uutils coreutils。
 
-## 输入第一条表达式
+## 输入第一条命令
 
-提示符已提供左括号。输入 `str "hello, " "parsh")` 即可求值。也可以直接粘贴完整代码：
+提示符已提供左括号。输入 `echo hello)` 即可执行，也可以直接粘贴完整表达式：
 
 ```parsh
-(let name world)
-(defn greet (who)
-  (str "hello, " $who))
-(greet $name)
-(list a "two words" (eq x x))
+(echo "hello, parsh")
+(let here (pwd))
+(echo (str "working in " $here))
+(| (sort fruits.txt) (uniq -c))
+(|> results.txt (<| numbers.txt (sort -n)))
+(cat results.txt)
 ```
 
-终端显示返回值 `"hello, world"` 和 `("a" "two words" true)`。
+命令直接打印输出。`(str hello)` 等表达式会显示其返回值（例如文本 `"hello"`）；nil 和命令退出状态不会显示。
 
-## 支持范围
+## 命令与文件
 
-| 能力                                   | 浏览器行为                                 |
-| -------------------------------------- | ------------------------------------------ |
-| `let`、`set`                           | 会话内变量与词法作用域                     |
-| `defn`                                 | 参数、闭包与类型化返回值                   |
-| `do`、`if`、`for`                      | 顺序求值、分支及循环；循环返回最后一次结果 |
-| `str`、`list`、`eq`、`not`             | 文本、列表与布尔值                         |
-| `export`                               | 仅修改会话中的内存环境变量；初始环境为空   |
-| `$args`                                | 初始为空列表                               |
-| `exit`、空输入时 Ctrl+D                | 结束会话，可重置重新开始                   |
-| 文件、glob、cd、管道、重定向、外部命令 | 需要原生 parsh，浏览器会给出诊断           |
+以下 29 条命令使用真实的 uutils 实现：
 
-这里不提供 `echo` 或 `printf`；用 `str` 返回文本。nil 不显示，字符串显示引号与转义。脚本模式不会自动打印返回值。
+`echo`、`printf`、`pwd`、`ls`、`cat`、`head`、`tail`、`sort`、`uniq`、`wc`、`seq`、`cut`、`tr`、`tee`、`nl`、`base64`、`sha256sum`、`basename`、`dirname`、`mkdir`、`rmdir`、`touch`、`cp`、`mv`、`rm`、`test`、`true`、`false`、`printenv`。
+
+初始工作目录为 `/home/playground`，包含 `fruits.txt`、`numbers.txt` 和 `README.txt`，另提供 `/tmp`。会话初始化 `HOME`、`PWD`、`LANG` 和 `TERM`；`$args` 为空。`export` 修改传递给后续命令的环境变量。
+
+文件操作、`cd`、显式 `glob`、命令捕获、管道及全部 parsh 重定向操作均使用同一个临时文件系统：
+
+```parsh
+(mkdir -p demo)
+(cd demo)
+(|> greeting.txt (echo hello))
+(|>> greeting.txt (echo parsh))
+(cp greeting.txt copy.txt)
+(printf "%s\n" (glob *.txt))
+(if (test -f copy.txt) (cat copy.txt) (echo missing))
+(cd ..)
+```
+
+嵌套命令按 UTF-8 捕获标准输出，移除末尾 LF，并将结果保持为一个参数。被捕获表达式内部的显式输出重定向优先。文件和管道保留原始二进制字节。
+
+浏览器管道逐阶段缓冲执行，返回最右侧非零状态，不提供原生实时流式处理或 SIGPIPE 行为。未提供文件或上游管道时，标准输入为 EOF。单次命令输出和每段管道缓冲上限为 8 MiB，虚拟文件总量上限为 32 MiB。首版不包含 `grep`、`sed`、`find` 或交互程序。
 
 ## 会话与按键
 
 - Enter 插入换行，闭合最外层 `)` 才会执行。
 - 上下箭头移动行或召回历史；Ctrl+P/N 始终切换历史。完整历史条目在末尾按 `)` 重新执行。
-- 支持中文、组合字符、多行编辑和完整脚本粘贴；错误遵循相同的批次恢复规则。
-- 清屏保留会话。重置、刷新或离开页面会结束当前临时会话，浏览器后退缓存可能暂时保留页面。
-- 空闲时 Ctrl+C 只清空输入；执行时 Ctrl+C 会立即停止并重置整个会话。
-- 单个表达式执行超过 5 秒会自动重置；变量、函数、环境和历史随之清除。
+- Unicode 编辑、多行输入、完整脚本粘贴和批次错误恢复与原生版本共用同一套编辑模型。
+- 清屏和空闲时 Ctrl+C 保留文件、变量和工作目录。
+- 重置、刷新或离开页面会结束当前临时会话，浏览器后退缓存可能暂时保留页面。
+- 执行时 Ctrl+C 会立即停止并重置整个会话。
+- 单个表达式执行超过 5 秒会自动重置，清除文件、变量、函数、环境和历史。
+- `exit` 和空输入时 Ctrl+D 结束会话，可重置重新开始。
 
-完整的命令、文件和管道能力请在 [Linux 上使用 parsh](/parsh/zh-cn/docs/getting-started/)。
+要操作自己的文件并运行 Linux 程序，请[在 Linux 上使用 parsh](/parsh/zh-cn/docs/getting-started/)。

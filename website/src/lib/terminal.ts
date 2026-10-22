@@ -10,6 +10,13 @@ import type {
 
 type Phase = "loading" | "ready" | "running" | "closed" | "error";
 const examples: Record<string, string> = {
+  commands:
+    '(echo "hello, parsh")\n(printf "%s\\n" (list "你好，parsh" "a value with spaces"))',
+  pipeline: '(cat fruits.txt)\n(| (sort fruits.txt) (uniq -c))',
+  files:
+    '(mkdir -p demo)\n(|> demo/greeting.txt (echo hello))\n(|>> demo/greeting.txt (echo parsh))\n(cat demo/greeting.txt)\n(<| numbers.txt (sort -n))',
+  capture:
+    '(let here (pwd))\n(echo (str "working in " $here))\n(if (test -f fruits.txt) (echo "found fruits.txt") (echo missing))',
   hello: '(str "hello, " "parsh")\n(list text "a value with spaces" (eq a a))',
   variables:
     '(let name world)\n(str "hello, " $name)\n(set name parsh)\n(str "hello, " $name)',
@@ -52,31 +59,31 @@ export function mountTerminal(root: HTMLElement): void {
   const zh = root.dataset.locale === "zh-cn";
   const labels = zh
     ? {
-        loading: "正在加载解释器…",
+        loading: "正在加载运行环境…",
         ready: "可以开始输入",
-        running: "正在求值…",
+        running: "正在执行…",
         closed: "会话已结束",
         error: "加载失败",
         input: "parsh 终端输入",
-        welcome: "parsh 语法体验终端 · 输入 str hello) 开始。",
+        welcome: "parsh 体验终端 · 输入 echo hello) 开始。",
         interrupted: "执行已中断，会话已重置。",
-        timeout: "执行超过 5 秒，已停止并重置会话。",
-        failed: "无法加载解释器，请检查网络后重试。",
+        timeout: "执行超过 5 秒，会话已重置。",
+        failed: "无法加载运行环境，请检查网络后重试。",
         ended: "会话已结束。点击“重置”开始新的会话。",
         reset: "已开始新的会话。",
       }
     : {
-        loading: "Loading the interpreter…",
-        ready: "Ready when you are",
-        running: "Evaluating…",
+        loading: "Loading the runtime…",
+        ready: "Ready for input",
+        running: "Executing…",
         closed: "Session ended",
         error: "Could not load",
         input: "parsh terminal input",
-        welcome: "parsh syntax playground · Type str hello) to begin.",
-        interrupted: "Execution interrupted. A new session has started.",
+        welcome: "parsh playground · Type echo hello) to begin.",
+        interrupted: "Execution interrupted. The session has been reset.",
         timeout: "Execution exceeded 5 seconds. The session has been reset.",
         failed:
-          "The interpreter could not load. Check your connection and retry.",
+          "The runtime could not load. Check your connection and retry.",
         ended: "This session has ended. Choose Reset to start a new one.",
         reset: "A new session has started.",
       };
@@ -98,6 +105,7 @@ export function mountTerminal(root: HTMLElement): void {
     fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
     fontSize: matchMedia("(max-width: 480px)").matches ? 12 : 14,
     lineHeight: 1.45,
+    convertEol: true,
     cursorBlink: true,
     cursorStyle: "bar",
     scrollback: 2000,
@@ -130,6 +138,8 @@ export function mountTerminal(root: HTMLElement): void {
   let phase: Phase = "loading";
   let generation = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let outputOpen = false;
+  let rawOutput = false;
   let drawnRows = 0;
   let cursorRow = 0;
   let disposed = false;
@@ -160,6 +170,8 @@ export function mountTerminal(root: HTMLElement): void {
     terminal.write("\x1b[?7l"); // The shared Rust layout handles wrapping.
     drawnRows = 0;
     cursorRow = 0;
+    outputOpen = false;
+    rawOutput = false;
   }
   function render(event: Extract<TerminalEvent, { type: "render" }>): void {
     let output = "\r";
@@ -187,7 +199,24 @@ export function mountTerminal(root: HTMLElement): void {
   }
   function apply(events: TerminalEvent[]): void {
     for (const event of events) {
+      if (rawOutput && event.type !== "output") {
+        terminal.write("\x1b[?7l");
+        rawOutput = false;
+      }
+      if (outputOpen && event.type !== "output") {
+        terminal.write("\r\n");
+        outputOpen = false;
+      }
       switch (event.type) {
+        case "output":
+          if (!rawOutput) {
+            terminal.write("\x1b[?7h");
+            rawOutput = true;
+          }
+          terminal.write(new Uint8Array(event.bytes));
+          if (event.bytes.length)
+            outputOpen = event.bytes[event.bytes.length - 1] !== 10;
+          break;
         case "render":
           render(event);
           break;

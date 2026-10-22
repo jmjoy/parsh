@@ -229,18 +229,18 @@ stdin.
 
 ## Website
 
-The [website](https://jmjoy.github.io/parsh/en/) includes a syntax playground and
+The [website](https://jmjoy.github.io/parsh/en/) includes a command playground and
 [documentation](https://jmjoy.github.io/parsh/en/docs/).
 [简体中文](https://jmjoy.github.io/parsh/zh-cn/) is also available.
 
-The playground runs the Rust interpreter as WebAssembly. It displays language
-results and does not provide external commands, files, or pipes.
+The playground runs the Rust interpreter and 29 real uutils coreutils commands
+as WebAssembly, with temporary files, command capture, pipes, and redirections.
 
 Website development requires Node.js 24+, pnpm 12.4.2, and wasm-pack 0.13.1.
 Run these commands from the repository root:
 
 ```console
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32-unknown-unknown wasm32-wasip1
 cargo install wasm-pack --version 0.13.1 --locked
 pnpm install --frozen-lockfile
 pnpm dev

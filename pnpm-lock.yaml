@@ -174,6 +174,9 @@ importers:
       '@astrojs/starlight':
         specifier: 0.42.6
         version: 0.42.6(@astrojs/markdown-remark@7.3.3)(astro@7.4.2(@astrojs/markdown-remark@7.3.3)(@types/node@24.19.2)(yaml@2.9.1))(typescript@5.9.3)
+      '@bjorn3/browser_wasi_shim':
+        specifier: 0.4.0
+        version: 0.4.0
       '@xterm/addon-fit':
         specifier: 0.11.0
         version: 0.11.0
@@ -355,6 +358,9 @@ packages:
   '@babel/types@7.29.8':
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
+
+  '@bjorn3/browser_wasi_shim@0.4.0':
+    resolution: {integrity: sha512-oDg+Wiy9CghdwUTTQNNDiRrMAtZjrU1PG3eSU5GnOLvjACpyj4dR+jE6Ps2myi96vUatLmv9LUR4HtVRz6LLkw==}
 
   '@bruits/satteri-darwin-arm64@0.10.5':
     resolution: {integrity: sha512-27KTVl4TJkVahMy/ohyA7qd4938G5UNneFUz/PsScYfpIhj0IVAS23mpcJXdPF44sa6nva198lmV/cKIb2YPyA==}
@@ -2586,6 +2592,8 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@bjorn3/browser_wasi_shim@0.4.0': {}
 
   '@bruits/satteri-darwin-arm64@0.10.5':
     optional: true

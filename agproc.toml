@@ -3,4 +3,4 @@
 name = "website"
 build-cmd = ["env", "ASTRO_TELEMETRY_DISABLED=1", "pnpm", "build"]
 run-cmd = ["env", "ASTRO_TELEMETRY_DISABLED=1", "pnpm", "preview", "--port", "4321"]
-probe = { http-get = { scheme = "http", host = "127.0.0.1", port = 4321, path = "/parsh/en/" }, initial-delay-seconds = 1, period-seconds = 1, timeout-seconds = 2, failure-threshold = 10 }
+probe = { http-get = { scheme = "http", host = "127.0.0.1", port = 4321, path = "/parsh/en/" }, initial-delay-seconds = 2, period-seconds = 1, timeout-seconds = 2, failure-threshold = 10 }

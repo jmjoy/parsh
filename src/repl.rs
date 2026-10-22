@@ -1,5 +1,6 @@
 //! Shared interactive editing and evaluation for native and browser terminals.
 use crate::{
+    host::{ExecutionHost, HostError, Stream},
     reader::{self, Diagnostic, Kind, Read, Reader},
     shell::{Shell, Value},
 };
@@ -261,6 +262,9 @@ pub(crate) trait ConsoleBackend {
     fn resume(&mut self) -> io::Result<()>;
     fn value(&mut self, text: &str) -> io::Result<()>;
     fn diagnostic(&mut self, text: &str) -> io::Result<()>;
+    fn output(&mut self, _stream: Stream, _bytes: &[u8]) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -287,6 +291,9 @@ impl Session {
                     self.history.add(source.clone());
                     console.activity(true);
                     let result = shell.execute(&expr);
+                    for chunk in shell.take_output() {
+                        console.output(chunk.stream, &chunk.bytes)?;
+                    }
                     console.activity(false);
                     match result {
                         Ok(value) => {
@@ -542,6 +549,10 @@ pub enum Event {
     },
     Commit,
     Value(String),
+    Output {
+        stream: Stream,
+        bytes: Vec<u8>,
+    },
     Diagnostic(String),
     Exit(i32),
 }
@@ -587,6 +598,13 @@ impl ConsoleBackend for EventConsole {
         self.events.push(Event::Diagnostic(text.into()));
         Ok(())
     }
+    fn output(&mut self, stream: Stream, bytes: &[u8]) -> io::Result<()> {
+        self.events.push(Event::Output {
+            stream,
+            bytes: bytes.into(),
+        });
+        Ok(())
+    }
 }
 
 /// A persistent language-only REPL with no host filesystem, environment or processes.
@@ -615,6 +633,14 @@ impl Default for Repl {
 impl Repl {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a REPL backed by isolated commands and files.
+    pub fn with_host(host: impl ExecutionHost + 'static) -> Result<Self, HostError> {
+        Ok(Self {
+            shell: Shell::with_host(host)?,
+            ..Self::default()
+        })
     }
 
     /// Observe evaluation boundaries without interpreting input outside Rust.
@@ -664,10 +690,15 @@ impl Repl {
 
     pub fn reset(&mut self) -> Vec<Event> {
         let (columns, rows) = (self.columns, self.rows);
-        let observer = self.observer.take();
-        *self = Self::new();
-        self.observer = observer;
-        self.resize(columns, rows)
+        self.session = Session::default();
+        self.closed = false;
+        let result = self.shell.reset_session();
+        let mut events = Vec::new();
+        if let Err(error) = result {
+            events.push(Event::Diagnostic(error.message));
+        }
+        events.extend(self.resize(columns, rows));
+        events
     }
 }
 
@@ -878,5 +909,145 @@ mod syntax_tests {
         assert!(repl.input(Key::Eof).contains(&Event::Exit(0)));
         repl.reset();
         assert_eq!(values(&repl.paste("(str restarted)")), ["\"restarted\""]);
+    }
+}
+
+#[cfg(test)]
+mod host_tests {
+    use super::*;
+    use crate::host::{CommandOutput, ExecutionHost, FileMode, HostStreams, OutputChunk};
+    use std::{collections::HashMap, ffi::OsString};
+
+    #[derive(Default)]
+    struct TestHost;
+
+    impl ExecutionHost for TestHost {
+        fn reset(&mut self) -> Result<String, HostError> {
+            Ok("/home/playground".into())
+        }
+        fn run(
+            &mut self,
+            stages: &[Vec<String>],
+            cwd: &str,
+            environment: &HashMap<OsString, OsString>,
+            _streams: HostStreams,
+        ) -> Result<CommandOutput, HostError> {
+            let argv = &stages[0];
+            let text = match argv[0].as_str() {
+                "echo" => format!("{}\n", argv[1..].join(" ")),
+                "pwd" => format!("{cwd}\n"),
+                "printenv" => format!(
+                    "{}\n",
+                    environment[&OsString::from(&argv[1])].to_string_lossy()
+                ),
+                "false" => {
+                    return Ok(CommandOutput {
+                        code: 1,
+                        chunks: vec![],
+                    });
+                }
+                "binary" => {
+                    return Ok(CommandOutput {
+                        code: 0,
+                        chunks: vec![OutputChunk {
+                            stream: Stream::Stdout,
+                            bytes: vec![255],
+                        }],
+                    });
+                }
+                _ => {
+                    return Err(HostError {
+                        code: 127,
+                        message: "missing command".into(),
+                    });
+                }
+            };
+            Ok(CommandOutput {
+                code: 0,
+                chunks: vec![OutputChunk {
+                    stream: Stream::Stdout,
+                    bytes: text.into_bytes(),
+                }],
+            })
+        }
+        fn open(&mut self, _cwd: &str, _path: &str, _mode: FileMode) -> Result<u32, HostError> {
+            unreachable!()
+        }
+        fn close(&mut self, _handle: u32) {
+            unreachable!()
+        }
+        fn chdir(&mut self, _cwd: &str, path: &str) -> Result<String, HostError> {
+            Ok(path.into())
+        }
+        fn paths(&mut self) -> Result<Vec<String>, HostError> {
+            Ok([
+                "/",
+                "/home/playground/a.txt",
+                "/home/playground/.hidden.txt",
+                "/home/playground/b.txt",
+                "/home/playground/sub/",
+            ]
+            .map(String::from)
+            .into())
+        }
+    }
+
+    fn outputs(events: &[Event]) -> String {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Output {
+                    stream: Stream::Stdout,
+                    bytes,
+                } => Some(String::from_utf8_lossy(bytes)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn host_commands_capture_through_functions_without_leaking_output() {
+        let mut repl = Repl::with_host(TestHost).unwrap();
+        let events =
+            repl.paste("(defn place () (echo (pwd))) (let path (place)) (echo $path) (str $path)");
+        assert_eq!(outputs(&events), "/home/playground\n");
+        assert!(events.contains(&Event::Value("\"/home/playground\"".into())));
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, Event::Diagnostic(_)))
+        );
+    }
+
+    #[test]
+    fn host_conditions_globs_environment_and_reset_keep_language_semantics() {
+        let mut repl = Repl::with_host(TestHost).unwrap();
+        let events = repl.paste("(export MESSAGE hello) (printenv MESSAGE) (if (false) (echo wrong) (echo right)) (glob *.txt) (cd /tmp) (pwd)");
+        assert_eq!(outputs(&events), "hello\nright\n/tmp\n");
+        assert!(events.contains(&Event::Value("(\"a.txt\" \"b.txt\")".into())));
+        let events = repl.paste("(glob /)");
+        assert!(events.contains(&Event::Value("(\"/\")".into())));
+        repl.reset();
+        let events = repl.paste("(pwd) (str $MESSAGE)");
+        assert_eq!(outputs(&events), "/home/playground\n");
+        assert!(events.iter().any(|event| matches!(event, Event::Diagnostic(text) if text.contains("undefined variable $MESSAGE"))));
+    }
+
+    #[test]
+    fn failed_host_commands_and_non_utf8_capture_halt_only_the_current_batch() {
+        let mut repl = Repl::with_host(TestHost).unwrap();
+        let events = repl.paste("(missing) (echo skipped)");
+        assert!(outputs(&events).is_empty());
+        assert!(events.iter().any(
+            |event| matches!(event, Event::Diagnostic(text) if text.contains("missing command"))
+        ));
+        let events = repl.paste("(let bytes (binary)) (echo skipped)");
+        assert!(outputs(&events).is_empty());
+        assert!(
+            events.iter().any(
+                |event| matches!(event, Event::Diagnostic(text) if text.contains("not UTF-8"))
+            )
+        );
+        assert_eq!(outputs(&repl.paste("(echo recovered)")), "recovered\n");
     }
 }

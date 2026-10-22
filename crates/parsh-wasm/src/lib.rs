@@ -1,3 +1,4 @@
+mod host;
 use parsh::repl::{Event, Key, Repl};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -14,6 +15,10 @@ enum BrowserEvent {
     Commit,
     Value {
         text: String,
+    },
+    Output {
+        stream: String,
+        bytes: Vec<u8>,
     },
     Diagnostic {
         text: String,
@@ -40,6 +45,14 @@ fn events(events: Vec<Event>) -> Result<JsValue, JsValue> {
             },
             Event::Commit => BrowserEvent::Commit,
             Event::Value(text) => BrowserEvent::Value { text },
+            Event::Output { stream, bytes } => BrowserEvent::Output {
+                stream: match stream {
+                    parsh::host::Stream::Stdout => "stdout",
+                    parsh::host::Stream::Stderr => "stderr",
+                }
+                .into(),
+                bytes,
+            },
             Event::Diagnostic(text) => BrowserEvent::Diagnostic { text },
             Event::Exit(code) => BrowserEvent::Exit { code },
         })
@@ -61,12 +74,14 @@ impl Default for Session {
 #[wasm_bindgen]
 impl Session {
     #[wasm_bindgen(constructor)]
-    pub fn new(on_activity: js_sys::Function) -> Self {
-        let mut session = Self::default();
+    pub fn new(on_activity: js_sys::Function, host: js_sys::Function) -> Result<Session, JsValue> {
+        let repl = Repl::with_host(crate::host::BrowserHost(host))
+            .map_err(|error| JsValue::from_str(&error.message))?;
+        let mut session = Self { repl };
         session.repl.observe_execution(move |busy| {
             let _ = on_activity.call1(&JsValue::NULL, &JsValue::from_bool(busy));
         });
-        session
+        Ok(session)
     }
 
     pub fn input(&mut self, key: &str, text: &str) -> Result<JsValue, JsValue> {

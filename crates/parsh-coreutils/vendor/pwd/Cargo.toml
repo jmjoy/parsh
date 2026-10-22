@@ -1,0 +1,10 @@
+[package]
+name = "uu_pwd"
+version = "0.13.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[dependencies]
+clap = "4"
+uucore = { git = "https://github.com/uutils/coreutils", rev = "d2d96946baaf19bc6b0434438f0fa59be54d6a0f" }

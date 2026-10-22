@@ -33,4 +33,15 @@ description: "The parenthesis prompt, multiline editing, paste, and history."
 - Ctrl+C clears the input or interrupts the foreground task. Ctrl+D exits on an
   empty buffer and deletes forward otherwise.
 
-The browser playground shares this editor's input, history, paste, and layout model. It evaluates the language core; running Ctrl+C restarts the browser session. Native foreground programs and terminal handoffs apply to Linux only.
+Errors include the source, line, and column. Script execution also recovers
+unexpected top-level `)` and continues with later expressions. Such errors give
+a script exit status of 2 unless a runtime failure or explicit `exit` supersedes
+it. Command failures keep their exit status; startup failures use 127 for a
+missing command and 126 for permission denied. Other language errors use 2.
+
+The initial scope is Linux foreground jobs, including interactive external
+programs and foreground pipelines. There is no background job table, `bg`, `fg`,
+or suspend/resume support; children ignore Ctrl+Z. History is session-local.
+Completion, macros, and persistent configuration are future work.
+
+The browser playground shares this editor's input, history, paste, and layout model. It evaluates the language and runs a coreutils subset; pressing Ctrl+C during execution resets the browser session. Native foreground programs and terminal handoffs apply to Linux only.

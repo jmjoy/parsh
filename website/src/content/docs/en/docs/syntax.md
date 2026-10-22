@@ -1,6 +1,6 @@
 ---
 title: "Syntax & values"
-description: "Words, strings, typed values, and structured comments."
+description: "Words, strings, value types, and structured comments."
 ---
 
 Every call is a parenthesized expression. Inner calls are evaluated as arguments:
