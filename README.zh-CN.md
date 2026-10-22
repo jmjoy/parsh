@@ -15,7 +15,6 @@ parsh 意为 **parenthesis shell**。
 cargo run
 cargo run -- -c '(echo hello)'
 cargo run -- examples/hello.parsh world
-cargo run -- script.parsh 'an argument' another
 ```
 
 不带参数启动时，如果标准输入是终端，parsh 会打开交互编辑器；否则从标准输入读取脚本。

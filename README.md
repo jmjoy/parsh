@@ -15,7 +15,6 @@ This is an early implementation, version `0.1.0`.
 cargo run
 cargo run -- -c '(echo hello)'
 cargo run -- examples/hello.parsh world
-cargo run -- script.parsh 'an argument' another
 ```
 
 With no arguments, parsh opens an interactive editor when stdin is a terminal,

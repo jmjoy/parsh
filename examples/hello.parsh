@@ -7,5 +7,5 @@
 (for name $args
   (greet $name))
 
-(if (test -d src)
+(if (test -d crates/parsh/src)
     (echo "Rust source directory exists"))

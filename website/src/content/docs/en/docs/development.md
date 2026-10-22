@@ -39,4 +39,4 @@ Browser tests run against the production output; start `pnpm preview --port 4321
 
 Generated WASM, dependencies, build output, and browser test artifacts are ignored by Git. GitHub Actions runs the same checks on pull requests and deploys successful builds on `master` or manual dispatch. Set the repository's Pages source to **GitHub Actions** for the first deployment.
 
-The browser crate disables the root library's default `native` feature. Parsing, evaluation, editing, history, and layout are shared with Linux. An injectable host runs WASI coreutils inside the Worker and supplies a temporary filesystem. `parsh-coreutils` pins the uutils revision; its first build downloads upstream dependencies.
+The browser crate disables the `parsh` library's default `native` feature. Parsing, evaluation, editing, history, and layout are shared with Linux. An injectable host runs WASI coreutils inside the Worker and supplies a temporary filesystem. `parsh-coreutils` pins the uutils revision; its first build downloads upstream dependencies.

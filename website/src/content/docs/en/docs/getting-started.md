@@ -12,15 +12,14 @@ cargo build --release
 ./target/release/parsh
 ```
 
-To install it on your PATH, run `cargo install --path .`.
+To install it on your PATH, run `cargo install --path crates/parsh`.
 
 ## Ways to run
 
 ```console
-cargo run
-cargo run -- -c '(echo hello)'
-cargo run -- examples/hello.parsh world
-cargo run -- script.parsh 'an argument' another
+parsh
+parsh -c '(echo hello)'
+parsh examples/hello.parsh world
 ```
 
 With no arguments, parsh opens an interactive editor when stdin is a terminal,
