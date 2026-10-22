@@ -356,7 +356,7 @@ fn cli_help_version_and_argument_errors() {
 
 #[test]
 fn cli_passes_all_arguments_after_source_or_script_unchanged() {
-    let source = r#"(printf "<%s>" $args)"#;
+    let source = r#"(if (eq $args (list "--help" "-h" "--version" "-V" "-c" "--" "--unknown" "a b" "")) (exit 0) (exit 1))"#;
     let directory = tempfile::tempdir().unwrap();
     let script = directory.path().join("args.parsh");
     fs::write(&script, source).unwrap();
@@ -371,13 +371,12 @@ fn cli_passes_all_arguments_after_source_or_script_unchanged() {
         "a b",
         "",
     ];
-    let expected = "<--help><-h><--version><-V><-c><--><--unknown><a b><>";
     for prefix in [&["-c", source][..], &[script.to_str().unwrap()], &["-"]] {
         let mut args = prefix.to_vec();
         args.extend(arguments);
         let output = invoke(&args, if prefix == ["-"] { source } else { "" });
         success(&output);
-        assert_eq!(stdout(&output), expected, "{prefix:?}");
+        assert!(output.stdout.is_empty(), "{prefix:?}");
         assert!(stderr(&output).is_empty());
     }
 
@@ -393,10 +392,14 @@ fn cli_passes_all_arguments_after_source_or_script_unchanged() {
 fn cli_double_dash_allows_script_names_that_look_like_options() {
     let directory = tempfile::tempdir().unwrap();
     for name in ["--help", "-c"] {
-        fs::write(directory.path().join(name), r#"(printf "<%s>" $args)"#).unwrap();
+        fs::write(
+            directory.path().join(name),
+            r#"(if (eq $args (list "--version")) (exit 0) (exit 1))"#,
+        )
+        .unwrap();
         let output = invoke_in(&["--", name, "--version"], "", Some(directory.path()));
         success(&output);
-        assert_eq!(stdout(&output), "<--version>");
+        assert!(output.stdout.is_empty());
         assert!(stderr(&output).is_empty());
     }
 }
