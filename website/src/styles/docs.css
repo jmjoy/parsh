@@ -1,0 +1,117 @@
+@import "./site.css";
+:root {
+  --sl-color-accent-low: #39291f;
+  --sl-color-accent: #e87852;
+  --sl-color-accent-high: #f1c3aa;
+  --sl-font:
+    Arial, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --sl-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --sl-nav-height: 5.2rem;
+}
+:root[data-theme="light"] {
+  --sl-color-accent-low: #f0dfd3;
+  --sl-color-accent: #b83621;
+  --sl-color-accent-high: #752b1d;
+  --sl-color-bg: #f5f3ec;
+  --sl-color-bg-nav: #f5f3ec;
+  --sl-color-bg-sidebar: #efeee5;
+  --sl-color-text: #3b4238;
+}
+:root[data-theme="dark"] {
+  --sl-color-bg: #151a16;
+  --sl-color-bg-nav: #151a16;
+  --sl-color-bg-sidebar: #192019;
+  --sl-color-text: #d3d8c7;
+}
+.docs-brand-header {
+  height: 100%;
+}
+.docs-brand-header .site-header {
+  height: 100%;
+  min-height: 0;
+  gap: 27px;
+  border: 0;
+  max-width: 1500px;
+  margin: auto;
+}
+.docs-brand-header .version-tag {
+  display: none;
+}
+.docs-brand-header .wordmark {
+  font-size: 25px;
+}
+.docs-search {
+  flex: 1;
+  min-width: 120px;
+  max-width: 290px;
+}
+.docs-brand-header .site-nav {
+  font-size: 12px;
+  gap: 22px;
+}
+.docs-brand-header .header-tools {
+  gap: 16px;
+}
+.sl-markdown-content pre {
+  font-size: 13px;
+}
+.sl-markdown-content a:not(.not-content a) {
+  color: var(--sl-color-text-accent);
+}
+@media (max-width: 1000px) {
+  .docs-brand-header .site-header {
+    gap: 20px;
+  }
+  .docs-brand-header .site-nav {
+    gap: 15px;
+  }
+  .docs-brand-header .header-tools {
+    gap: 10px;
+  }
+  .docs-search {
+    max-width: 220px;
+  }
+  .docs-brand-header .source-link {
+    display: none;
+  }
+}
+@media (max-width: 799px) {
+  :root {
+    --sl-nav-height: 6.8rem;
+  }
+  .docs-brand-header .site-header {
+    flex-wrap: wrap;
+    align-content: center;
+    row-gap: 7px;
+  }
+  .docs-brand-header .site-nav {
+    order: 4;
+    width: 100%;
+    margin-left: 0;
+    gap: 25px;
+  }
+  .docs-search {
+    max-width: none;
+    min-width: 0;
+    margin-left: auto;
+    flex: 0 1 auto;
+  }
+  .docs-brand-header .header-tools {
+    margin-left: 0;
+  }
+  .docs-brand-header .wordmark {
+    font-size: 23px;
+  }
+  .docs-brand-header .site-header {
+    padding: 0;
+  }
+  .docs-brand-header .site-nav a {
+    padding: 4px 0 8px;
+  }
+  .docs-brand-header .brand-symbol {
+    font-size: 26px;
+  }
+  .docs-brand-header .site-nav a[aria-current="page"]:after {
+    bottom: 1px;
+  }
+}

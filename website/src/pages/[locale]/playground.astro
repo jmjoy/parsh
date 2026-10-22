@@ -1,0 +1,45 @@
+---
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { locales, url, type Locale } from '../../lib/site';
+import '../../styles/playground.css';
+export const getStaticPaths = () => locales.map((locale) => ({ params: { locale } }));
+const locale = Astro.params.locale as Locale;
+const zh = locale === 'zh-cn';
+---
+<SiteLayout locale={locale} title={zh ? '语法体验终端 — parsh' : 'Playground — parsh'} description={zh ? '在浏览器中运行真正的 parsh 解释器，体验变量、函数、列表和控制流。' : 'Meet the parsh language. Try expressions, variables, functions, and control flow in your browser.'} active="playground">
+  <main id="main" class="playground-page" data-playground data-locale={locale}>
+    <div class="playground-heading"><div><p class="eyebrow"><span class="status-dot"></span> A SMALL PLACE TO EXPERIMENT</p><h1>{zh ? <>从一个 <span>(</span> 开始。</> : <>Think inside <span>( )</span></>}</h1></div><p>{zh ? '一个真正的 parsh 语法会话。写下表达式，闭合括号，看看会得到什么。' : 'A real parsh language session. Write an expression, close the parenthesis, and see what comes back.'}</p></div>
+    <div class="playground-grid">
+      <div class="playground-main">
+        <section class="terminal-panel" aria-label={zh ? 'parsh 交互终端' : 'parsh interactive terminal'}>
+          <div class="terminal-toolbar"><div class="terminal-identity"><span class="brand-symbol" aria-hidden="true">( )</span><span>parsh</span><span class="terminal-mode">{zh ? '语法会话' : 'SYNTAX SESSION'}</span></div><div class="terminal-controls"><button data-clear disabled>{zh ? '清屏' : 'Clear'}</button><button data-interrupt disabled title="Ctrl+C">{zh ? '中断' : 'Interrupt'}</button><button data-reset>{zh ? '重置' : 'Reset'}<span aria-hidden="true">↻</span></button></div></div>
+          <div class="terminal-body">
+            <div class="terminal-host" data-terminal-host></div>
+          </div>
+          <div class="terminal-bottom"><span class="terminal-state" data-state="loading"><span class="status-dot"></span><span data-status role="status">{zh ? '正在加载解释器…' : 'Loading the interpreter…'}</span></span><span class="terminal-shortcuts"><kbd>)</kbd> {zh ? '求值' : 'evaluate'} <span>·</span> <kbd>Enter</kbd> {zh ? '换行' : 'new line'}</span></div>
+        </section>
+        <div class="terminal-notice" data-notice hidden><span data-notice-text></span><button data-retry hidden>{zh ? '重试' : 'Retry'}</button></div>
+        <p class="terminal-hint"><span aria-hidden="true">↳</span>{zh ? '提示符已经提供一个左括号。输入 str hello)，或直接粘贴完整表达式。' : 'The prompt supplies the opening parenthesis. Type str hello) or paste a complete expression.'}</p>
+        <noscript><p>{zh ? '交互终端需要 JavaScript。你仍然可以阅读完整文档。' : 'The terminal needs JavaScript. The full documentation is still available.'}</p></noscript>
+      </div>
+      <aside class="playground-sidebar" aria-label={zh ? '示例与帮助' : 'Examples and help'}>
+        <div class="sidebar-section"><p class="eyebrow">{zh ? '试试这些' : 'TAKE IT FOR A SPIN'}</p><h2>{zh ? '从小例子开始。' : 'Start small.'}</h2><p class="sidebar-copy">{zh ? '选择示例，即可在当前会话中运行。' : 'Choose an example to run in this session.'}</p>
+          <div class="example-list">
+            <button class="example-button" data-example="hello" disabled><span><strong>{zh ? '你好，parsh' : 'Hello, parsh'}</strong><small>{zh ? '从文本到表达式' : 'Text meets expressions'}</small></span><span aria-hidden="true">↗</span></button>
+            <button class="example-button" data-example="variables" disabled><span><strong>{zh ? '给一个值起名' : 'Give it a name'}</strong><small>{zh ? '变量与重新赋值' : 'Variables and bindings'}</small></span><span aria-hidden="true">↗</span></button>
+            <button class="example-button" data-example="functions" disabled><span><strong>{zh ? '写一个小函数' : 'Make it a function'}</strong><small>{zh ? '参数与返回值' : 'Parameters and return values'}</small></span><span aria-hidden="true">↗</span></button>
+            <button class="example-button" data-example="control" disabled><span><strong>{zh ? '做一个选择' : 'Take a different branch'}</strong><small>{zh ? '条件、列表与循环' : 'Conditions, lists, and loops'}</small></span><span aria-hidden="true">↗</span></button>
+          </div>
+        </div>
+        <div class="sidebar-section capability-note"><span class="note-symbol" aria-hidden="true">i</span><h3>{zh ? '先感受语言。' : 'A taste of the language.'}</h3><p>{zh ? '这里显示表达式的返回值，不运行 echo 等外部命令，也不提供文件、管道或重定向。' : 'This terminal shows expression results. External commands such as echo, files, pipes, and redirections belong to native parsh.'}</p><a href={url(locale, 'docs/playground/')}>{zh ? '了解支持范围' : 'What can I try?'} <span aria-hidden="true">→</span></a></div>
+        <div class="keyboard-guide"><h3>{zh ? '顺手的几个按键' : 'A few useful keys'}</h3><div><span>{zh ? '执行完整表达式' : 'Evaluate expression'}</span><kbd>)</kbd></div><div><span>{zh ? '回顾历史' : 'Browse history'}</span><span><kbd>↑</kbd> <kbd>↓</kbd></span></div><div><span>{zh ? '清空输入 / 中断' : 'Cancel / interrupt'}</span><kbd>Ctrl C</kbd></div><div><span>{zh ? '退出空会话' : 'Exit on empty input'}</span><kbd>Ctrl D</kbd></div></div>
+      </aside>
+    </div>
+    <div class="playground-next"><p>{zh ? '准备让真正的命令参与进来？' : 'Ready to bring your real commands along?'}</p><a href={url(locale, 'docs/getting-started/')}>{zh ? '在 Linux 上开始使用 parsh' : 'Get started with parsh on Linux'} <span aria-hidden="true">→</span></a></div>
+  </main>
+</SiteLayout>
+<script>
+  import { mountTerminal } from '../../lib/terminal';
+  const element = document.querySelector<HTMLElement>('[data-playground]');
+  if (element) mountTerminal(element);
+</script>

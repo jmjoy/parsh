@@ -1,1 +1,11 @@
 /target
+
+# Website and local service artifacts
+/node_modules/
+/website/node_modules/
+/website/dist/
+/website/.astro/
+/website/public/wasm/
+/website/test-results/
+/website/playwright-report/
+/.agproc/

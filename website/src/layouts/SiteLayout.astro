@@ -1,0 +1,45 @@
+---
+import SiteHeader from '../components/SiteHeader.astro';
+import { base, url, words, type Locale } from '../lib/site';
+import '../styles/site.css';
+interface Props { locale: Locale; title: string; description: string; active?: 'home' | 'playground'; }
+const { locale, title, description, active = 'home' } = Astro.props;
+const t = words[locale];
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+<!doctype html>
+<html lang={locale === 'en' ? 'en' : 'zh-CN'} data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#f5f3ec" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={new URL(`${base}social.svg`, Astro.site)} />
+    <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang="en" href={new URL(Astro.url.pathname.replace('/zh-cn/', '/en/'), Astro.site)} />
+    <link rel="alternate" hreflang="zh-CN" href={new URL(Astro.url.pathname.replace('/en/', '/zh-cn/'), Astro.site)} />
+    <title>{title}</title>
+    <script is:inline>
+      try {
+        const preference = localStorage.getItem('starlight-theme');
+        document.documentElement.dataset.theme = preference === 'dark' || (preference !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      } catch { /* Keep the default theme. */ }
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{t.skip}</a>
+    <div class="site-shell">
+      <SiteHeader locale={locale} active={active} />
+      <slot />
+      <footer class="site-footer">
+        <div><a class="footer-brand" href={url(locale)}>( parsh )</a><p>{t.footer}</p></div>
+        <div class="footer-links"><a href={url(locale, 'docs/')}>{t.docs}</a><a href="https://github.com/jmjoy/parsh">{t.source}</a><a href="https://github.com/jmjoy/parsh/blob/master/LICENSE">{t.license}</a></div>
+      </footer>
+    </div>
+  </body>
+</html>

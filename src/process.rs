@@ -1,31 +1,16 @@
 use std::{
     collections::HashMap,
     ffi::OsString,
-    fs::File,
     io::{self, Read},
     os::unix::process::ExitStatusExt,
     path::Path,
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
     thread,
 };
 
 use crate::job::JobControl;
 
-#[derive(Clone, Default)]
-pub enum Output {
-    #[default]
-    Inherit,
-    File(Arc<File>),
-    Capture(Arc<Mutex<Vec<u8>>>),
-}
-
-#[derive(Clone, Default)]
-pub struct Io {
-    pub input: Option<Arc<File>>,
-    pub output: Output,
-    pub error: Option<Arc<File>>,
-}
+pub use crate::streams::{Io, Output};
 
 pub struct ProcessError {
     pub code: i32,

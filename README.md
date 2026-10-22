@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+parsh stands for **parenthesis shell**.
+
 A Linux shell whose command line and scripts use the same Lisp dialect. The
 prompt is `(`. Type `echo hello)` to run `(echo hello)`; Enter inserts a newline.
 
@@ -220,6 +222,34 @@ Tests include real subprocesses, large pipelines, file redirection, lexical
 functions, and Linux PTYs for paste, history, Unicode editing, foreground
 interrupts, terminal restoration, and separation of queued source from child
 stdin.
+
+## Website
+
+The [website](https://jmjoy.github.io/parsh/en/) includes a syntax playground and
+[documentation](https://jmjoy.github.io/parsh/en/docs/).
+[简体中文](https://jmjoy.github.io/parsh/zh-cn/) is also available.
+
+The playground runs the Rust interpreter as WebAssembly. It displays language
+results and does not provide external commands, files, or pipes.
+
+Website development requires Node.js 24+, pnpm 12.4.2, and wasm-pack 0.13.1.
+Run these commands from the repository root:
+
+```console
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack --version 0.13.1 --locked
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Open `/parsh/en/` or `/parsh/zh-cn/` on the printed local URL.
+`pnpm build` builds WASM and the static site.
+`pnpm check` checks types; `pnpm test` tests the
+production build after `pnpm --filter parsh-website exec playwright install chromium`.
+
+GitHub Actions checks pull requests and deploys successful builds from `master`
+to Pages. For the first deployment, set **Settings → Pages → Source** to
+**GitHub Actions**.
 
 ## License
 

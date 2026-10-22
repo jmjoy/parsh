@@ -2,19 +2,25 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     ffi::OsString,
-    fs::{self, File, OpenOptions},
-    path::{Path, PathBuf},
     rc::Rc,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
 
 use crate::{
-    job::JobControl,
-    process::{self, Io, Output},
     reader::{Expr, Kind},
+    streams::Io,
+};
+
+#[cfg(feature = "native")]
+use crate::{job::JobControl, process, streams::Output};
+#[cfg(feature = "native")]
+use std::{
+    fs::{self, File, OpenOptions},
+    path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -128,12 +134,15 @@ enum Mode {
 }
 
 pub struct Shell {
+    #[cfg(feature = "native")]
     pub cwd: PathBuf,
     pub environment: HashMap<OsString, OsString>,
     root: Env,
     functions: HashMap<String, Function>,
     pub interrupted: Arc<AtomicBool>,
+    #[cfg(feature = "native")]
     pub job: Option<JobControl>,
+    syntax_only: bool,
     depth: usize,
 }
 
@@ -165,26 +174,43 @@ fn builtin(name: &str) -> bool {
 }
 
 impl Shell {
-    pub fn new(args: Vec<String>) -> std::io::Result<Self> {
+    /// Create an isolated language session without filesystem or process access.
+    pub fn syntax() -> Self {
         let root = Rc::new(RefCell::new(Scope::default()));
-        root.borrow_mut().variables.insert(
-            "args".into(),
-            Value::List(args.into_iter().map(Value::Text).collect()),
-        );
-        let cwd = std::env::current_dir()?;
-        let mut environment: HashMap<OsString, OsString> = std::env::vars_os().collect();
-        environment.insert("PWD".into(), cwd.as_os_str().into());
-        Ok(Self {
-            cwd,
-            environment,
+        root.borrow_mut()
+            .variables
+            .insert("args".into(), Value::List(Vec::new()));
+        Self {
+            #[cfg(feature = "native")]
+            cwd: PathBuf::new(),
+            environment: HashMap::new(),
             root,
             functions: HashMap::new(),
             interrupted: Arc::new(AtomicBool::new(false)),
+            #[cfg(feature = "native")]
             job: None,
+            syntax_only: true,
             depth: 0,
-        })
+        }
     }
 
+    #[cfg(feature = "native")]
+    pub fn new(args: Vec<String>) -> std::io::Result<Self> {
+        let mut shell = Self::syntax();
+        shell.root.borrow_mut().variables.insert(
+            "args".into(),
+            Value::List(args.into_iter().map(Value::Text).collect()),
+        );
+        shell.cwd = std::env::current_dir()?;
+        shell.environment = std::env::vars_os().collect();
+        shell
+            .environment
+            .insert("PWD".into(), shell.cwd.as_os_str().into());
+        shell.syntax_only = false;
+        Ok(shell)
+    }
+
+    #[cfg(feature = "native")]
     pub fn interactive(&mut self) -> std::io::Result<()> {
         self.job = Some(JobControl::new(self.interrupted.clone())?);
         Ok(())
@@ -208,6 +234,7 @@ impl Shell {
         }
     }
 
+    #[cfg(feature = "native")]
     fn value(&mut self, expr: &Expr, env: &Env, io: &Io) -> Result<Value, Error> {
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let nested = Io {
@@ -227,6 +254,11 @@ impl Shell {
         } else {
             Ok(result)
         }
+    }
+
+    #[cfg(not(feature = "native"))]
+    fn value(&mut self, expr: &Expr, env: &Env, io: &Io) -> Result<Value, Error> {
+        self.eval(expr, env, Mode::Normal, io)
     }
 
     fn scalar(&mut self, expr: &Expr, env: &Env, io: &Io) -> Result<String, Error> {
@@ -310,6 +342,19 @@ impl Shell {
             }
         };
         let args = &items[1..];
+        if self.syntax_only
+            && matches!(
+                name.as_str(),
+                "glob" | "cd" | "|" | "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>"
+            )
+        {
+            return Err(Error::new(
+                expr,
+                format!(
+                    "{name} requires native parsh; the syntax playground has no filesystem or external commands"
+                ),
+            ));
+        }
         match name.as_str() {
             "do" => self.sequence(args, env, mode, io),
             "let" | "set" => {
@@ -429,6 +474,7 @@ impl Shell {
                 Self::arity(expr, args, 1, 1)?;
                 Ok(Value::Bool(!self.condition(&args[0], env, io)?))
             }
+            #[cfg(feature = "native")]
             "glob" => {
                 Self::arity(expr, args, 1, 1)?;
                 let pattern = self.scalar(&args[0], env, io)?;
@@ -455,6 +501,7 @@ impl Shell {
                 values.sort();
                 Ok(Value::List(values.into_iter().map(Value::Text).collect()))
             }
+            #[cfg(feature = "native")]
             "cd" => {
                 Self::arity(expr, args, 0, 1)?;
                 let destination = if args.is_empty() {
@@ -504,6 +551,7 @@ impl Shell {
                     exit: true,
                 })
             }
+            #[cfg(feature = "native")]
             "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>" => {
                 Self::arity(expr, args, 2, 2)?;
                 let destination = self.scalar(&args[0], env, io)?;
@@ -529,6 +577,7 @@ impl Shell {
                 }
                 self.eval(&args[1], env, mode, &redirected)
             }
+            #[cfg(feature = "native")]
             "|" => {
                 Self::arity(expr, args, 1, usize::MAX)?;
                 let mut stages = Vec::new();
@@ -612,6 +661,7 @@ impl Shell {
         Ok(argv)
     }
 
+    #[cfg(feature = "native")]
     fn commands(
         &mut self,
         expr: &Expr,
@@ -620,6 +670,9 @@ impl Shell {
         io: &Io,
     ) -> Result<Value, Error> {
         self.check(expr)?;
+        if self.syntax_only {
+            return Err(Self::unavailable_command(expr, &stages[0][0]));
+        }
         let code = process::run(stages, &self.cwd, &self.environment, io, self.job.as_ref())
             .map_err(|e| Error {
                 code: e.code,
@@ -643,6 +696,28 @@ impl Shell {
             });
         }
         Ok(Value::Status(code))
+    }
+
+    #[cfg(not(feature = "native"))]
+    fn commands(
+        &mut self,
+        expr: &Expr,
+        stages: &[Vec<String>],
+        _mode: Mode,
+        _io: &Io,
+    ) -> Result<Value, Error> {
+        Err(Self::unavailable_command(expr, &stages[0][0]))
+    }
+
+    fn unavailable_command(expr: &Expr, name: &str) -> Error {
+        Error {
+            code: 127,
+            offset: expr.offset,
+            exit: false,
+            message: format!(
+                "external command '{name}' requires native parsh; try (str \"hello\") to return text"
+            ),
+        }
     }
 
     fn binding(expr: &Expr) -> Result<&str, Error> {
@@ -686,6 +761,7 @@ impl Shell {
         }
     }
 
+    #[cfg(feature = "native")]
     fn path(&self, path: &str) -> PathBuf {
         self.cwd.join(path)
     }

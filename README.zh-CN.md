@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+parsh 意为 **parenthesis shell**。
+
 一个命令行与脚本共用同一种 Lisp 方言的 Linux Shell。提示符是 `(`，
 输入 `echo hello)` 即可执行 `(echo hello)`；Enter 用于换行。
 
@@ -193,6 +195,34 @@ cargo fmt --check
 测试覆盖真实子进程、大输出管道、文件重定向和词法作用域函数，
 并通过 Linux PTY 验证粘贴、历史记录、Unicode 编辑、前台任务中断、
 终端恢复，以及粘贴源码队列与子进程标准输入的隔离。
+
+## 网站
+
+[中文网站](https://jmjoy.github.io/parsh/zh-cn/)包含语法体验终端和
+[文档](https://jmjoy.github.io/parsh/zh-cn/docs/)，另提供
+[English](https://jmjoy.github.io/parsh/en/)。
+
+体验终端运行由 Rust 编译的 WebAssembly 解释器，显示语言返回值，
+不提供外部命令、文件和管道。
+
+网站开发需要 Node.js 24+、pnpm 12.4.2 和 wasm-pack 0.13.1。
+以下命令均在项目根目录执行：
+
+```console
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack --version 0.13.1 --locked
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+在打印的本地地址打开 `/parsh/en/` 或 `/parsh/zh-cn/`。
+`pnpm build` 构建 WASM 和静态网站；
+`pnpm check` 检查类型。先运行
+`pnpm --filter parsh-website exec playwright install chromium` 安装浏览器，
+再用 `pnpm test` 测试生产产物。
+
+GitHub Actions 检查 PR，并将 `master` 上通过检查的构建部署到 Pages。
+首次部署需在 **Settings → Pages → Source** 中选择 **GitHub Actions**。
 
 ## 许可证
 

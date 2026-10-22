@@ -1,0 +1,22 @@
+[package]
+name = "parsh-wasm"
+version = "0.1.0"
+edition = "2024"
+publish = false
+repository = "https://github.com/jmjoy/parsh"
+license = "MulanPSL-2.0"
+description = "Browser bridge for the parsh syntax playground"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+parsh = { path = "../..", default-features = false }
+wasm-bindgen = "=0.2.125"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+
+js-sys = "=0.3.102"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

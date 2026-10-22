@@ -1,0 +1,7 @@
+---
+import Search from '@astrojs/starlight/components/Search.astro';
+import SiteHeader from './SiteHeader.astro';
+import { localeOf } from '../lib/site';
+const locale = localeOf(Astro.url.pathname);
+---
+<div class="docs-brand-header"><SiteHeader locale={locale} active="docs" embedded><div class="docs-search" slot="search"><Search /></div></SiteHeader></div>

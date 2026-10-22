@@ -1,0 +1,16 @@
+{
+  "name": "parsh",
+  "private": true,
+  "packageManager": "pnpm@12.4.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "wasm:build": "pnpm --filter parsh-website wasm:build",
+    "dev": "pnpm --filter parsh-website dev",
+    "build": "pnpm --filter parsh-website build",
+    "check": "pnpm --filter parsh-website check",
+    "preview": "pnpm --filter parsh-website preview",
+    "test": "pnpm --filter parsh-website test"
+  }
+}

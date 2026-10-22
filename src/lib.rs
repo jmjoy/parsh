@@ -1,8 +1,13 @@
+#[cfg(feature = "native")]
 pub mod editor;
+#[cfg(feature = "native")]
 pub mod job;
+#[cfg(feature = "native")]
 pub mod process;
 pub mod reader;
+pub mod repl;
 pub mod shell;
+mod streams;
 
 use reader::{Diagnostic, Kind, Read, Reader};
 use shell::Shell;

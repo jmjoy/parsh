@@ -1,0 +1,34 @@
+---
+import { base, url, words, type Locale } from '../lib/site';
+interface Props { locale: Locale; active?: 'home' | 'playground' | 'docs'; embedded?: boolean; }
+const { locale, active = 'home', embedded = false } = Astro.props;
+const Tag = embedded ? 'div' : 'header';
+const t = words[locale];
+const alternate = locale === 'en' ? 'zh-cn' : 'en';
+const otherPath = Astro.url.pathname.startsWith(`${base}${locale}/`)
+  ? Astro.url.pathname.replace(`${base}${locale}/`, `${base}${alternate}/`)
+  : url(alternate);
+---
+<Tag class="site-header">
+  <a class="wordmark" href={url(locale)} aria-label="parsh home"><span class="brand-symbol" aria-hidden="true">( )</span>parsh<span class="version-tag">0.1.0</span></a>
+  <slot name="search" />
+  <nav class="site-nav" aria-label={locale === 'en' ? 'Main navigation' : '主导航'}>
+    <a href={url(locale)} aria-current={active === 'home' ? 'page' : undefined}>{t.home}</a>
+    <a href={url(locale, 'playground/')} aria-current={active === 'playground' ? 'page' : undefined}>{t.playground}</a>
+    <a href={url(locale, 'docs/')} aria-current={active === 'docs' ? 'page' : undefined}>{t.docs}</a>
+  </nav>
+  <div class="header-tools">
+    <a class="source-link" href="https://github.com/jmjoy/parsh" aria-label={t.source}><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .8a11.4 11.4 0 0 0-3.6 22.2c.6.1.8-.2.8-.5v-2c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.3 1.8 1.3 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.4-1.3-5.4-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0C16.8 5.1 17.8 5.4 17.8 5.4c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.8 5.5-5.4 5.8.4.4.8 1.1.8 2.2v2.9c0 .3.2.6.8.5A11.4 11.4 0 0 0 12 .8Z"/></svg></a>
+    <a class="language-link" href={otherPath} lang={alternate === 'en' ? 'en' : 'zh-CN'} aria-label={alternate === 'en' ? 'Read in English' : '切换到简体中文'}>{alternate === 'en' ? 'EN' : '简'}</a>
+    <button class="theme-toggle" data-theme-toggle aria-label={t.theme} title={t.theme}><svg class="theme-sun" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5"/></svg></button>
+  </div>
+</Tag>
+<script>
+  document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = theme;
+      try { localStorage.setItem('starlight-theme', theme); } catch { /* Theme still works without storage. */ }
+    });
+  });
+</script>
