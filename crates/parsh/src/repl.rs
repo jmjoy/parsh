@@ -24,10 +24,15 @@ enum Outcome {
 
 impl Input {
     fn source(&self) -> String {
+        self.source_until(self.body.len())
+    }
+
+    fn source_until(&self, end: usize) -> String {
+        let body = &self.body[..end];
         if self.explicit {
-            self.body.clone()
+            body.to_owned()
         } else {
-            format!("({}", self.body)
+            format!("({body}")
         }
     }
 
@@ -45,16 +50,16 @@ impl Input {
         if ch == '(' && self.body.trim().is_empty() {
             self.explicit = true;
         }
-        let empty_close = ch == ')' && at_end && self.body.trim().is_empty();
+        let empty_close = ch == ')' && self.body[..self.cursor].trim().is_empty();
         self.body.insert(self.cursor, ch);
         self.cursor += ch.len_utf8();
-        if ch != ')' || !at_end {
+        if ch != ')' || (pasted && !at_end) {
             return None;
         }
         if empty_close {
             return Some(Outcome::ExtraClose);
         }
-        let source = self.source();
+        let source = self.source_until(self.cursor);
         let mut reader = Reader::new(&source);
         match reader.read() {
             Read::Form(expr) if matches!(expr.kind, Kind::List(_) | Kind::Comment) => {
@@ -581,7 +586,16 @@ impl Session {
             self.input.explicit = false;
         }
         if let Some(outcome) = outcome {
-            return self.accept(shell, console, outcome, None, &mut false);
+            let remainder = self.input.body.split_off(self.input.cursor);
+            let code = self.accept(shell, console, outcome, None, &mut false)?;
+            if code.is_none() {
+                self.input = Input {
+                    explicit: remainder.trim_start().starts_with('('),
+                    body: remainder,
+                    cursor: 0,
+                };
+            }
+            return Ok(code);
         }
         Ok(None)
     }
@@ -764,6 +778,12 @@ impl Repl {
 #[cfg(test)]
 mod syntax_tests {
     use super::*;
+
+    fn type_text(repl: &mut Repl, text: &str) -> Vec<Event> {
+        text.chars()
+            .flat_map(|ch| repl.input(Key::Character(ch)))
+            .collect()
+    }
 
     fn values(events: &[Event]) -> Vec<&str> {
         events
@@ -957,6 +977,152 @@ mod syntax_tests {
             matches!(events.last(), Some(Event::Render { lines, .. }) if lines == &["(str hello".to_string(), ")".to_string()])
         );
         assert_eq!(values(&repl.input(Key::Character(')'))), ["\"hello\""]);
+    }
+
+    #[test]
+    fn middle_closer_preserves_drafts_and_commits_only_the_prefix() {
+        for (prefix, tail, value) in [
+            ("str a", "bc", "\"a\""),
+            ("(str a", "bc", "\"a\""),
+            ("str 你", "好e\u{301}👩‍💻", "\"你\""),
+            ("str a", "\n  bc\n", "\"a\""),
+            ("str a", "  \n", "\"a\""),
+            ("str a", " \n(str bc)", "\"a\""),
+        ] {
+            let mut repl = Repl::new();
+            assert!(values(&type_text(&mut repl, &format!("{prefix}{tail}"))).is_empty());
+            for _ in tail.graphemes(true) {
+                repl.input(Key::Left);
+            }
+            let events = repl.input(Key::Character(')'));
+            assert_eq!(values(&events), [value], "{events:?}");
+            assert!(diagnostics(&events).is_empty(), "{events:?}");
+            let source = if prefix.starts_with('(') {
+                format!("{prefix})")
+            } else {
+                format!("({prefix})")
+            };
+            assert!(
+                matches!(events.first(), Some(Event::Render { lines, .. }) if lines == std::slice::from_ref(&source)),
+                "{events:?}"
+            );
+            assert_eq!(events[1], Event::Commit);
+            assert_eq!(repl.session.history.entries, [source]);
+            assert_eq!(repl.session.input.body, tail);
+            assert_eq!(repl.session.input.cursor, 0);
+            let explicit = tail.trim_start().starts_with('(');
+            assert_eq!(repl.session.input.explicit, explicit);
+            assert!(
+                matches!(events.last(), Some(Event::Render { row: 0, column, .. }) if *column == usize::from(!explicit)),
+                "{events:?}"
+            );
+            if reader::complete(tail) {
+                assert!(values(&repl.resize(80, 24)).is_empty());
+                repl.input(Key::Down);
+                repl.input(Key::End);
+                assert_eq!(values(&repl.input(Key::Character(')'))), ["\"bc\""]);
+            }
+        }
+    }
+
+    #[test]
+    fn preserved_draft_can_be_prefixed_with_the_next_command() {
+        let mut repl = Repl::new();
+        type_text(&mut repl, "str abc");
+        repl.input(Key::Left);
+        repl.input(Key::Left);
+        assert_eq!(values(&repl.input(Key::Character(')'))), ["\"a\""]);
+        type_text(&mut repl, "str ");
+        repl.input(Key::End);
+        assert_eq!(values(&repl.input(Key::Character(')'))), ["\"bc\""]);
+        repl.input(Key::Previous);
+        assert_eq!(repl.session.input.source(), "(str bc)");
+        repl.input(Key::Previous);
+        assert_eq!(repl.session.input.source(), "(str a)");
+    }
+
+    #[test]
+    fn middle_closer_in_nested_forms_strings_and_comments_does_not_submit() {
+        for (prefix, tail) in [
+            ("str (str a", "bc"),
+            ("str \"a", "bc\""),
+            ("str (; a", "bc"),
+            ("(; a (str b", "cd"),
+        ] {
+            let mut repl = Repl::new();
+            type_text(&mut repl, &format!("{prefix}{tail}"));
+            for _ in tail.graphemes(true) {
+                repl.input(Key::Left);
+            }
+            let events = repl.input(Key::Character(')'));
+            assert!(
+                events
+                    .iter()
+                    .all(|event| matches!(event, Event::Render { .. })),
+                "{events:?}"
+            );
+            assert_eq!(repl.session.input.body, format!("{prefix}){tail}"));
+            assert_eq!(repl.session.input.cursor, prefix.len() + 1);
+        }
+    }
+
+    #[test]
+    fn middle_closer_submits_a_complete_top_level_comment() {
+        let mut repl = Repl::new();
+        type_text(&mut repl, "(; ignoredtail");
+        for _ in 0..4 {
+            repl.input(Key::Left);
+        }
+        let events = repl.input(Key::Character(')'));
+        assert!(events.contains(&Event::Commit));
+        assert!(values(&events).is_empty());
+        assert!(diagnostics(&events).is_empty());
+        assert_eq!(repl.session.history.entries, ["(; ignored)"]);
+        assert_eq!(repl.session.input.body, "tail");
+        assert_eq!(repl.session.input.cursor, 0);
+    }
+
+    #[test]
+    fn middle_closer_keeps_the_draft_after_errors() {
+        for (prefix, message) in [
+            ("str $missing", "undefined variable $missing"),
+            (r#"str "\q""#, "unknown string escape"),
+            ("", "unexpected ')'"),
+            ("  \n", "unexpected ')'"),
+        ] {
+            let mut repl = Repl::new();
+            type_text(&mut repl, &format!("{prefix}saved"));
+            for _ in 0..5 {
+                repl.input(Key::Left);
+            }
+            let events = repl.input(Key::Character(')'));
+            assert_eq!(diagnostics(&events).len(), 1, "{events:?}");
+            assert!(diagnostics(&events)[0].contains(message), "{events:?}");
+            assert!(values(&events).is_empty());
+            assert_eq!(repl.session.input.body, "saved");
+            assert_eq!(repl.session.input.cursor, 0);
+            type_text(&mut repl, "str ");
+            repl.input(Key::End);
+            assert_eq!(values(&repl.input(Key::Character(')'))), ["\"saved\""]);
+        }
+    }
+
+    #[test]
+    fn pasted_middle_closer_remains_an_edit() {
+        let mut repl = Repl::new();
+        type_text(&mut repl, "str abc");
+        repl.input(Key::Left);
+        repl.input(Key::Left);
+        let events = repl.paste(")");
+        assert!(
+            events
+                .iter()
+                .all(|event| matches!(event, Event::Render { .. })),
+            "{events:?}"
+        );
+        assert_eq!(repl.session.input.body, "str a)bc");
+        assert_eq!(repl.session.input.cursor, "str a)".len());
+        assert!(repl.session.history.entries.is_empty());
     }
 
     #[test]

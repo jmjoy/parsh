@@ -3,12 +3,17 @@ title: "Interactive editing"
 description: "The parenthesis prompt, multiline editing, Tab completion, paste, and history."
 ---
 
-- `(` supplies the outer opening parenthesis. Enter inserts a newline; a closing
-  `)` at the end of the edit buffer submits a complete expression. Inner
-  parentheses and parentheses inside strings or comments do not submit it.
+- `(` supplies the outer opening parenthesis. Enter inserts a newline. Typing
+  `)` submits the source to the left of the cursor, including the new `)`, when
+  it forms a complete expression. Inner parentheses and parentheses inside
+  strings or comments do not submit it.
   The implicit `(` is gray while input is blank and returns to the terminal's
   default text color when you start an expression. An explicitly entered `(`
   uses the default text color.
+- Submitting from the middle of the edit buffer preserves the text to the right
+  as the next draft, with the cursor at its start. The draft is not executed
+  automatically and is preserved even if evaluation of the submitted source
+  fails. This applies to typed `)` characters; paste follows the batch rules below.
 - Starting a fresh input with `(` switches to explicit source mode: the
   prompt's implicit opening parenthesis disappears. Pasting a complete script
   therefore shows and reads its own parentheses exactly once.

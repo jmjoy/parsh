@@ -241,6 +241,21 @@ fn enter_does_not_execute_and_outer_closer_does() {
 }
 
 #[test]
+fn middle_closer_executes_the_prefix_and_preserves_the_next_input() {
+    let mut terminal = Terminal::new();
+    let offset = terminal.send(b"echo FIRSTSECOND\x1b[D\x1b[D\x1b[D\x1b[D\x1b[D\x1b[D)");
+    let end = terminal.expect(b"\r\nFIRST\r\n", offset);
+    terminal.ready_after(end);
+    terminal.expect(b"(SECOND", end);
+    assert!(!visible_text(&terminal.bytes[offset..]).contains("(echo FIRST)SECOND"));
+
+    let offset = terminal.send(b"echo \x05)");
+    let end = terminal.expect(b"\r\nSECOND\r\n", offset);
+    terminal.ready_after(end);
+    terminal.exit(0);
+}
+
+#[test]
 fn full_script_paste_recovers_every_extra_closer() {
     let mut terminal = Terminal::new();
     let offset = terminal.paste("(echo PASTE_A))) (echo PASTE_B)");
