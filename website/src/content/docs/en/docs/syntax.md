@@ -10,10 +10,11 @@ Every call is a parenthesized expression. Inner calls are evaluated as arguments
 (list one "two words" (eq a a))
 ```
 
-Bare words are text: `123`, `true`, `false`, and `nil` have no special literal
-meaning. Double-quoted strings support `\"`, `\\`, `\n`, `\r`, and `\t`.
-Strings do not interpolate variables. All variable references and bindings use
-`$`, including parameters, loop bindings, and environment settings.
+In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no
+special literal meaning. Double-quoted strings support `\"`, `\\`, `\n`, `\r`, and `\t`.
+Strings do not interpolate variables. Variable references use `$name`. Binding
+and assignment targets use bare names, including function parameters, loop
+bindings, and environment settings.
 
 The reader creates text, variable references, and lists of expressions. Evaluation can return text, booleans, lists, nil, or native command statuses. These are different value types even though words such as `true` and `nil` themselves are just text.
 

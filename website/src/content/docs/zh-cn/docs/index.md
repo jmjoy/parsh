@@ -8,8 +8,8 @@ description: "一个围绕 S 表达式构建的 Linux Shell。"
 提示符是一个左括号。输入 `str hello)` 即可求值 `(str hello)`。Enter 插入换行，闭合最外层括号才会提交表达式。
 
 ```parsh
-(let $name world)
-(defn greet ($who)
+(let name world)
+(defn greet (who)
   (str "hello, " $who))
 (greet $name)
 ```

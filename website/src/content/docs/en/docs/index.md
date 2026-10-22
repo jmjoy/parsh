@@ -8,8 +8,8 @@ description: "A Linux shell built around S-expressions."
 The prompt is an opening parenthesis. Type `str hello)` to evaluate `(str hello)`. Enter inserts a newline; the closing parenthesis submits the expression.
 
 ```parsh
-(let $name world)
-(defn greet ($who)
+(let name world)
+(defn greet (who)
   (str "hello, " $who))
 (greet $name)
 ```

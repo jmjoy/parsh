@@ -699,7 +699,7 @@ mod syntax_tests {
         let mut repl = Repl::new();
         assert_eq!(values(&repl.paste("(list $args)")), ["(())"]);
         assert!(diagnostics(&repl.paste("(str $HOME)"))[0].contains("undefined variable $HOME"));
-        assert!(values(&repl.paste("(let $name world) (export $GREETING hello)")).is_empty());
+        assert!(values(&repl.paste("(let name world) (export GREETING hello)")).is_empty());
         assert_eq!(
             values(&repl.paste(r#"(str $GREETING ", " $name)"#)),
             ["\"hello, world\""]
@@ -711,16 +711,91 @@ mod syntax_tests {
     }
 
     #[test]
+    fn bare_binding_names_and_variable_references_have_distinct_roles() {
+        let events = Repl::new().paste(
+            r#"
+            (let name world)
+            (let copy $name)
+            (set name parsh)
+            (export GREETING hello)
+            (defn greet (name suffix) (str $GREETING ", " $name $suffix))
+            (list name $name $copy (greet $name "!"))
+            (let _名字2 保留)
+            (str $_名字2)
+            (for name (list first last) (str $name))
+            (str $name)
+        "#,
+        );
+        assert!(diagnostics(&events).is_empty(), "{events:?}");
+        assert_eq!(
+            values(&events),
+            [
+                r#"("name" "parsh" "world" "hello, parsh!")"#,
+                r#""保留""#,
+                r#""last""#,
+                r#""parsh""#,
+            ]
+        );
+    }
+
+    #[test]
+    fn binding_targets_must_be_valid_bare_names() {
+        for (target, message) in [
+            ("$name", "binding must use a bare variable name without '$'"),
+            (
+                r#""name""#,
+                "binding must use a bare variable name without '$'",
+            ),
+            (
+                "(str name)",
+                "binding must use a bare variable name without '$'",
+            ),
+            ("1name", "invalid variable name"),
+            ("bad-name", "invalid variable name"),
+        ] {
+            for source in [
+                format!("(let {target} value)"),
+                format!("(set {target} value)"),
+                format!("(for {target} (list a) (str bad))"),
+                format!("(defn f ({target}) (str bad))"),
+                format!("(export {target} value)"),
+            ] {
+                let events = Repl::new().paste(&source);
+                let errors = diagnostics(&events);
+                assert_eq!(errors.len(), 1, "{source}: {events:?}");
+                assert!(errors[0].contains(message), "{source}: {errors:?}");
+                assert!(values(&events).is_empty(), "{source}: {events:?}");
+            }
+        }
+        for (source, message) in [
+            (
+                "(set missing value)",
+                "cannot set undefined variable missing",
+            ),
+            ("(defn f (name name) (str bad))", "duplicate parameter name"),
+            (
+                "(defn f name (str bad))",
+                "function parameters must be a list of bare variable names",
+            ),
+        ] {
+            let events = Repl::new().paste(source);
+            let errors = diagnostics(&events);
+            assert_eq!(errors.len(), 1, "{source}: {events:?}");
+            assert!(errors[0].contains(message), "{source}: {errors:?}");
+        }
+    }
+
+    #[test]
     fn functions_capture_lexical_scope_and_return_typed_values() {
         let events = Repl::new().paste(
             r#"
-            (let $name outer)
+            (let name outer)
             (defn show () (str $name))
-            (defn call ($name) (show))
+            (defn call (name) (show))
             (call inner)
-            (set $name changed)
+            (set name changed)
             (call inner)
-            (defn factory ($value) (defn captured () (list $value (eq a a))))
+            (defn factory (value) (defn captured () (list $value (eq a a))))
             (factory retained)
             (captured)
         "#,
@@ -738,9 +813,9 @@ mod syntax_tests {
             r#"
             (; (echo $undefined) (; nested))
             (if (not (eq a b)) (str yes) (echo unavailable))
-            (for $item (list first second last) (str $item))
-            (for $item (list) (str $item))
-            (do (let $word "你好") (str $word "，parsh"))
+            (for item (list first second last) (str $item))
+            (for item (list) (str $item))
+            (do (let word "你好") (str $word "，parsh"))
         "#,
         );
         assert!(diagnostics(&events).is_empty());

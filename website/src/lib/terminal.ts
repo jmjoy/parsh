@@ -12,11 +12,11 @@ type Phase = "loading" | "ready" | "running" | "closed" | "error";
 const examples: Record<string, string> = {
   hello: '(str "hello, " "parsh")\n(list text "a value with spaces" (eq a a))',
   variables:
-    '(let $name world)\n(str "hello, " $name)\n(set $name parsh)\n(str "hello, " $name)',
+    '(let name world)\n(str "hello, " $name)\n(set name parsh)\n(str "hello, " $name)',
   functions:
-    '(defn greet ($who)\n  (str "hello, " $who))\n(greet parsh)\n(greet "a friend")',
+    '(defn greet (who)\n  (str "hello, " $who))\n(greet parsh)\n(greet "a friend")',
   control:
-    '(let $items (list first second last))\n(if (not (eq first last))\n    (str "different words")\n    (str "same word"))\n(for $item $items\n  (str "last result: " $item))',
+    '(let items (list first second last))\n(if (not (eq first last))\n    (str "different words")\n    (str "same word"))\n(for item $items\n  (str "last result: " $item))',
 };
 const keys: Record<string, string> = {
   "\r": "enter",

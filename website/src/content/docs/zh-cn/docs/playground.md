@@ -10,8 +10,8 @@ description: "浏览器会话支持什么，以及如何开始。"
 提示符已提供左括号。输入 `str "hello, " "parsh")` 即可求值。也可以直接粘贴完整代码：
 
 ```parsh
-(let $name world)
-(defn greet ($who)
+(let name world)
+(defn greet (who)
   (str "hello, " $who))
 (greet $name)
 (list a "two words" (eq x x))

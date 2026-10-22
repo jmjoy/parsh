@@ -38,7 +38,7 @@ Use `parsh -- -script.parsh` for a script filename beginning with `-`.
 Type `str "hello, " "parsh")` at the opening-parenthesis prompt. parsh displays `"hello, parsh"`. Enter is for multi-line input; a closing outer parenthesis evaluates the expression.
 
 ```parsh
-(let $name world)
+(let name world)
 (str "hello, " $name)
 (echo hello $name)
 ```

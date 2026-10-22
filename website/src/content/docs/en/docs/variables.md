@@ -3,17 +3,20 @@ title: "Variables & scope"
 description: "Bindings, environment values, lists, and explicit expansion."
 ---
 
-Bare words are text: `123`, `true`, `false`, and `nil` have no special literal
-meaning. Double-quoted strings support `\"`, `\\`, `\n`, `\r`, and `\t`.
-Strings do not interpolate variables. All variable references and bindings use
-`$`, including parameters, loop bindings, and environment settings.
+In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no
+special literal meaning. Double-quoted strings support `\"`, `\\`, `\n`, `\r`, and `\t`.
+Strings do not interpolate variables. Variable references use `$name`. Binding
+and assignment targets use bare names, including function parameters, loop
+bindings, and environment settings. Names start with a letter or `_`, followed
+by letters, digits, or `_`. Binding targets must be bare names, not quoted strings
+or expressions.
 
 ```parsh
-(let $name "a friend")
+(let name "a friend")
 (echo hello $name)
-(set $name world)
+(set name world)
 (echo (str "hello, " $name))
-(export $EDITOR vim)
+(export EDITOR vim)
 ```
 
 `let` binds in the current lexical scope. `set` updates the nearest existing
@@ -23,9 +26,9 @@ subsequent children and updates an existing local binding of the same name.
 Environment and working directory changes belong to this parsh session.
 
 ```parsh
-(let $files (list "a file.rs" other.rs))
+(let files (list "a file.rs" other.rs))
 (printf "<%s>\n" $files)
-(for $file (glob *.rs)
+(for file (glob *.rs)
   (echo $file))
 ```
 

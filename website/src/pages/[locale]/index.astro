@@ -5,12 +5,12 @@ export const getStaticPaths = () => locales.map((locale) => ({ params: { locale 
 const locale = Astro.params.locale as Locale;
 const zh = locale === 'zh-cn';
 const features = zh ? [
-  { number: '01', title: '命令与脚本，同一种语言。', text: '在提示符中试好的表达式，直接放进脚本。变量、函数与控制流，始终使用同一套规则。', code: '(defn greet ($name)\n  (str "hello, " $name))' },
-  { number: '02', title: '参数，保持原来的样子。', text: '文本就是一个参数，列表显式展开。没有隐式分词、通配符展开，也不用猜测空格会发生什么。', code: '(let $files (list "a file.rs" "b.rs"))\n(list $files)' },
+  { number: '01', title: '命令与脚本，同一种语言。', text: '在提示符中试好的表达式，直接放进脚本。变量、函数与控制流，始终使用同一套规则。', code: '(defn greet (name)\n  (str "hello, " $name))' },
+  { number: '02', title: '参数，保持原来的样子。', text: '文本就是一个参数，列表显式展开。没有隐式分词、通配符展开，也不用猜测空格会发生什么。', code: '(let files (list "a file.rs" "b.rs"))\n(list $files)' },
   { number: '03', title: '用结构，组合真正的命令。', text: 'Linux 上的程序直接启动。通过管道与重定向组合，保留熟悉的工具，换一种表达方式。', code: '(|> files.txt\n  (| (find . -name "*.rs") (sort)))' },
 ] : [
-  { number: '01', title: 'One language. Both sides of the prompt.', text: 'Take an expression from your prompt straight into a script. The same variables, functions, and control flow, wherever you write.', code: '(defn greet ($name)\n  (str "hello, " $name))' },
-  { number: '02', title: 'Arguments stay arguments.', text: 'Text stays one argument. Lists expand explicitly. No implicit word splitting or globbing, and no guessing what a space will do.', code: '(let $files (list "a file.rs" "b.rs"))\n(list $files)' },
+  { number: '01', title: 'One language. Both sides of the prompt.', text: 'Take an expression from your prompt straight into a script. The same variables, functions, and control flow, wherever you write.', code: '(defn greet (name)\n  (str "hello, " $name))' },
+  { number: '02', title: 'Arguments stay arguments.', text: 'Text stays one argument. Lists expand explicitly. No implicit word splitting or globbing, and no guessing what a space will do.', code: '(let files (list "a file.rs" "b.rs"))\n(list $files)' },
   { number: '03', title: 'Real commands. Structured composition.', text: 'On Linux, programs launch directly. Compose them with pipes and redirections. Keep your tools; give them a different syntax.', code: '(|> files.txt\n  (| (find . -name "*.rs") (sort)))' },
 ];
 ---
@@ -29,11 +29,11 @@ const features = zh ? [
         <div class="demo-terminal">
           <div class="demo-titlebar"><div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div><span>parsh / a first conversation</span><span class="terminal-tag">SYNTAX PREVIEW</span></div>
           <div class="demo-code" role="group" aria-label={zh ? 'parsh 语法示例' : 'parsh syntax example'}>
-            <div><span class="code-paren">(</span><span class="code-keyword">let</span> <span class="code-variable">$name</span> <span class="code-string">world</span>)</div>
+            <div><span class="code-paren">(</span><span class="code-keyword">let</span> <span class="code-variable">name</span> <span class="code-string">world</span>)</div>
             <div><span class="code-paren">(</span><span class="code-keyword">str</span> <span class="code-string">"hello, "</span> <span class="code-variable">$name</span>)</div>
             <div class="code-result">"hello, world"</div>
             <div class="code-gap"></div>
-            <div><span class="code-paren">(</span><span class="code-keyword">defn</span> greet (<span class="code-variable">$who</span>)</div>
+            <div><span class="code-paren">(</span><span class="code-keyword">defn</span> greet (<span class="code-variable">who</span>)</div>
             <div>&nbsp; (<span class="code-keyword">str</span> <span class="code-string">"hello, "</span> <span class="code-variable">$who</span>))</div>
             <div><span class="code-paren">(</span>greet <span class="code-string">parsh</span>)</div>
             <div class="code-result">"hello, parsh"</div>

@@ -30,17 +30,20 @@ Use `parsh -- -script.parsh` for a script filename beginning with `-`.
 
 ## Variables and values
 
-Bare words are text: `123`, `true`, `false`, and `nil` have no special literal
-meaning. Double-quoted strings support `\"`, `\\`, `\n`, `\r`, and `\t`.
-Strings do not interpolate variables. All variable references and bindings use
-`$`, including parameters, loop bindings, and environment settings.
+In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no
+special literal meaning. Double-quoted strings support `\"`, `\\`, `\n`, `\r`, and `\t`.
+Strings do not interpolate variables. Variable references use `$name`. Binding
+and assignment targets use bare names, including function parameters, loop
+bindings, and environment settings. Names start with a letter or `_`, followed
+by letters, digits, or `_`. Binding targets must be bare names, not quoted strings
+or expressions.
 
 ```lisp
-(let $name "a friend")
+(let name "a friend")
 (echo hello $name)
-(set $name world)
+(set name world)
 (echo (str "hello, " $name))
-(export $EDITOR vim)
+(export EDITOR vim)
 ```
 
 `let` binds in the current lexical scope. `set` updates the nearest existing
@@ -50,9 +53,9 @@ subsequent children and updates an existing local binding of the same name.
 Environment and working directory changes belong to this parsh session.
 
 ```lisp
-(let $files (list "a file.rs" other.rs))
+(let files (list "a file.rs" other.rs))
 (printf "<%s>\n" $files)
-(for $file (glob *.rs)
+(for file (glob *.rs)
   (echo $file))
 ```
 
@@ -128,7 +131,7 @@ redirection takes precedence over capturing that expression's output.
 ## Control flow and functions
 
 ```lisp
-(defn greet ($name)
+(defn greet (name)
   (echo hello $name))
 
 (if (test -d src)
@@ -142,7 +145,7 @@ redirection takes precedence over capturing that expression's output.
     (echo configuration missing))
 
 (do
-  (let $message "multiple expressions")
+  (let message "multiple expressions")
   (echo $message))
 ```
 
@@ -151,10 +154,11 @@ redirection takes precedence over capturing that expression's output.
 implicitly a boolean. `do` runs expressions in sequence in the current scope.
 `for` evaluates a list and creates a fresh lexical binding for each iteration.
 
-Function names are commands, so they have no `$`. Function parameters and local
-variables do. Functions capture their defining lexical scope and return the
-last expression's value. Argument expressions are evaluated before parameters
-are bound. Functions can return lists and booleans as well as command output.
+Function names and parameter declarations use bare names. Read parameter and
+local variable values with `$name`. Functions capture their defining lexical
+scope and return the last expression's value. Argument expressions are evaluated
+before parameters are bound. Functions can return lists and booleans as well as
+command output.
 When called as a value, stdout is captured throughout the function body: if the
 last expression produces a command status, captured stdout is returned as text;
 otherwise the last typed value is returned. Earlier captured output is not

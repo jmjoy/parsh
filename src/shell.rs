@@ -372,7 +372,7 @@ impl Shell {
                     } else {
                         return Err(Error::new(
                             &args[0],
-                            format!("cannot set undefined variable ${variable}"),
+                            format!("cannot set undefined variable {variable}"),
                         ));
                     }
                 }
@@ -427,7 +427,7 @@ impl Shell {
                 let Kind::List(parameters) = &args[1].kind else {
                     return Err(Error::new(
                         &args[1],
-                        "function parameters must be a list of $variables",
+                        "function parameters must be a list of bare variable names",
                     ));
                 };
                 let mut names = Vec::new();
@@ -435,10 +435,7 @@ impl Shell {
                 for parameter in parameters {
                     let name = Self::binding(parameter)?;
                     if !seen.insert(name) {
-                        return Err(Error::new(
-                            parameter,
-                            format!("duplicate parameter ${name}"),
-                        ));
+                        return Err(Error::new(parameter, format!("duplicate parameter {name}")));
                     }
                     names.push(name.into());
                 }
@@ -721,11 +718,14 @@ impl Shell {
     }
 
     fn binding(expr: &Expr) -> Result<&str, Error> {
-        if let Kind::Variable(name) = &expr.kind {
+        if let Kind::Word(name) = &expr.kind {
             Self::valid_name(expr, name)?;
             Ok(name)
         } else {
-            Err(Error::new(expr, "binding must use a $variable"))
+            Err(Error::new(
+                expr,
+                "binding must use a bare variable name without '$'",
+            ))
         }
     }
 
@@ -736,7 +736,7 @@ impl Shell {
         {
             Err(Error::new(
                 expr,
-                "invalid variable name; use a standalone $name and str for concatenation",
+                "invalid variable name; start with a letter or '_', then use letters, digits, or '_'",
             ))
         } else {
             Ok(())

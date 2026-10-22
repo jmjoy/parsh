@@ -3,16 +3,17 @@ title: "变量与作用域"
 description: "变量绑定、环境变量、列表与显式展开。"
 ---
 
-裸词表示文本：`123`、`true`、`false` 和 `nil` 都没有特殊的字面量含义。
+在值的位置，裸词表示文本：`123`、`true`、`false` 和 `nil` 都没有特殊的字面量含义。
 双引号字符串支持 `\"`、`\\`、`\n`、`\r` 和 `\t` 转义，不支持变量插值。
-所有变量引用与绑定都使用 `$` 前缀，包括函数参数、循环绑定和环境变量设置。
+读取变量值时使用 `$name`；绑定和赋值目标使用裸名字，包括函数参数、循环绑定和环境变量设置。
+变量名以字母或 `_` 开头，后续可包含字母、数字和 `_`。绑定目标不接受引号字符串或表达式。
 
 ```parsh
-(let $name "a friend")
+(let name "a friend")
 (echo hello $name)
-(set $name world)
+(set name world)
 (echo (str "hello, " $name))
-(export $EDITOR vim)
+(export EDITOR vim)
 ```
 
 `let` 在当前词法作用域中绑定变量。`set` 更新最近的已有绑定，或已有的环境变量；
@@ -21,9 +22,9 @@ description: "变量绑定、环境变量、列表与显式展开。"
 环境变量与工作目录的修改属于当前 parsh 会话。
 
 ```parsh
-(let $files (list "a file.rs" other.rs))
+(let files (list "a file.rs" other.rs))
 (printf "<%s>\n" $files)
-(for $file (glob *.rs)
+(for file (glob *.rs)
   (echo $file))
 ```
 

@@ -4,7 +4,7 @@ description: "词法函数、条件分支、顺序求值与循环。"
 ---
 
 ```parsh
-(defn greet ($name)
+(defn greet (name)
   (echo hello $name))
 
 (if (test -d src)
@@ -18,7 +18,7 @@ description: "词法函数、条件分支、顺序求值与循环。"
     (echo configuration missing))
 
 (do
-  (let $message "multiple expressions")
+  (let message "multiple expressions")
   (echo $message))
 ```
 
@@ -27,7 +27,7 @@ description: "词法函数、条件分支、顺序求值与循环。"
 `do` 在当前作用域中依次执行表达式。
 `for` 对列表求值，并为每次迭代创建新的词法绑定。
 
-函数名属于命令，因此不带 `$`；函数参数和局部变量需要带 `$`。
+函数名和参数声明使用裸名字；读取参数和局部变量的值时使用 `$name`。
 函数捕获定义时的词法作用域，并返回最后一个表达式的值。
 参数表达式在绑定形参之前求值。函数既可以返回命令输出，也可以返回列表和布尔值。
 函数用作值时，会捕获整个函数体的标准输出：如果最后一个表达式产生命令退出状态，
@@ -36,11 +36,11 @@ description: "词法函数、条件分支、顺序求值与循环。"
 ## 观察返回值
 
 ```parsh
-(defn greet ($who)
+(defn greet (who)
   (str "hello, " $who))
 (greet parsh)
 (if (eq a a) (list yes) (list no))
-(for $item (list first last) (str $item))
+(for item (list first last) (str $item))
 ```
 
 交互环境依次显示 `"hello, parsh"`、`("yes")` 和 `"last"`。循环返回最后一次循环体的结果，不会收集每次迭代的值。这组示例可以直接在浏览器终端中运行。

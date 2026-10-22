@@ -88,19 +88,23 @@ fn success(output: &Output) {
 
 #[test]
 fn literal_atoms_variables_and_parameter_boundaries() {
-    let output = run(r#"(let $name "a b") (printf "<%s>\n" $name 123 true nil ; a;b)"#);
+    let output = run(r#"(let name "a b") (printf "<%s>\n" $name 123 true nil ; a;b)"#);
     success(&output);
     assert_eq!(stdout(&output), "<a b>\n<123>\n<true>\n<nil>\n<;>\n<a;b>\n");
     for source in [
-        "(let name x)",
-        "(set name x)",
-        "(for item (list a) (echo bad))",
-        "(defn f (name) (echo bad))",
-        "(export NAME x)",
+        "(let $name x)",
+        "(set $name x)",
+        "(for $item (list a) (echo bad))",
+        "(defn f ($name) (echo bad))",
+        "(export $NAME x)",
     ] {
         let output = run(source);
         assert_eq!(output.status.code(), Some(2), "{source}");
-        assert!(stderr(&output).contains("$variable"), "{}", stderr(&output));
+        assert!(
+            stderr(&output).contains("binding must use a bare variable name without '$'"),
+            "{}",
+            stderr(&output)
+        );
     }
 }
 
@@ -129,17 +133,17 @@ fn nested_commands_capture_complete_stdout_without_splitting() {
 #[test]
 fn lexical_functions_loops_and_typed_returns() {
     let output = run(r#"
-        (let $name outer)
+        (let name outer)
         (defn show () (printf "%s\n" $name))
-        (defn call ($name) (show))
+        (defn call (name) (show))
         (call inner)
-        (set $name changed)
+        (set name changed)
         (call inner)
-        (defn greet ($who) (printf hello-) (printf "%s\n" $who))
+        (defn greet (who) (printf hello-) (printf "%s\n" $who))
         (printf "<%s>\n" (greet world))
         (defn items () (list "a b" c))
-        (for $item (items) (printf "[%s]\n" $item))
-        (defn factory ($value) (defn captured () (printf "%s" $value)))
+        (for item (items) (printf "[%s]\n" $item))
+        (defn factory (value) (defn captured () (printf "%s" $value)))
         (factory retained)
         (captured)
     "#);
@@ -271,7 +275,7 @@ fn glob_is_explicit_sorted_and_expands_lists() {
         fs::write(directory.path().join(name), "").unwrap();
     }
     let output = run(&format!(
-        r#"(cd {}) (printf "<%s>\n" (glob *.rs)) (printf "[%s]" *.rs) (for $x (glob absent-*) (echo bad))"#,
+        r#"(cd {}) (printf "<%s>\n" (glob *.rs)) (printf "[%s]" *.rs) (for x (glob absent-*) (echo bad))"#,
         quote(directory.path().to_str().unwrap())
     ));
     success(&output);
@@ -281,7 +285,7 @@ fn glob_is_explicit_sorted_and_expands_lists() {
 #[test]
 fn export_updates_shell_environment_and_local_binding() {
     let output = run(
-        r#"(let $PARSH_TEST old) (export $PARSH_TEST "a b") (printf "<%s>" $PARSH_TEST) (sh -c "printf '[%s]' \"$PARSH_TEST\"")"#,
+        r#"(let PARSH_TEST old) (export PARSH_TEST "a b") (printf "<%s>" $PARSH_TEST) (sh -c "printf '[%s]' \"$PARSH_TEST\"")"#,
     );
     success(&output);
     assert_eq!(stdout(&output), "<a b>[a b]");
@@ -417,7 +421,7 @@ fn malformed_input_and_recursion_have_bounded_failures() {
 
 #[test]
 fn variable_command_names_and_permission_errors() {
-    let output = run(r#"(let $program printf) ($program "<%s>" yes)"#);
+    let output = run(r#"(let program printf) ($program "<%s>" yes)"#);
     success(&output);
     assert_eq!(stdout(&output), "<yes>");
     let directory = tempfile::tempdir().unwrap();

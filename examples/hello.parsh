@@ -1,10 +1,10 @@
 #!/usr/bin/env parsh
 (; Run with: cargo run -- examples/hello.parsh world )
 
-(defn greet ($name)
+(defn greet (name)
   (echo hello $name))
 
-(for $name $args
+(for name $args
   (greet $name))
 
 (if (test -d src)

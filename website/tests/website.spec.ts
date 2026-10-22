@@ -109,19 +109,34 @@ test("bindings, closures, conditions, loops and Unicode retain shared semantics"
   await playground(page);
   await paste(
     page,
-    `(let $name outer)
+    `(let name outer)
 (defn read-name () (str $name))
-(defn caller ($name) (read-name))
+(defn caller (name) (read-name))
 (caller inner)
-(set $name changed)
+(set name changed)
 (caller inner)
 (if (eq a a) (str "你好，parsh") (echo unavailable))
-(for $item (list first last) (str $item))`,
+(for item (list first last) (str $item))`,
   );
   await expect(terminal(page)).toContainText('"outer"');
   await expect(terminal(page)).toContainText('"changed"');
   await expect(terminal(page)).toContainText('"你好，parsh"');
   await expect(terminal(page)).toContainText('"last"');
+  await paste(page, "(export GREETING hello) (str $GREETING) (str name)");
+  await expect(terminal(page)).toContainText('"hello"');
+  await expect(terminal(page)).toContainText('"name"');
+});
+
+test("binding targets reject variable references and allow recovery", async ({
+  page,
+}) => {
+  await playground(page);
+  await paste(page, "(let name retained) (set $name changed)");
+  await expect(terminal(page)).toContainText(
+    "binding must use a bare variable name without '$'",
+  );
+  await paste(page, "(str $name)");
+  await expect(terminal(page)).toContainText('"retained"');
 });
 
 test("paste recovers extra closers and a failed batch allows new input", async ({
@@ -160,7 +175,7 @@ test("clear and idle Ctrl+C preserve bindings; reset clears them", async ({
   page,
 }) => {
   await playground(page);
-  await paste(page, "(let $name retained) (str $name)");
+  await paste(page, "(let name retained) (str $name)");
   await expect(terminal(page)).toContainText('"retained"');
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(terminal(page)).not.toContainText('"retained"');
@@ -184,7 +199,7 @@ test("running Ctrl+C stops execution and resets the session", async ({
 }) => {
   await playground(page);
   await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
-  await paste(page, `(let $name before)\n${expensiveExpression()}`);
+  await paste(page, `(let name before)\n${expensiveExpression()}`);
   await expect(page.locator("[data-playground]")).toHaveAttribute(
     "data-state",
     "running",

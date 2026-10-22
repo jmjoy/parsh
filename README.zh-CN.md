@@ -28,16 +28,17 @@ cargo run -- script.parsh 'an argument' another
 
 ## 变量与值
 
-裸词表示文本：`123`、`true`、`false` 和 `nil` 都没有特殊的字面量含义。
+在值的位置，裸词表示文本：`123`、`true`、`false` 和 `nil` 都没有特殊的字面量含义。
 双引号字符串支持 `\"`、`\\`、`\n`、`\r` 和 `\t` 转义，不支持变量插值。
-所有变量引用与绑定都使用 `$` 前缀，包括函数参数、循环绑定和环境变量设置。
+读取变量值时使用 `$name`；绑定和赋值目标使用裸名字，包括函数参数、循环绑定和环境变量设置。
+变量名以字母或 `_` 开头，后续可包含字母、数字和 `_`。绑定目标不接受引号字符串或表达式。
 
 ```lisp
-(let $name "a friend")
+(let name "a friend")
 (echo hello $name)
-(set $name world)
+(set name world)
 (echo (str "hello, " $name))
-(export $EDITOR vim)
+(export EDITOR vim)
 ```
 
 `let` 在当前词法作用域中绑定变量。`set` 更新最近的已有绑定，或已有的环境变量；
@@ -46,9 +47,9 @@ cargo run -- script.parsh 'an argument' another
 环境变量与工作目录的修改属于当前 parsh 会话。
 
 ```lisp
-(let $files (list "a file.rs" other.rs))
+(let files (list "a file.rs" other.rs))
 (printf "<%s>\n" $files)
-(for $file (glob *.rs)
+(for file (glob *.rs)
   (echo $file))
 ```
 
@@ -119,7 +120,7 @@ cargo run -- script.parsh 'an argument' another
 ## 控制流与函数
 
 ```lisp
-(defn greet ($name)
+(defn greet (name)
   (echo hello $name))
 
 (if (test -d src)
@@ -133,7 +134,7 @@ cargo run -- script.parsh 'an argument' another
     (echo configuration missing))
 
 (do
-  (let $message "multiple expressions")
+  (let message "multiple expressions")
   (echo $message))
 ```
 
@@ -142,7 +143,7 @@ cargo run -- script.parsh 'an argument' another
 `do` 在当前作用域中依次执行表达式。
 `for` 对列表求值，并为每次迭代创建新的词法绑定。
 
-函数名属于命令，因此不带 `$`；函数参数和局部变量需要带 `$`。
+函数名和参数声明使用裸名字；读取参数和局部变量的值时使用 `$name`。
 函数捕获定义时的词法作用域，并返回最后一个表达式的值。
 参数表达式在绑定形参之前求值。函数既可以返回命令输出，也可以返回列表和布尔值。
 函数用作值时，会捕获整个函数体的标准输出：如果最后一个表达式产生命令退出状态，

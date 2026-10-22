@@ -10,8 +10,8 @@ description: "What the browser session supports and how to use it."
 The prompt supplies an opening parenthesis. Type `str "hello, " "parsh")` to evaluate it, or paste complete expressions:
 
 ```parsh
-(let $name world)
-(defn greet ($who)
+(let name world)
+(defn greet (who)
   (str "hello, " $who))
 (greet $name)
 (list a "two words" (eq x x))

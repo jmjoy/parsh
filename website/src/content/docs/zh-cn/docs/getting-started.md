@@ -36,7 +36,7 @@ cargo run -- script.parsh 'an argument' another
 在左括号提示符后输入 `str "hello, " "parsh")`，即可看到 `"hello, parsh"`。Enter 用于多行输入，闭合最外层括号后才会求值。
 
 ```parsh
-(let $name world)
+(let name world)
 (str "hello, " $name)
 (echo hello $name)
 ```

@@ -6,6 +6,30 @@ export default {
   patterns: [
     { include: "#comment" },
     { include: "#string" },
+    {
+      begin: '(\\()(defn)\\s+([^\\s()"$]+)\\s+(\\()',
+      beginCaptures: {
+        1: { name: "punctuation.section.parens.parsh" },
+        2: { name: "keyword.control.parsh" },
+        3: { name: "entity.name.function.parsh" },
+        4: { name: "punctuation.section.parens.parsh" },
+      },
+      end: "\\)",
+      endCaptures: { 0: { name: "punctuation.section.parens.parsh" } },
+      patterns: [
+        { include: "#comment" },
+        { include: "#string" },
+        { name: "variable.parameter.parsh", match: '[^\\s()"]+' },
+      ],
+    },
+    {
+      match: '(\\()(let|set|for|export)\\s+([^\\s()"$]+)',
+      captures: {
+        1: { name: "punctuation.section.parens.parsh" },
+        2: { name: "keyword.control.parsh" },
+        3: { name: "variable.other.parsh" },
+      },
+    },
     { name: "variable.other.parsh", match: '\\$[^\\s()\"]+' },
     {
       name: "keyword.control.parsh",
