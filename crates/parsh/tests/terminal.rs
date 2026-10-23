@@ -323,36 +323,62 @@ fn runtime_failure_stops_the_batch_and_preserves_exit_status() {
 
 #[test]
 fn foreground_interrupt_restores_terminal_and_reaps_child() {
+    for source in ["sleep 30", "while (eq a a) (sleep 30)"] {
+        let mut terminal = Terminal::new();
+        let offset = terminal.send(format!("{source}\r").as_bytes());
+        terminal.expect(b"\x1b[?2004l", offset);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let group = loop {
+            let group = tcgetpgrp(&terminal.master).unwrap();
+            if group.as_raw() != terminal.child.id() as i32 {
+                break group;
+            }
+            assert!(Instant::now() < deadline, "no foreground handoff");
+            thread::sleep(Duration::from_millis(5));
+        };
+        assert!(
+            termios::tcgetattr(&terminal.slave)
+                .unwrap()
+                .local_flags
+                .contains(LocalFlags::ICANON)
+        );
+        let offset = terminal.send(b"\x03");
+        let end = terminal.expect(b"status 130", offset);
+        terminal.ready_after(end);
+        assert_eq!(
+            tcgetpgrp(&terminal.master).unwrap().as_raw(),
+            terminal.child.id() as i32
+        );
+        assert!(
+            killpg(group, None).is_err(),
+            "foreground child was not reaped"
+        );
+        let offset = terminal.send(b"echo ALIVE\r");
+        let end = terminal.expect(b"\r\nALIVE\r\n", offset);
+        terminal.ready_after(end);
+        terminal.exit(0);
+    }
+}
+
+#[test]
+fn interrupting_a_builtin_while_loop_restores_the_prompt() {
     let mut terminal = Terminal::new();
-    let offset = terminal.send(b"sleep 30\r");
+    let offset = terminal.execute("(while (eq a a) (continue)) (echo SKIPPED)");
     terminal.expect(b"\x1b[?2004l", offset);
-    let deadline = Instant::now() + Duration::from_secs(3);
-    let group = loop {
-        let group = tcgetpgrp(&terminal.master).unwrap();
-        if group.as_raw() != terminal.child.id() as i32 {
-            break group;
-        }
-        assert!(Instant::now() < deadline, "no foreground handoff");
-        thread::sleep(Duration::from_millis(5));
-    };
-    assert!(
-        termios::tcgetattr(&terminal.slave)
-            .unwrap()
-            .local_flags
-            .contains(LocalFlags::ICANON)
-    );
-    let offset = terminal.send(b"\x03");
-    let end = terminal.expect(b"status 130", offset);
+    thread::sleep(Duration::from_millis(30));
+    terminal.send(b"\x03");
+    let end = terminal.expect(b"interrupted", offset);
     terminal.ready_after(end);
+    terminal.drain();
+    assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\nSKIPPED\r\n"));
     assert_eq!(
         tcgetpgrp(&terminal.master).unwrap().as_raw(),
         terminal.child.id() as i32
     );
-    assert!(
-        killpg(group, None).is_err(),
-        "foreground child was not reaped"
-    );
-    let offset = terminal.send(b"echo ALIVE\r");
+    let offset = terminal.execute("(break)");
+    terminal.expect(b"outside a loop body", offset);
+    terminal.ready_after(offset);
+    let offset = terminal.execute("(echo ALIVE)");
     let end = terminal.expect(b"\r\nALIVE\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);

@@ -307,6 +307,128 @@ fn conditions_check_status_without_disabling_fail_fast_elsewhere() {
 }
 
 #[test]
+fn while_command_conditions_and_loop_values_capture_complete_stdout() {
+    let output = run(r#"
+        (let n (+ 0))
+        (printf "<%s>\n"
+          (while (test $n -lt 3)
+            (printf "[%s]" $n)
+            (set n (+ $n 1))
+            (printf .)))
+        (while (false) (echo skipped))
+        (while (| (false) (true)) (echo skipped))
+        (printf "<%s>\n"
+          (while (eq a a)
+            (printf discarded)
+            (break (printf "a b\n\n"))))
+        (printf "<%s>\n"
+          (for item (list a b c)
+            (printf discarded)
+            (break (printf "c d\n\n"))))
+        (echo done)
+    "#);
+    success(&output);
+    assert_eq!(stdout(&output), "<[0].[1].[2].>\n<a b>\n<c d>\ndone\n");
+}
+
+#[test]
+fn loop_jumps_propagate_through_host_arguments_and_redirection_paths() {
+    for expression in [
+        "(glob (break passed))",
+        "(cd (break passed))",
+        "(export UNUSED (break passed))",
+        "(|> (break passed) (echo skipped))",
+        "(| (printf (break passed) $undefined) (cat))",
+    ] {
+        let output = run(&format!(
+            "(printf \"<%s>\" (while (eq a a) {expression} (echo skipped)))"
+        ));
+        success(&output);
+        assert_eq!(stdout(&output), "<passed>", "{expression}");
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("loop.txt");
+    let output = run(&format!(
+        r#"
+        (|> {}
+          (for item (list a b c)
+            (if (eq $item b) (continue))
+            (printf %s $item)
+            (if (eq $item c) (break))
+            (printf .)))
+        (|>> {} (while (eq a a) (printf D) (break)))
+        (cat {})
+        "#,
+        quote(path.to_str().unwrap()),
+        quote(path.to_str().unwrap()),
+        quote(path.to_str().unwrap()),
+    ));
+    success(&output);
+    assert_eq!(stdout(&output), "a.cD");
+    assert_eq!(fs::read_to_string(path).unwrap(), "a.cD");
+}
+
+#[test]
+fn loop_errors_and_exit_preserve_status_and_stop_the_script() {
+    for (source, code, message) in [
+        ("(while (eq a a) (false))", 1, "status 1"),
+        (
+            "(if (while (eq a a) (false)) (echo skipped) (echo also-skipped))",
+            1,
+            "status 1",
+        ),
+        ("(while (eq a a) (break (false)))", 1, "status 1"),
+        (
+            "(while (parsh-command-does-not-exist) (echo skipped))",
+            127,
+            "parsh-command-does-not-exist",
+        ),
+        (
+            "(while (eq a a) (parsh-command-does-not-exist))",
+            127,
+            "parsh-command-does-not-exist",
+        ),
+        ("(while (eq a a) (exit 9))", 9, ""),
+        ("(for item (list a b) (exit 7))", 7, ""),
+        ("(break (echo skipped))", 2, "outside a loop body"),
+        (
+            "(for item (list a) (continue (echo skipped)))",
+            2,
+            "expected 0 arguments",
+        ),
+    ] {
+        let output = run(&format!("{source} (echo skipped)"));
+        assert_eq!(
+            output.status.code(),
+            Some(code),
+            "{source}: {}",
+            stderr(&output)
+        );
+        assert!(
+            stderr(&output).contains(message),
+            "{source}: {}",
+            stderr(&output)
+        );
+        assert!(output.stdout.is_empty(), "{source}: {}", stdout(&output));
+    }
+
+    let output = run("(if (for item (list only) (false)) (echo skipped) (echo expected))");
+    success(&output);
+    assert_eq!(stdout(&output), "expected\n");
+}
+
+#[test]
+fn loop_builtins_are_rejected_as_pipeline_stages() {
+    for stage in ["(while (eq a b) (echo skipped))", "(break)", "(continue)"] {
+        let output = run(&format!("(| {stage} (cat)) (echo skipped)"));
+        assert_eq!(output.status.code(), Some(2));
+        assert!(stderr(&output).contains("pipeline stages must be external commands"));
+        assert!(output.stdout.is_empty());
+    }
+}
+
+#[test]
 fn pipelines_stream_large_outputs_and_return_rightmost_failure() {
     let output = run("(| (head -c 1048576 /dev/zero) (cat))");
     success(&output);

@@ -1896,3 +1896,6 @@ mod host_tests {
 
 #[cfg(test)]
 mod completion_tests;
+
+#[cfg(test)]
+mod loop_tests;

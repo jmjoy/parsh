@@ -26,18 +26,6 @@ async function execute(page: Page, source: string) {
   await page.locator("[data-terminal-host] textarea").focus();
   await page.keyboard.press("Enter");
 }
-function expensiveExpression() {
-  return (
-    "(defn work0 () (str done))\n" +
-    Array.from(
-      { length: 30 },
-      (_, index) =>
-        `(defn work${index + 1} () (do (work${index}) (work${index})))`,
-    ).join("\n") +
-    "\n(work30)"
-  );
-}
-
 test("root redirects to prefixed English and both homepages share navigation", async ({
   page,
 }) => {
@@ -133,6 +121,52 @@ test("bindings, closures, conditions, loops and Unicode retain shared semantics"
   await execute(page, "(export GREETING hello) (str $GREETING) (str name)");
   await expect(terminal(page)).toContainText('"hello"');
   await expect(terminal(page)).toContainText('"name"');
+});
+
+test("while and for share loop control, typed break values and fresh iteration scopes", async ({ page }) => {
+  await playground(page);
+  await execute(page, `(let count 0)
+(let name outer)
+(while (< $count 5)
+  (set count (+ $count 1))
+  (let name (str $name $count))
+  (if (= $count 2) (continue))
+  (if (= $count 4) (break (list stopped $count $name)))
+  (str $name))
+(list $count $name)
+(for item (list first second third)
+  (if (eq $item second) (continue))
+  (if (eq $item third) (break (list for-stopped $item)))
+  (str $item))
+(while (false) (echo unavailable))`);
+  await expect(terminal(page)).toContainText('("stopped" 4 "outer4")');
+  await expect(terminal(page)).toContainText('(4 "outer")');
+  await expect(terminal(page)).toContainText('("for-stopped" "third")');
+  await execute(page, "(defn stop () (break)) (while (eq a a) (stop)) (str skipped)");
+  await expect(terminal(page)).toContainText("in stop: break used outside a loop body");
+  await expect(terminal(page)).not.toContainText('"skipped"');
+  await execute(page, '(str recovered)');
+  await expect(terminal(page)).toContainText('"recovered"');
+});
+
+test("loop keywords complete inside browser control flow", async ({ page }) => {
+  await playground(page);
+  await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
+  await page.keyboard.type("wh");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("(eq a a) (br");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("(list completed))");
+  await expect(terminal(page)).toContainText("(while (eq a a) (break (list completed))");
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('("completed")');
+  await page.keyboard.type("for item (list a b) (cont");
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText("(for item (list a b) (continue");
+  await page.keyboard.type(")");
+  await page.keyboard.press("Enter");
+  await execute(page, '(str completed-again)');
+  await expect(terminal(page)).toContainText('"completed-again"');
 });
 
 test("quoted strings share variable and expression interpolation semantics", async ({ page }) => {
@@ -279,12 +313,12 @@ test("clear and idle Ctrl+C preserve bindings; reset clears them", async ({
   await expect(terminal(page)).toContainText("undefined variable $name");
 });
 
-test("running Ctrl+C stops execution and resets the session", async ({
+test("running Ctrl+C stops an infinite while loop and resets the session", async ({
   page,
 }) => {
   await playground(page);
   await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
-  await execute(page, `(let name before)\n${expensiveExpression()}`);
+  await execute(page, "(let name before) (while (eq a a) (continue))");
   await expect(page.locator("[data-playground]")).toHaveAttribute(
     "data-state",
     "running",
@@ -301,12 +335,12 @@ test("running Ctrl+C stops execution and resets the session", async ({
   await expect(terminal(page)).toContainText("undefined variable $name");
 });
 
-test("long-running expressions time out without freezing the page", async ({
+test("an infinite while loop times out without freezing the page", async ({
   page,
 }) => {
   test.setTimeout(20_000);
   await playground(page);
-  await execute(page, expensiveExpression());
+  await execute(page, "(while (eq a a) (do))");
   await expect(page.locator("[data-notice]")).toContainText(
     "Execution exceeded 5 seconds",
     { timeout: 12_000 },

@@ -90,6 +90,32 @@ impl Error {
     }
 }
 
+/// Loop jumps unwind expressions without becoming values or command failures.
+#[derive(Debug)]
+enum Signal {
+    Error(Error),
+    Break(Option<Value>),
+    Continue,
+}
+
+impl From<Error> for Signal {
+    fn from(error: Error) -> Self {
+        Self::Error(error)
+    }
+}
+
+impl Signal {
+    fn into_error(self, expr: &Expr) -> Error {
+        match self {
+            Self::Error(error) => error,
+            Self::Break(_) => Error::new(expr, "break used outside a loop body"),
+            Self::Continue => Error::new(expr, "continue used outside a loop body"),
+        }
+    }
+}
+
+type EvalResult<T> = Result<T, Signal>;
+
 type Env = Rc<RefCell<Scope>>;
 
 #[derive(Default)]
@@ -158,12 +184,13 @@ pub struct Shell {
     output_bytes: usize,
     syntax_only: bool,
     depth: usize,
+    loop_depth: usize,
 }
 
 const BUILTINS: &[&str] = &[
-    "do", "let", "set", "get", "if", "for", "defn", "list", "str", "eq", "not", "glob", "cd",
-    "export", "exit", "+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">=", "|", "|>", "|1>", "|>>",
-    "|1>>", "<|", "|2>", "|2>>",
+    "do", "let", "set", "get", "if", "for", "while", "break", "continue", "defn", "list", "str",
+    "eq", "not", "glob", "cd", "export", "exit", "+", "-", "*", "/", "=", "!=", "<", "<=", ">",
+    ">=", "|", "|>", "|1>", "|>>", "|1>>", "<|", "|2>", "|2>>",
 ];
 
 fn builtin(name: &str) -> bool {
@@ -219,6 +246,7 @@ impl Shell {
             output_bytes: 0,
             syntax_only: true,
             depth: 0,
+            loop_depth: 0,
         }
     }
 
@@ -422,6 +450,7 @@ impl Shell {
         self.interrupted.store(false, Ordering::Relaxed);
         self.output_bytes = 0;
         self.eval(expr, &self.root.clone(), Mode::Normal, &Io::default())
+            .map_err(|signal| signal.into_error(expr))
     }
 
     fn check(&self, expr: &Expr) -> Result<(), Error> {
@@ -437,7 +466,7 @@ impl Shell {
         }
     }
 
-    fn value(&mut self, expr: &Expr, env: &Env, io: &Io) -> Result<Value, Error> {
+    fn value(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<Value> {
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let nested = Io {
             output: Output::Capture(buffer.clone()),
@@ -459,10 +488,11 @@ impl Shell {
         }
     }
 
-    fn scalar(&mut self, expr: &Expr, env: &Env, io: &Io) -> Result<String, Error> {
-        self.value(expr, env, io)?
+    fn scalar(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<String> {
+        Ok(self
+            .value(expr, env, io)?
             .text()
-            .map_err(|message| Error::new(expr, message))
+            .map_err(|message| Error::new(expr, message))?)
     }
 
     fn variable(&self, expr: &Expr, name: &str, env: &Env) -> Result<Value, Error> {
@@ -476,11 +506,13 @@ impl Shell {
             .ok_or_else(|| Error::new(expr, format!("undefined variable ${name}")))
     }
 
-    fn number(&mut self, expr: &Expr, env: &Env, io: &Io) -> Result<Number, Error> {
+    fn number(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<Number> {
         match self.value(expr, env, io)? {
             Value::Number(number) => Ok(number),
-            Value::Text(text) => Number::parse(&text).map_err(|message| Error::new(expr, message)),
-            _ => Err(Error::new(expr, "expected a number or numeric text")),
+            Value::Text(text) => {
+                Ok(Number::parse(&text).map_err(|message| Error::new(expr, message))?)
+            }
+            _ => Err(Error::new(expr, "expected a number or numeric text").into()),
         }
     }
 
@@ -491,7 +523,7 @@ impl Shell {
         args: &[Expr],
         env: &Env,
         io: &Io,
-    ) -> Result<Value, Error> {
+    ) -> EvalResult<Value> {
         Self::arity(
             expr,
             args,
@@ -520,14 +552,15 @@ impl Shell {
         Ok(Value::Number(result))
     }
 
-    fn condition(&mut self, expr: &Expr, env: &Env, io: &Io) -> Result<bool, Error> {
+    fn condition(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<bool> {
         match self.eval(expr, env, Mode::Condition, io)? {
             Value::Bool(value) => Ok(value),
             Value::Status(status) => Ok(status == 0),
             _ => Err(Error::new(
                 expr,
                 "a condition must be a boolean or command status; use eq to compare text",
-            )),
+            )
+            .into()),
         }
     }
 
@@ -537,7 +570,7 @@ impl Shell {
         env: &Env,
         mode: Mode,
         io: &Io,
-    ) -> Result<Value, Error> {
+    ) -> EvalResult<Value> {
         let mut value = Value::Nil;
         for (index, expr) in expressions.iter().enumerate() {
             value = self.eval(
@@ -554,10 +587,23 @@ impl Shell {
         Ok(value)
     }
 
-    fn eval(&mut self, expr: &Expr, env: &Env, mode: Mode, io: &Io) -> Result<Value, Error> {
+    fn loop_body(
+        &mut self,
+        expressions: &[Expr],
+        env: &Env,
+        mode: Mode,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        self.loop_depth += 1;
+        let result = self.sequence(expressions, env, mode, io);
+        self.loop_depth -= 1;
+        result
+    }
+
+    fn eval(&mut self, expr: &Expr, env: &Env, mode: Mode, io: &Io) -> EvalResult<Value> {
         self.check(expr)?;
         if self.depth >= 128 {
-            return Err(Error::new(expr, "evaluation nesting exceeds 128 levels"));
+            return Err(Error::new(expr, "evaluation nesting exceeds 128 levels").into());
         }
         self.depth += 1;
         let result = self.eval_inner(expr, env, mode, io);
@@ -565,10 +611,10 @@ impl Shell {
         result
     }
 
-    fn eval_inner(&mut self, expr: &Expr, env: &Env, mode: Mode, io: &Io) -> Result<Value, Error> {
+    fn eval_inner(&mut self, expr: &Expr, env: &Env, mode: Mode, io: &Io) -> EvalResult<Value> {
         let items = match &expr.kind {
             Kind::Text(text) | Kind::Word(text) => return Ok(Value::Text(text.clone())),
-            Kind::Variable(name) => return self.variable(expr, name, env),
+            Kind::Variable(name) => return Ok(self.variable(expr, name, env)?),
             Kind::Interpolated(parts) => {
                 let mut text = String::new();
                 for part in parts {
@@ -580,7 +626,7 @@ impl Shell {
             Kind::List(items) => items,
         };
         let Some(head) = items.first() else {
-            return Err(Error::new(expr, "empty command"));
+            return Err(Error::new(expr, "empty command").into());
         };
         let name = match &head.kind {
             Kind::Text(name) | Kind::Word(name) => name.clone(),
@@ -589,7 +635,8 @@ impl Shell {
                 return Err(Error::new(
                     head,
                     "command name must be text; user functions are named commands",
-                ));
+                )
+                .into());
             }
         };
         let args = &items[1..];
@@ -599,16 +646,16 @@ impl Shell {
                 format!(
                     "{name} requires native parsh; the syntax playground has no filesystem or external commands"
                 ),
-            ));
+            ).into());
         }
         match name.as_str() {
             "do" => self.sequence(args, env, mode, io),
             "get" => {
                 Self::arity(expr, args, 1, 1)?;
                 let Value::Text(name) = self.value(&args[0], env, io)? else {
-                    return Err(Error::new(&args[0], "get expects a text variable name"));
+                    return Err(Error::new(&args[0], "get expects a text variable name").into());
                 };
-                self.variable(&args[0], &name, env)
+                Ok(self.variable(&args[0], &name, env)?)
             }
             "let" | "set" => {
                 Self::arity(expr, args, 2, 2)?;
@@ -626,7 +673,8 @@ impl Shell {
                         return Err(Error::new(
                             &args[0],
                             format!("cannot set undefined variable {variable}"),
-                        ));
+                        )
+                        .into());
                     }
                 }
                 Ok(Value::Nil)
@@ -641,11 +689,41 @@ impl Shell {
                     Ok(Value::Nil)
                 }
             }
+            "while" => {
+                Self::arity(expr, args, 2, usize::MAX)?;
+                let mut result = Value::Nil;
+                while self.condition(&args[0], env, io)? {
+                    self.check(expr)?;
+                    let local = Scope::child(env);
+                    match self.loop_body(&args[1..], &local, Mode::Normal, io) {
+                        Ok(value) => result = value,
+                        Err(Signal::Break(value)) => return Ok(value.unwrap_or(result)),
+                        Err(Signal::Continue) => continue,
+                        Err(error) => return Err(error),
+                    }
+                }
+                Ok(result)
+            }
+            "break" | "continue" => {
+                Self::arity(expr, args, 0, usize::from(name == "break"))?;
+                if self.loop_depth == 0 {
+                    return Err(Error::new(expr, format!("{name} used outside a loop body")).into());
+                }
+                if name == "break" {
+                    let value = args
+                        .first()
+                        .map(|arg| self.value(arg, env, io))
+                        .transpose()?;
+                    Err(Signal::Break(value))
+                } else {
+                    Err(Signal::Continue)
+                }
+            }
             "for" => {
                 Self::arity(expr, args, 3, usize::MAX)?;
                 let variable = Self::binding(&args[0])?;
                 let Value::List(values) = self.value(&args[1], env, io)? else {
-                    return Err(Error::new(&args[1], "for expects a list"));
+                    return Err(Error::new(&args[1], "for expects a list").into());
                 };
                 let count = values.len();
                 let mut result = Value::Nil;
@@ -653,7 +731,7 @@ impl Shell {
                     self.check(expr)?;
                     let local = Scope::child(env);
                     local.borrow_mut().variables.insert(variable.into(), value);
-                    result = self.sequence(
+                    match self.loop_body(
                         &args[2..],
                         &local,
                         if index + 1 == count {
@@ -662,7 +740,12 @@ impl Shell {
                             Mode::Normal
                         },
                         io,
-                    )?;
+                    ) {
+                        Ok(value) => result = value,
+                        Err(Signal::Break(value)) => return Ok(value.unwrap_or(result)),
+                        Err(Signal::Continue) => continue,
+                        Err(error) => return Err(error),
+                    }
                 }
                 Ok(result)
             }
@@ -672,23 +755,27 @@ impl Shell {
                     return Err(Error::new(
                         &args[0],
                         "function name must be a bare command name without '$'",
-                    ));
+                    )
+                    .into());
                 };
                 if builtin(function_name) || function_name == ";" || function_name.is_empty() {
-                    return Err(Error::new(&args[0], "function name is reserved"));
+                    return Err(Error::new(&args[0], "function name is reserved").into());
                 }
                 let Kind::List(parameters) = &args[1].kind else {
                     return Err(Error::new(
                         &args[1],
                         "function parameters must be a list of bare variable names",
-                    ));
+                    )
+                    .into());
                 };
                 let mut names = Vec::new();
                 let mut seen = HashSet::new();
                 for parameter in parameters {
                     let name = Self::binding(parameter)?;
                     if !seen.insert(name) {
-                        return Err(Error::new(parameter, format!("duplicate parameter {name}")));
+                        return Err(
+                            Error::new(parameter, format!("duplicate parameter {name}")).into()
+                        );
                     }
                     names.push(name.into());
                 }
@@ -814,7 +901,7 @@ impl Shell {
                     let path = fs::canonicalize(self.path(&destination))
                         .map_err(|e| Error::new(expr, format!("cd: {e}")))?;
                     if !path.is_dir() {
-                        return Err(Error::new(expr, "cd: not a directory"));
+                        return Err(Error::new(expr, "cd: not a directory").into());
                     }
                     self.environment
                         .insert("OLDPWD".into(), self.cwd.as_os_str().into());
@@ -850,7 +937,8 @@ impl Shell {
                     offset: expr.offset,
                     message: String::new(),
                     exit: true,
-                })
+                }
+                .into())
             }
             "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>" => {
                 if self.host.is_some() {
@@ -912,25 +1000,31 @@ impl Shell {
                         return Err(Error::new(
                             stage,
                             "pipeline stages must be external command calls",
-                        ));
+                        )
+                        .into());
                     };
                     let Some(head) = call.first() else {
-                        return Err(Error::new(stage, "pipeline stage needs a command name"));
+                        return Err(Error::new(stage, "pipeline stage needs a command name").into());
                     };
                     let command = match &head.kind {
                         Kind::Text(command) | Kind::Word(command) => command.clone(),
                         Kind::Interpolated(_) => self.scalar(head, env, io)?,
-                        _ => return Err(Error::new(stage, "pipeline stage needs a command name")),
+                        _ => {
+                            return Err(
+                                Error::new(stage, "pipeline stage needs a command name").into()
+                            );
+                        }
                     };
                     if builtin(&command) || self.functions.contains_key(&command) {
                         return Err(Error::new(
                             stage,
                             "v1 pipeline stages must be external commands",
-                        ));
+                        )
+                        .into());
                     }
                     stages.push(self.argv(&command, &call[1..], env, io)?);
                 }
-                self.commands(expr, &stages, mode, io)
+                Ok(self.commands(expr, &stages, mode, io)?)
             }
             _ => {
                 if let Some(function) = self.functions.get(&name).cloned() {
@@ -949,18 +1043,21 @@ impl Shell {
                         .borrow_mut()
                         .variables
                         .extend(function.parameters.into_iter().zip(values));
-                    self.sequence(&function.body, &local, mode, io)
-                        .map_err(|mut error| {
-                            // Function bodies can originate in a different interactive input.
-                            if !error.exit {
-                                error.message = format!("in {name}: {}", error.message);
-                                error.offset = expr.offset;
-                            }
-                            error
-                        })
+                    let caller_loop_depth = std::mem::take(&mut self.loop_depth);
+                    let result = self.sequence(&function.body, &local, mode, io);
+                    self.loop_depth = caller_loop_depth;
+                    result.map_err(|signal| {
+                        let mut error = signal.into_error(expr);
+                        // Function bodies can originate in a different interactive input.
+                        if !error.exit {
+                            error.message = format!("in {name}: {}", error.message);
+                            error.offset = expr.offset;
+                        }
+                        error.into()
+                    })
                 } else {
                     let argv = self.argv(&name, args, env, io)?;
-                    self.commands(expr, &[argv], mode, io)
+                    Ok(self.commands(expr, &[argv], mode, io)?)
                 }
             }
         }
@@ -972,7 +1069,7 @@ impl Shell {
         args: &[Expr],
         env: &Env,
         io: &Io,
-    ) -> Result<Vec<String>, Error> {
+    ) -> EvalResult<Vec<String>> {
         let mut argv = vec![command.into()];
         for arg in args {
             let value = self.value(arg, env, io)?;
@@ -997,13 +1094,7 @@ impl Shell {
         }
     }
 
-    fn host_glob(
-        &mut self,
-        expr: &Expr,
-        args: &[Expr],
-        env: &Env,
-        io: &Io,
-    ) -> Result<Value, Error> {
+    fn host_glob(&mut self, expr: &Expr, args: &[Expr], env: &Env, io: &Io) -> EvalResult<Value> {
         Self::arity(expr, args, 1, 1)?;
         let pattern = self.scalar(&args[0], env, io)?;
         let absolute = pattern.starts_with('/');

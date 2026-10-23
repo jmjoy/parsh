@@ -172,6 +172,23 @@ fn numeric_builtins_complete_without_an_execution_host() {
 }
 
 #[test]
+fn loop_builtins_complete_in_commands_and_nested_expressions_without_running() {
+    for (source, expected) in [
+        ("wh", "while "),
+        ("br", "break "),
+        ("cont", "continue "),
+        ("while (eq a a) (br", "while (eq a a) (break "),
+        ("for item (list a) (cont", "for item (list a) (continue "),
+    ] {
+        let mut repl = Repl::new();
+        type_text(&mut repl, source);
+        repl.input(Key::Tab);
+        assert_eq!(repl.session.input.body, expected);
+        assert!(repl.session.history.entries.is_empty());
+    }
+}
+
+#[test]
 fn comparison_prefixes_list_the_operators_and_input_redirection() {
     for (prefix, expected) in [("<", vec!["<", "<="]), (">", vec![">", ">="])] {
         let mut repl = Repl::new();
