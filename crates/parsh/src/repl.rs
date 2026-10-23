@@ -9,7 +9,12 @@ use std::{io, rc::Rc};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-#[derive(Default)]
+mod editing;
+#[cfg(test)]
+mod editing_tests;
+use editing::{Editing, Search};
+
+#[derive(Clone, Default, PartialEq, Eq)]
 pub(crate) struct Input {
     pub(crate) body: String,
     cursor: usize,
@@ -272,6 +277,25 @@ pub(crate) fn layout(input: &Input, width: usize) -> (Vec<String>, (usize, usize
     (lines, cursor)
 }
 
+pub(crate) fn view_layout(
+    input: &Input,
+    search: Option<&str>,
+    width: usize,
+) -> (Vec<String>, (usize, usize)) {
+    let (mut lines, mut cursor) = layout(input, width);
+    if let Some(prompt) = search {
+        let status = Input {
+            body: prompt.into(),
+            cursor: prompt.len(),
+            explicit: true,
+        };
+        let (status_lines, status_cursor) = layout(&status, width);
+        cursor = (lines.len() + status_cursor.0, status_cursor.1);
+        lines.extend(status_lines);
+    }
+    (lines, cursor)
+}
+
 pub(crate) fn completion_lines(candidates: &[String], width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     for candidate in candidates {
@@ -291,7 +315,8 @@ pub(crate) fn completion_lines(candidates: &[String], width: usize) -> Vec<Strin
 
 pub(crate) trait ConsoleBackend {
     fn activity(&mut self, _busy: bool) {}
-    fn draw(&mut self, input: &Input) -> io::Result<()>;
+    fn draw(&mut self, input: &Input, search: Option<&str>) -> io::Result<()>;
+    fn clear_screen(&mut self) -> io::Result<()>;
     fn completions(&mut self, candidates: &[String]) -> io::Result<()>;
     fn pause(&mut self) -> io::Result<()>;
     fn resume(&mut self) -> io::Result<()>;
@@ -308,6 +333,9 @@ pub(crate) struct Session {
     history: History,
     last_code: i32,
     completion: Option<(String, usize)>,
+    editing: Editing,
+    search: Option<Search>,
+    last_search: String,
 }
 
 impl Session {
@@ -346,7 +374,8 @@ impl Session {
         paste: Option<(&str, usize)>,
         halted: &mut bool,
     ) -> io::Result<Option<i32>> {
-        console.draw(&self.input)?;
+        self.editing.baseline();
+        console.draw(&self.input, None)?;
         console.pause()?;
         match outcome {
             Outcome::Ready(source) if !*halted => {
@@ -419,6 +448,13 @@ impl Session {
     ) -> io::Result<Option<i32>> {
         self.completion = None;
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        self.editing.break_command();
+        if let Some(search) = &mut self.search {
+            search.query.push_str(&normalized);
+            search.find(&self.history, &self.input, false);
+            return Ok(None);
+        }
+        let mut before = self.input.clone();
         if self.input.body.trim().is_empty() && normalized.trim_start().starts_with('(') {
             self.input.explicit = true;
         }
@@ -434,6 +470,7 @@ impl Session {
                 )? {
                     return Ok(Some(code));
                 }
+                before = Input::default();
                 if halted && self.last_code == 130 {
                     self.input.reset(false);
                     break;
@@ -443,6 +480,8 @@ impl Session {
         if halted || self.input.body.trim().is_empty() {
             self.input.reset(false);
         }
+        self.input.align_cursor();
+        self.editing.record(before, &self.input, false);
         Ok(None)
     }
 }
@@ -562,94 +601,25 @@ pub enum Key {
     Next,
     KillStart,
     KillEnd,
+    WordLeft,
+    WordRight,
+    KillWordBack,
+    KillWordForward,
+    KillWhitespaceWord,
+    Yank,
+    YankPop,
+    Transpose,
+    ClearScreen,
+    SearchBackward,
+    SearchForward,
+    Undo,
+    Escape,
+    ControlX,
+    Abort,
+    Ignore,
     Interrupt,
     ClearInput,
     Eof,
-}
-
-impl Session {
-    pub(crate) fn draw(&self, console: &mut impl ConsoleBackend) -> io::Result<()> {
-        console.draw(&self.input)
-    }
-
-    pub(crate) fn key(
-        &mut self,
-        shell: &mut Shell,
-        console: &mut impl ConsoleBackend,
-        key: Key,
-    ) -> io::Result<Option<i32>> {
-        if !matches!(key, Key::Tab) {
-            self.completion = None;
-        }
-        let mut outcome = None;
-        match key {
-            Key::Character(ch) => outcome = self.input.insert(ch, false),
-            Key::Enter => {
-                self.input.insert('\n', false);
-            }
-            Key::Tab => self.complete(shell, console)?,
-            Key::Left => self.input.left(),
-            Key::Right => self.input.right(),
-            Key::Backspace => self.input.backspace(),
-            Key::Delete => self.input.delete(),
-            Key::Home => self.input.cursor = self.input.line_start(),
-            Key::End => self.input.cursor = self.input.line_end(),
-            Key::Up => {
-                if !self.input.vertical(false) {
-                    self.history.previous(&mut self.input);
-                }
-            }
-            Key::Down => {
-                if !self.input.vertical(true) {
-                    self.history.next(&mut self.input);
-                }
-            }
-            Key::Previous => self.history.previous(&mut self.input),
-            Key::Next => self.history.next(&mut self.input),
-            Key::KillStart => {
-                let start = self.input.line_start();
-                self.input.body.drain(start..self.input.cursor);
-                self.input.cursor = start;
-            }
-            Key::KillEnd => {
-                let end = self.input.line_end();
-                self.input.body.drain(self.input.cursor..end);
-            }
-            Key::Interrupt => {
-                console.pause()?;
-                console.diagnostic("^C")?;
-                self.input.reset(false);
-                self.history.index = None;
-                self.last_code = 130;
-                console.resume()?;
-            }
-            Key::ClearInput => {
-                self.input.reset(false);
-                self.history.index = None;
-            }
-            Key::Eof if self.input.body.is_empty() => {
-                console.pause()?;
-                return Ok(Some(self.last_code));
-            }
-            Key::Eof => self.input.delete(),
-        }
-        if self.input.body.trim().is_empty() {
-            self.input.explicit = false;
-        }
-        if let Some(outcome) = outcome {
-            let remainder = self.input.body.split_off(self.input.cursor);
-            let code = self.accept(shell, console, outcome, None, &mut false)?;
-            if code.is_none() {
-                self.input = Input {
-                    explicit: remainder.trim_start().starts_with('('),
-                    body: remainder,
-                    cursor: 0,
-                };
-            }
-            return Ok(code);
-        }
-        Ok(None)
-    }
 }
 
 /// Events emitted by an isolated syntax session, in terminal display order.
@@ -662,6 +632,7 @@ pub enum Event {
         dim_prompt: bool,
     },
     Commit,
+    ClearScreen,
     Completions {
         lines: Vec<String>,
     },
@@ -687,8 +658,8 @@ impl ConsoleBackend for EventConsole {
             observer(busy);
         }
     }
-    fn draw(&mut self, input: &Input) -> io::Result<()> {
-        let (lines, cursor) = layout(input, self.columns.max(2));
+    fn draw(&mut self, input: &Input, search: Option<&str>) -> io::Result<()> {
+        let (lines, cursor) = view_layout(input, search, self.columns.max(2));
         let available = self.rows.max(3) - 1;
         let first = cursor.0.saturating_sub(available - 1);
         let last = lines.len().min(first + available);
@@ -696,8 +667,12 @@ impl ConsoleBackend for EventConsole {
             lines: lines[first..last].to_vec(),
             row: cursor.0 - first,
             column: cursor.1,
-            dim_prompt: !input.explicit && input.body.trim().is_empty(),
+            dim_prompt: search.is_none() && !input.explicit && input.body.trim().is_empty(),
         });
+        Ok(())
+    }
+    fn clear_screen(&mut self) -> io::Result<()> {
+        self.events.push(Event::ClearScreen);
         Ok(())
     }
     fn completions(&mut self, candidates: &[String]) -> io::Result<()> {

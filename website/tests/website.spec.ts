@@ -511,3 +511,84 @@ test("Tab quotes Unicode paths and follows directories in the narrow Chinese ter
   await expect(terminal(page)).toContainText('"folder name/你好 file.txt"');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test("Emacs editing, kill ring, escape prefixes, and undo work in the browser", async ({ page }) => {
+  await playground(page);
+  const input = page.getByRole("textbox", { name: "parsh terminal input" });
+  await input.focus();
+  const cases: { text: string; actions: string[]; expected: string }[] = [
+    { text: "str ac", actions: ["Control+b", "b", "Control+f", ")"], expected: '"abc"' },
+    { text: "str XY", actions: ["Control+h", "Z", ")"], expected: '"XZ"' },
+    { text: "str path/file.txt", actions: ["Alt+b", "Alt+d", "X", "Control+e", ")"], expected: '"path/file.X"' },
+    { text: "str one two", actions: ["Control+w", "Alt+Backspace", "Control+y", ")"], expected: '"onetwo"' },
+    { text: "str first second", actions: ["Control+w", "Control+b", "Control+w", "Control+y", "Alt+y", "Control+e", ")"], expected: '"second"' },
+    { text: "str RAW", actions: ["Control+b", "X", "Control+_", "Control+e", ")"], expected: '"RAW"' },
+    { text: "str CHORD", actions: ["Control+b", "X", "Control+x", "Control+u", "Control+e", ")"], expected: '"CHORD"' },
+    { text: "str path/file.txt", actions: ["Escape", "b", "X", "Control+e", ")"], expected: '"path/file.Xtxt"' },
+    { text: "str 甲e\u{301}👩‍💻乙", actions: ["Control+t", ")"], expected: '"甲e\\u{301}乙👩\\u{200d}💻"' },
+  ];
+  for (const { text, actions, expected } of cases) {
+    // Seed Unicode through the existing paste path; xterm's screen-reader mode
+    // does not forward synthetic insertText events.
+    if (/[^\x00-\x7f]/.test(text)) await paste(page, text);
+    else await page.keyboard.type(text);
+    for (const action of actions) await page.keyboard.press(action);
+    await expect(terminal(page)).toContainText(expected);
+  }
+});
+
+test("Emacs search accepts without execution and abort restores the draft cursor", async ({ page }) => {
+  await playground(page);
+  await paste(page, "(str SEARCH_FIRST)(str SEARCH_SECOND)");
+  await expect(terminal(page)).toContainText('"SEARCH_SECOND"');
+  await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
+  await page.keyboard.type("str saved");
+  await page.keyboard.press("Control+b");
+  await page.keyboard.press("Control+r");
+  await page.keyboard.type("SEARCH");
+  await expect(terminal(page)).toContainText("(reverse-i-search)`SEARCH':");
+  await page.keyboard.press("Control+r");
+  await page.keyboard.press("Control+s");
+  await expect(terminal(page)).toContainText("(forward-i-search)`SEARCH':");
+  await page.keyboard.press("Control+g");
+  await page.keyboard.type("X");
+  await page.keyboard.press("Control+e");
+  await page.keyboard.type(")");
+  await expect(terminal(page)).toContainText('"saveXd"');
+
+  await page.keyboard.press("Control+r");
+  await page.keyboard.type("SEARCH_SECOND");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await terminal(page).innerText()).split('"SEARCH_SECOND"').length - 1).toBe(1);
+  await page.keyboard.type("_ACCEPTED)");
+  await expect(terminal(page)).toContainText('"SEARCH_SECOND_ACCEPTED"');
+});
+
+test("Emacs search treats pasted source as a query and survives clear screen", async ({ page }) => {
+  await playground(page);
+  await paste(page, "(let retained value)(str TARGET)");
+  await expect(terminal(page)).toContainText('"TARGET"');
+  await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
+  await page.keyboard.type("str $retained");
+  await page.keyboard.press("Control+r");
+  await paste(page, "(exit 9)");
+  await expect(terminal(page)).toContainText("(failed reverse-i-search)`(exit 9)':");
+  await page.keyboard.press("Control+l");
+  await expect(terminal(page)).toContainText("(failed reverse-i-search)`(exit 9)':");
+  await page.keyboard.press("Escape");
+  await page.keyboard.type(")");
+  await expect(terminal(page)).toContainText('"value"');
+  await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
+});
+
+test("Emacs browser shortcuts are scoped to terminal focus", async ({ page }) => {
+  await playground(page);
+  await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
+  await page.keyboard.type("str draft");
+  await page.locator("[data-clear]").focus();
+  await page.keyboard.press("Control+b");
+  await expect(terminal(page)).not.toContainText("i-search");
+  await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
+  await page.keyboard.type(")");
+  await expect(terminal(page)).toContainText('"draft"');
+});

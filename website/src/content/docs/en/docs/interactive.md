@@ -47,6 +47,47 @@ description: "The parenthesis prompt, multiline editing, Tab completion, paste, 
 - Ctrl+C clears the input or interrupts the foreground task. Ctrl+D exits on an
   empty buffer and deletes forward otherwise.
 
+### Emacs-style shortcuts
+
+The native terminal and browser playground share these editing commands. Alt combinations
+also work by pressing Esc followed by the corresponding key. Character editing uses Unicode
+grapheme clusters; Home/End, Ctrl+A/E, and Ctrl+U/K operate on the current logical line.
+
+| Keys | Action |
+| --- | --- |
+| Ctrl+B/F, Ctrl+H | Move left/right; delete backward |
+| Alt+B/F | Move to the previous word's start/next word's end |
+| Ctrl+W | Kill backward, using whitespace to separate words |
+| Alt+Backspace, Alt+D | Kill backward/forward; words contain letters and digits, with path punctuation and underscores as separators |
+| Ctrl+U/K | Kill to the line's start/end; Ctrl+K at the end kills the newline |
+| Ctrl+Y, Alt+Y | Yank killed text; immediately cycle through earlier kills |
+| Ctrl+T | Transpose adjacent graphemes, or the last two at line end; never cross a newline |
+| Ctrl+L | Clear and redraw the screen, preserving the draft and session |
+| Ctrl+R/S | Search session history incrementally backward/forward |
+| Ctrl+_, Ctrl+X Ctrl+U | Undo an editing group |
+
+Consecutive kills combine in the direction of deletion; movement or other editing commands
+end the sequence. The kill ring survives command submission and is cleared on session reset.
+Alt+Y works only immediately after Ctrl+Y or Alt+Y. Yanking, transposing, and undoing only
+edit text: a `)` restored by those commands never executes a command.
+
+History search matches case-sensitive substrings of complete source without wrapping.
+Typing or pasting edits the query; Backspace removes a grapheme. Repeat Ctrl+R/S for the
+previous/next match; repeating with an empty query reuses the last search. A failed search
+keeps the last preview and shows a failure prompt. Enter or Esc accepts the result for
+editing without executing or inserting a newline; press `)` afterward to execute.
+Ctrl+G restores the original draft and cursor. Other editing commands accept the result
+before acting; Ctrl+L preserves the search and Ctrl+C cancels the input.
+
+Continuous typing is one undo group. Deletions, kills, yanks, transpositions, completions,
+and unsubmitted pastes each form separate groups. Movement ends a typing group. History
+navigation, search acceptance, and submission establish new undo baselines; interruption
+and clearing input also clear undo history. Undo never reverses executed commands or their effects.
+
+Browser shortcuts apply while the terminal has focus. Some browser or operating-system
+shortcuts cannot reach the page; use an Esc prefix when Alt conflicts. Copy and paste
+continue using the browser's shortcuts.
+
 Errors include the source, line, and column. Script execution also recovers
 unexpected top-level `)` and continues with later expressions. Such errors give
 a script exit status of 2 unless a runtime failure or explicit `exit` supersedes

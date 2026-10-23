@@ -466,3 +466,87 @@ fn double_tab_prints_candidates_and_keeps_editing_the_same_expression() {
     terminal.ready_after(end);
     terminal.exit(0);
 }
+
+#[test]
+fn emacs_character_word_transpose_and_undo_keys_use_real_control_bytes() {
+    let mut terminal = Terminal::new();
+    for (keys, expected) in [
+        (b"echo ac\x02b\x06)".as_slice(), "abc"),
+        (b"echo XY\x08Z)".as_slice(), "XZ"),
+        (
+            b"echo path/file.txt\x1bb\x1bdX\x05)".as_slice(),
+            "path/file.X",
+        ),
+        (b"echo one two\x17\x19)".as_slice(), "one two"),
+        (b"echo RAW\x02X\x1f\x05)".as_slice(), "RAW"),
+        (b"echo CHORD\x02X\x18\x15\x05)".as_slice(), "CHORD"),
+        ("echo 甲e\u{301}👩‍💻乙\x14)".as_bytes(), "甲e\u{301}乙👩‍💻"),
+    ] {
+        let offset = terminal.send(keys);
+        let end = terminal.expect(format!("\r\n{expected}\r\n").as_bytes(), offset);
+        terminal.ready_after(end);
+    }
+    terminal.exit(0);
+}
+
+#[test]
+fn emacs_alt_backspace_and_split_escape_prefix_share_the_kill_ring() {
+    let mut terminal = Terminal::new();
+    let offset = terminal.send(b"echo one two\x17\x1b\x7f\x19)");
+    let end = terminal.expect(b"\r\none two\r\n", offset);
+    terminal.ready_after(end);
+    let offset = terminal.send(b"echo one two\x17");
+    terminal.expect(b"(echo one ", offset);
+    terminal.send(b"\x1b");
+    thread::sleep(Duration::from_millis(80));
+    terminal.send(b"\x08\x19)");
+    let end = terminal.expect(b"\r\none two\r\n", offset);
+    terminal.ready_after(end);
+    // Move between kills so Alt+Y has a second entry to rotate to.
+    let offset = terminal.send(b"echo first second\x17\x02\x17\x19\x1by\x05)");
+    let end = terminal.expect(b"\r\nsecond\r\n", offset);
+    terminal.ready_after(end);
+    terminal.exit(0);
+}
+
+#[test]
+fn emacs_search_accepts_without_submitting_and_abort_restores_the_cursor() {
+    let mut terminal = Terminal::new();
+    let offset = terminal.paste("(echo SEARCH_FIRST)(echo SEARCH_SECOND)");
+    let end = terminal.expect(b"\r\nSEARCH_SECOND\r\n", offset);
+    terminal.ready_after(end);
+    let offset = terminal.send(b"echo saved\x02\x12SEARCH");
+    terminal.expect(b"(reverse-i-search)`SEARCH':", offset);
+    assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\nSEARCH_SECOND\r\n"));
+    let offset = terminal.send(b"\x12");
+    terminal.expect(b"(echo SEARCH_FIRST", offset);
+    let offset = terminal.send(b"\x13");
+    terminal.expect(b"(echo SEARCH_SECOND", offset);
+    let offset = terminal.send(b"\x07X\x05)");
+    let end = terminal.expect(b"\r\nsaveXd\r\n", offset);
+    terminal.ready_after(end);
+    let offset = terminal.send(b"\x12SEARCH_SECOND\r");
+    terminal.expect(b"(echo SEARCH_SECOND", offset);
+    terminal.drain();
+    assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\nSEARCH_SECOND\r\n"));
+    terminal.send(b")");
+    let end = terminal.expect(b"\r\nSEARCH_SECOND\r\n", offset);
+    terminal.ready_after(end);
+    terminal.exit(0);
+}
+
+#[test]
+fn emacs_clear_screen_preserves_the_draft_and_search() {
+    let mut terminal = Terminal::new();
+    let offset = terminal.send(b"echo CLEAR_SCREEN\x0c");
+    let end = terminal.expect(b"\x1b[2J", offset);
+    terminal.expect(b"(echo CLEAR_SCREEN", end);
+    terminal.send(b")");
+    let end = terminal.expect(b"\r\nCLEAR_SCREEN\r\n", offset);
+    terminal.ready_after(end);
+    let offset = terminal.send(b"\x12CLEAR\x0c");
+    let end = terminal.expect(b"\x1b[2J", offset);
+    terminal.expect(b"(reverse-i-search)`CLEAR':", end);
+    terminal.send(b"\x07");
+    terminal.exit(0);
+}

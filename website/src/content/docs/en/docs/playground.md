@@ -50,6 +50,7 @@ Browser pipelines run one stage at a time with buffered output. They report the 
 - Tab completes commands, temporary paths, and `$variable` names. Multiple matches extend the common prefix; press Tab again to list them. For example, `cat fru` followed by Tab completes `fruits.txt`.
 - Enter inserts a newline. A closing outer `)` evaluates the expression.
 - Up/Down move between lines or recall history. Ctrl+P/N always browse history. Recalling an entry removes its outer closing `)` and places the cursor at the end, ready to append arguments or press `)` to run it again.
+- Emacs-style word editing, Ctrl+Y yanking, Alt+Y cycling, Ctrl+T transposition, Ctrl+L clearing, and Ctrl+_ undo are supported. Ctrl+R/S searches history; Enter/Esc accepts without executing and Ctrl+G restores the draft. Alt keys also accept an Esc prefix. See [interactive editing](/parsh/en/docs/interactive/). Browser-reserved shortcuts may not reach the terminal.
 - Unicode editing, multiline input, full-script paste, and batch error recovery use the shared native editor model.
 - Clear and idle Ctrl+C preserve files, bindings, and the working directory.
 - Reset, refresh, or leaving the page ends the temporary session; browser back-forward caching can temporarily preserve a page.

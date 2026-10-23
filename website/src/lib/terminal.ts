@@ -53,6 +53,24 @@ const keys: Record<string, string> = {
   "\x15": "kill-start",
   "\x0b": "kill-end",
   "\x04": "eof",
+  "\x02": "left",
+  "\x06": "right",
+  "\x17": "kill-whitespace-word",
+  "\x19": "yank",
+  "\x14": "transpose",
+  "\x0c": "clear-screen",
+  "\x12": "search-backward",
+  "\x13": "search-forward",
+  "\x1f": "undo",
+  "\x18": "control-x",
+  "\x07": "abort",
+  "\x1b": "escape",
+  "\x1bb": "word-left",
+  "\x1bf": "word-right",
+  "\x1bd": "kill-word-forward",
+  "\x1by": "yank-pop",
+  "\x1b\x7f": "kill-word-back",
+  "\x1b\b": "kill-word-back",
 };
 
 export function mountTerminal(root: HTMLElement): void {
@@ -220,6 +238,11 @@ export function mountTerminal(root: HTMLElement): void {
         case "render":
           render(event);
           break;
+        case "clear-screen":
+          terminal.write("\x1b[2J\x1b[H");
+          drawnRows = 0;
+          cursorRow = 0;
+          break;
         case "commit":
           commit();
           break;
@@ -308,8 +331,7 @@ export function mountTerminal(root: HTMLElement): void {
   }
   function clear(): void {
     if (phase !== "ready") return;
-    wipeDisplay();
-    send({ type: "resize", columns: terminal.cols, rows: terminal.rows });
+    send({ type: "input", key: "clear-screen" });
     terminal.focus();
   }
   terminal.attachCustomKeyEventHandler((event) => {
@@ -321,9 +343,27 @@ export function mountTerminal(root: HTMLElement): void {
       interrupt();
       return false;
     }
-    if (event.ctrlKey && event.key.toLowerCase() === "l") {
+    const name = event.key.toLowerCase();
+    const control: Record<string, string> = {
+      a: "home", e: "end", b: "left", f: "right", h: "backspace",
+      p: "previous", n: "next", u: "kill-start", k: "kill-end",
+      w: "kill-whitespace-word", y: "yank", t: "transpose",
+      l: "clear-screen", r: "search-backward", s: "search-forward",
+      d: "eof", g: "abort", x: "control-x", _: "undo", "/": "undo", "7": "undo",
+    };
+    const meta: Record<string, string> = {
+      b: "word-left", f: "word-right", d: "kill-word-forward",
+      y: "yank-pop", backspace: "kill-word-back",
+    };
+    let key: string | undefined;
+    if (event.ctrlKey && !event.altKey && !event.metaKey &&
+        (!event.shiftKey || name === "_" || name === "/")) key = control[name];
+    else if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey)
+      key = meta[name];
+    if (key) {
       event.preventDefault();
-      clear();
+      if (phase === "ready" || phase === "running")
+        send({ type: "input", key });
       return false;
     }
     return true;
@@ -335,9 +375,28 @@ export function mountTerminal(root: HTMLElement): void {
       return;
     }
     const key = keys[data];
-    if (key) send({ type: "input", key });
-    else if (!data.startsWith("\x1b") && !/[\x00-\x1f\x7f]/.test(data))
-      send({ type: "input", key: "text", text: data });
+    if (key) {
+      send({ type: "input", key });
+      return;
+    }
+    if (data.startsWith("\x1b")) {
+      send({ type: "input", key: "ignore" });
+      return;
+    }
+    // xterm can deliver more than one character/control byte in one event.
+    let text = "";
+    const flush = () => {
+      if (text) send({ type: "input", key: "text", text });
+      text = "";
+    };
+    for (const ch of data) {
+      if (/[\x00-\x1f\x7f]/.test(ch)) {
+        flush();
+        if (ch === "\x03") interrupt();
+        else send({ type: "input", key: keys[ch] ?? "ignore" });
+      } else text += ch;
+    }
+    flush();
   });
   host.addEventListener(
     "paste",

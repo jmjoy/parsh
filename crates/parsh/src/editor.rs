@@ -1,13 +1,13 @@
 use std::io::{self, Write};
 
 use crate::{
-    repl::{ConsoleBackend, Input, Key, Session, completion_lines, layout},
+    repl::{ConsoleBackend, Input, Key, Session, completion_lines, view_layout},
     shell::Shell,
 };
 use crossterm::{
-    cursor::{MoveDown, MoveToColumn, MoveUp},
+    cursor::{MoveDown, MoveTo, MoveToColumn, MoveUp},
     event::{
-        self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind,
+        self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind,
         KeyModifiers,
     },
     execute, queue,
@@ -52,9 +52,9 @@ impl TerminalConsole {
         Ok(())
     }
 
-    fn draw(&mut self, input: &Input) -> io::Result<()> {
+    fn draw(&mut self, input: &Input, search: Option<&str>) -> io::Result<()> {
         let (width, height) = terminal::size().unwrap_or((80, 24));
-        let (lines, cursor) = layout(input, usize::from(width.max(2)));
+        let (lines, cursor) = view_layout(input, search, usize::from(width.max(2)));
         let available = usize::from(height.max(3) - 1);
         let first = cursor.0.saturating_sub(available - 1);
         let last = lines.len().min(first + available);
@@ -63,7 +63,7 @@ impl TerminalConsole {
             queue!(self.output, MoveUp(self.cursor_row as u16))?;
         }
         queue!(self.output, Clear(ClearType::FromCursorDown))?;
-        let dim_prompt = !input.explicit && input.body.trim().is_empty();
+        let dim_prompt = search.is_none() && !input.explicit && input.body.trim().is_empty();
         for (index, line) in lines[first..last].iter().enumerate() {
             if index != 0 {
                 queue!(self.output, Print("\r\n"))?;
@@ -115,8 +115,14 @@ impl Drop for TerminalConsole {
 }
 
 impl ConsoleBackend for TerminalConsole {
-    fn draw(&mut self, input: &Input) -> io::Result<()> {
-        TerminalConsole::draw(self, input)
+    fn draw(&mut self, input: &Input, search: Option<&str>) -> io::Result<()> {
+        TerminalConsole::draw(self, input, search)
+    }
+    fn clear_screen(&mut self) -> io::Result<()> {
+        execute!(self.output, Clear(ClearType::All), MoveTo(0, 0))?;
+        self.rows = 0;
+        self.cursor_row = 0;
+        Ok(())
     }
     fn completions(&mut self, candidates: &[String]) -> io::Result<()> {
         self.finish()?;
@@ -150,43 +156,74 @@ pub fn run(shell: &mut Shell) -> io::Result<i32> {
         let code = match event::read()? {
             Event::Paste(text) => session.paste(shell, &mut console, &text)?,
             Event::Key(key) if key.kind != KeyEventKind::Release => {
-                let mapped = if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    match key.code {
-                        KeyCode::Char('c') => Some(Key::Interrupt),
-                        KeyCode::Char('d') => Some(Key::Eof),
-                        KeyCode::Char('a') => Some(Key::Home),
-                        KeyCode::Char('e') => Some(Key::End),
-                        KeyCode::Char('p') => Some(Key::Previous),
-                        KeyCode::Char('n') => Some(Key::Next),
-                        KeyCode::Char('u') => Some(Key::KillStart),
-                        KeyCode::Char('k') => Some(Key::KillEnd),
-                        _ => None,
-                    }
-                } else {
-                    match key.code {
-                        KeyCode::Char(ch) => Some(Key::Character(ch)),
-                        KeyCode::Enter => Some(Key::Enter),
-                        KeyCode::Tab => Some(Key::Tab),
-                        KeyCode::Left => Some(Key::Left),
-                        KeyCode::Right => Some(Key::Right),
-                        KeyCode::Backspace => Some(Key::Backspace),
-                        KeyCode::Delete => Some(Key::Delete),
-                        KeyCode::Home => Some(Key::Home),
-                        KeyCode::End => Some(Key::End),
-                        KeyCode::Up => Some(Key::Up),
-                        KeyCode::Down => Some(Key::Down),
-                        _ => None,
-                    }
-                };
-                match mapped {
-                    Some(key) => session.key(shell, &mut console, key)?,
-                    None => None,
-                }
+                session.key(shell, &mut console, map_key(key))?
             }
             _ => None,
         };
         if let Some(code) = code {
             return Ok(code);
         }
+    }
+}
+
+fn map_key(key: KeyEvent) -> Key {
+    if key
+        .modifiers
+        .intersects(KeyModifiers::SUPER | KeyModifiers::HYPER | KeyModifiers::META)
+    {
+        return Key::Ignore;
+    }
+    if key.modifiers.contains(KeyModifiers::ALT) {
+        return match (key.code, key.modifiers.contains(KeyModifiers::CONTROL)) {
+            (KeyCode::Char('b'), false) => Key::WordLeft,
+            (KeyCode::Char('f'), false) => Key::WordRight,
+            (KeyCode::Char('d'), false) => Key::KillWordForward,
+            (KeyCode::Char('y'), false) => Key::YankPop,
+            (KeyCode::Backspace, _) | (KeyCode::Char('h'), true) => Key::KillWordBack,
+            _ => Key::Ignore,
+        };
+    }
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        return match key.code {
+            KeyCode::Char('c') => Key::Interrupt,
+            KeyCode::Char('d') => Key::Eof,
+            KeyCode::Char('a') => Key::Home,
+            KeyCode::Char('e') => Key::End,
+            KeyCode::Char('b') => Key::Left,
+            KeyCode::Char('f') => Key::Right,
+            KeyCode::Char('h') | KeyCode::Backspace => Key::Backspace,
+            KeyCode::Char('p') => Key::Previous,
+            KeyCode::Char('n') => Key::Next,
+            KeyCode::Char('u') => Key::KillStart,
+            KeyCode::Char('k') => Key::KillEnd,
+            KeyCode::Char('w') => Key::KillWhitespaceWord,
+            KeyCode::Char('y') => Key::Yank,
+            KeyCode::Char('t') => Key::Transpose,
+            KeyCode::Char('l') => Key::ClearScreen,
+            KeyCode::Char('r') => Key::SearchBackward,
+            KeyCode::Char('s') => Key::SearchForward,
+            KeyCode::Char('g') => Key::Abort,
+            KeyCode::Char('x') => Key::ControlX,
+            // Crossterm's legacy parser reports byte 0x1f as Ctrl+7.
+            KeyCode::Char('_' | '/' | '7') => Key::Undo,
+            KeyCode::Char('j' | 'm') | KeyCode::Enter => Key::Enter,
+            KeyCode::Char('i') | KeyCode::Tab => Key::Tab,
+            _ => Key::Ignore,
+        };
+    }
+    match key.code {
+        KeyCode::Char(ch) => Key::Character(ch),
+        KeyCode::Enter => Key::Enter,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Left => Key::Left,
+        KeyCode::Right => Key::Right,
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::Delete => Key::Delete,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::Up => Key::Up,
+        KeyCode::Down => Key::Down,
+        KeyCode::Esc => Key::Escape,
+        _ => Key::Ignore,
     }
 }
