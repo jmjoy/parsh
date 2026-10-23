@@ -4,8 +4,10 @@ description: "Bindings, environment values, lists, and explicit expansion."
 ---
 
 In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no
-special literal meaning. Double-quoted strings support `\"`, `\\`, `\n`, `\r`, and `\t`.
-Strings do not interpolate variables. Variable references use `$name`. Binding
+special literal meaning. Double-quoted strings interpolate `$name` and `$(...)`,
+and support `\"`, `\\`, `\n`, `\r`, `\t`, and `\$`. Single-quoted strings preserve
+their content without interpolation or escapes. `${name}` remains literal text.
+Outside strings, variable references use `$name`. Binding
 and assignment targets use bare names, including function parameters, loop
 bindings, and environment settings. Names start with a letter or `_`, followed
 by letters, digits, or `_`. Binding targets must be bare names, not quoted strings
@@ -15,7 +17,7 @@ or expressions.
 (let name "a friend")
 (echo hello $name)
 (set name world)
-(echo (str "hello, " $name))
+(echo "hello, $name")
 (export EDITOR vim)
 ```
 
@@ -24,6 +26,20 @@ binding, or an existing environment entry, and errors if the name is undefined.
 Lookups fall back to the inherited environment. `export` sets the environment for
 subsequent children and updates an existing local binding of the same name.
 Environment and working directory changes belong to this parsh session.
+
+`get` takes exactly one text variable name, which can itself be an expression,
+and returns the original value using the same lookup rules as `$name`:
+
+```parsh
+(get name)
+(get (str na me))
+(echo "hello, $(get name)_friend")
+```
+
+Names must follow the variable naming rules above. Undefined names are errors.
+`get` preserves lists, numbers, booleans, and nil; conversion to text happens
+only when used inside a string. `get` is a reserved built-in command name.
+For expression interpolation and literal dollars, see [strings](/parsh/en/docs/syntax/#strings-and-interpolation).
 
 ```parsh
 (let files (list "a file.rs" other.rs))

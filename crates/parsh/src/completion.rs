@@ -25,12 +25,20 @@ enum Kind {
     Variable,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Quote {
+    #[default]
+    None,
+    Single,
+    Double,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct Context {
     range: Range<usize>,
     prefix: String,
     kind: Kind,
-    quoted: bool,
+    quote: Quote,
     closed: bool,
 }
 
@@ -66,14 +74,14 @@ impl Context {
         frames: &[Frame],
         range: Range<usize>,
         prefix: String,
-        quoted: bool,
+        quote: Quote,
         closed: bool,
     ) -> Option<Self> {
         let frame = frames.last()?;
         if frames.iter().any(|frame| frame.comment) || frame.declaration() {
             return None;
         }
-        let kind = if !quoted && prefix.starts_with('$') {
+        let kind = if quote == Quote::None && prefix.starts_with('$') {
             Kind::Variable
         } else if frame.items == 0 {
             Kind::Command
@@ -86,7 +94,7 @@ impl Context {
             range,
             prefix,
             kind,
-            quoted,
+            quote,
             closed,
         })
     }
@@ -95,7 +103,6 @@ impl Context {
         if !source.is_char_boundary(cursor) {
             return None;
         }
-        let mut frames: Vec<Frame> = Vec::new();
         let mut offset = 0;
         if source.starts_with("#!") {
             offset = source.find('\n').unwrap_or(source.len());
@@ -103,90 +110,192 @@ impl Context {
                 return None;
             }
         }
-        while offset < source.len() && offset <= cursor {
-            let ch = source[offset..].chars().next()?;
-            if offset == cursor && (ch.is_whitespace() || matches!(ch, '(' | ')')) {
-                return Self::at(&frames, cursor..cursor, String::new(), false, false);
+        let mut scanner = Scanner {
+            source,
+            cursor,
+            offset,
+            frames: Vec::new(),
+            found: false,
+            context: None,
+        };
+        scanner.scan(0, false, false);
+        scanner.context
+    }
+}
+
+/// Scan strings and their embedded calls with the same nesting boundaries as the reader.
+struct Scanner<'a> {
+    source: &'a str,
+    cursor: usize,
+    offset: usize,
+    frames: Vec<Frame>,
+    found: bool,
+    context: Option<Context>,
+}
+
+impl Scanner<'_> {
+    fn peek(&self) -> Option<char> {
+        self.source[self.offset..].chars().next()
+    }
+
+    fn context(&mut self, range: Range<usize>, prefix: String, quote: Quote, closed: bool) {
+        self.found = true;
+        self.context = Context::at(&self.frames, range, prefix, quote, closed);
+    }
+
+    fn list(&mut self, depth: usize, count_parent: bool) {
+        let parameters = count_parent
+            && self.frames.last().is_some_and(|parent| {
+                parent.parameters || (parent.head.as_deref() == Some("defn") && parent.items == 2)
+            });
+        self.frames.push(Frame {
+            parameters,
+            ..Frame::default()
+        });
+        self.offset += 1;
+        self.scan(depth + 1, true, count_parent);
+    }
+
+    fn scan(&mut self, depth: usize, nested: bool, count_parent: bool) {
+        if depth >= 256 {
+            self.found = true;
+            return;
+        }
+        while let Some(ch) = self.peek() {
+            if self.found {
+                return;
+            }
+            if self.offset == self.cursor && (ch.is_whitespace() || matches!(ch, '(' | ')')) {
+                self.context(self.cursor..self.cursor, String::new(), Quote::None, false);
+                return;
             }
             match ch {
-                ch if ch.is_whitespace() => offset += ch.len_utf8(),
-                '(' => {
-                    let parameters = frames.last().is_some_and(|parent| {
-                        parent.parameters
-                            || (parent.head.as_deref() == Some("defn") && parent.items == 2)
-                    });
-                    frames.push(Frame {
-                        parameters,
-                        ..Frame::default()
-                    });
-                    offset += 1;
-                }
+                ch if ch.is_whitespace() => self.offset += ch.len_utf8(),
+                '(' => self.list(depth, true),
                 ')' => {
-                    let frame = frames.pop()?;
-                    if !frame.comment
-                        && let Some(parent) = frames.last_mut()
+                    if !nested {
+                        self.found = true;
+                        return;
+                    }
+                    let frame = self.frames.pop().unwrap();
+                    if count_parent
+                        && !frame.comment
+                        && let Some(parent) = self.frames.last_mut()
                     {
                         parent.items += 1;
                     }
-                    offset += 1;
+                    self.offset += 1;
+                    return;
                 }
-                '"' => {
-                    let start = offset;
-                    offset += 1;
-                    let mut escaped = false;
-                    let mut closed = false;
-                    while offset < source.len() {
-                        let ch = source[offset..].chars().next()?;
-                        offset += ch.len_utf8();
-                        if escaped {
-                            escaped = false;
-                        } else if ch == '\\' {
-                            escaped = true;
-                        } else if ch == '"' {
-                            closed = true;
-                            break;
-                        }
-                    }
-                    let content_end = offset - usize::from(closed);
-                    if cursor <= offset {
-                        let end = cursor.max(start + 1).min(content_end);
-                        let prefix = unescape(&source[start + 1..end])?;
-                        return Self::at(&frames, start..offset, prefix, true, closed);
-                    }
-                    frames
-                        .last_mut()?
-                        .word(unescape(&source[start + 1..content_end])?, true);
-                }
+                '"' => self.string(Quote::Double, depth),
+                '\'' => self.string(Quote::Single, depth),
                 _ => {
-                    let start = offset;
-                    offset += ch.len_utf8();
-                    while offset < source.len() {
-                        let ch = source[offset..].chars().next()?;
-                        if !reader::word_character(ch) {
-                            break;
-                        }
-                        offset += ch.len_utf8();
+                    let start = self.offset;
+                    while self.peek().is_some_and(reader::word_character) {
+                        self.offset += self.peek().unwrap().len_utf8();
                     }
-                    let text = &source[start..offset];
-                    if cursor <= offset {
-                        if text == ";" && frames.last()?.items == 0 {
-                            return None;
+                    let text = &self.source[start..self.offset];
+                    if (start..=self.offset).contains(&self.cursor) {
+                        if text == ";" && self.frames.last().is_some_and(|frame| frame.items == 0) {
+                            self.found = true;
+                            return;
                         }
-                        return Self::at(
-                            &frames,
-                            start..offset,
-                            source[start..cursor].into(),
-                            false,
+                        self.context(
+                            start..self.offset,
+                            self.source[start..self.cursor].into(),
+                            Quote::None,
                             false,
                         );
+                        return;
                     }
-                    frames.last_mut()?.word(text.into(), false);
+                    if let Some(frame) = self.frames.last_mut() {
+                        frame.word(text.into(), false);
+                    }
                 }
             }
         }
-        (offset == cursor)
-            .then(|| Self::at(&frames, cursor..cursor, String::new(), false, false))
-            .flatten()
+        if !self.found && self.offset == self.cursor {
+            self.context(self.cursor..self.cursor, String::new(), Quote::None, false);
+        }
+    }
+
+    fn string(&mut self, quote: Quote, depth: usize) {
+        let start = self.offset;
+        let delimiter = if quote == Quote::Single { '\'' } else { '"' };
+        self.offset += 1;
+        let mut text = String::new();
+        let mut closed = false;
+        let mut interpolated = false;
+        while let Some(ch) = self.peek() {
+            if ch == delimiter {
+                self.offset += 1;
+                closed = true;
+                break;
+            }
+            if quote == Quote::Double && ch == '\\' {
+                self.offset += 1;
+                let Some(escaped) = self.peek().and_then(reader::string_escape) else {
+                    self.found = true;
+                    return;
+                };
+                text.push(escaped);
+                self.offset += self.peek().unwrap().len_utf8();
+            } else if quote == Quote::Double && ch == '$' {
+                let variable_start = self.offset;
+                self.offset += 1;
+                if self.peek() == Some('(') {
+                    interpolated = true;
+                    self.list(depth, false);
+                    if self.found {
+                        return;
+                    }
+                } else if self.peek().is_some_and(reader::variable_start)
+                    || (self.cursor == self.offset && self.peek().is_none_or(|ch| ch == '"'))
+                {
+                    interpolated = true;
+                    while self.peek().is_some_and(reader::variable_continue) {
+                        self.offset += self.peek().unwrap().len_utf8();
+                    }
+                    if self.cursor > variable_start && self.cursor <= self.offset {
+                        self.context(
+                            variable_start..self.offset,
+                            self.source[variable_start..self.cursor].into(),
+                            Quote::Double,
+                            false,
+                        );
+                        if let Some(context) = &mut self.context {
+                            context.kind = Kind::Variable;
+                        }
+                        return;
+                    }
+                } else {
+                    text.push('$');
+                }
+            } else {
+                text.push(ch);
+                self.offset += ch.len_utf8();
+            }
+        }
+        if (start..=self.offset).contains(&self.cursor) {
+            self.found = true;
+            if !interpolated {
+                let end = self
+                    .cursor
+                    .max(start + 1)
+                    .min(self.offset - usize::from(closed));
+                let prefix = &self.source[start + 1..end];
+                let prefix = if quote == Quote::Single {
+                    Some(prefix.to_owned())
+                } else {
+                    unescape(prefix)
+                };
+                if let Some(prefix) = prefix {
+                    self.context(start..self.offset, prefix, quote, closed);
+                }
+            }
+        } else if let Some(frame) = self.frames.last_mut() {
+            frame.word(if interpolated { String::new() } else { text }, true);
+        }
     }
 }
 
@@ -195,14 +304,7 @@ fn unescape(text: &str) -> Option<String> {
     let mut chars = text.chars();
     while let Some(ch) = chars.next() {
         decoded.push(if ch == '\\' {
-            match chars.next()? {
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                '\\' => '\\',
-                '"' => '"',
-                _ => return None,
-            }
+            reader::string_escape(chars.next()?)?
         } else {
             ch
         });
@@ -222,6 +324,7 @@ fn quoted_content(text: &str) -> String {
         .map(|ch| match ch {
             '\\' => "\\\\".into(),
             '"' => "\\\"".into(),
+            '$' => "\\$".into(),
             '\n' => "\\n".into(),
             '\r' => "\\r".into(),
             '\t' => "\\t".into(),
@@ -319,17 +422,26 @@ impl Completion {
             }
             &first.text[..length]
         };
-        let finished = unique && !first.directory;
-        let quoted =
-            self.context.kind != Kind::Variable && (self.context.quoted || needs_quotes(text));
-        let mut replacement = if quoted {
-            format!("\"{}", quoted_content(text))
+        let embedded_variable =
+            self.context.kind == Kind::Variable && self.context.quote == Quote::Double;
+        let finished = unique && !first.directory && !embedded_variable;
+        let quote = if self.context.kind == Kind::Variable {
+            Quote::None
+        } else if self.context.quote == Quote::Single && !text.contains('\'') {
+            Quote::Single
+        } else if self.context.quote != Quote::None || needs_quotes(text) {
+            Quote::Double
         } else {
-            text.into()
+            Quote::None
+        };
+        let mut replacement = match quote {
+            Quote::Single => format!("'{text}"),
+            Quote::Double => format!("\"{}", quoted_content(text)),
+            Quote::None => text.into(),
         };
         let mut cursor = replacement.len();
-        if quoted && (finished || self.context.closed) {
-            replacement.push('"');
+        if quote != Quote::None && (finished || self.context.closed) {
+            replacement.push(if quote == Quote::Single { '\'' } else { '"' });
             if finished {
                 cursor += 1;
             }

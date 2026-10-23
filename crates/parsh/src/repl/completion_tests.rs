@@ -263,7 +263,7 @@ fn paths_respect_working_directory_hidden_files_and_directory_only_cd() {
             .iter()
             .any(|line| line.contains(".hidden"))
     );
-    assert!(listings(&events)[0].contains(&"\"$literal\"".into()));
+    assert!(listings(&events)[0].contains(&"\"\\$literal\"".into()));
     repl.input(Key::ClearInput);
     type_text(&mut repl, "str .");
     repl.input(Key::Tab);
@@ -285,12 +285,12 @@ fn paths_with_quotes_whitespace_and_dollar_signs_remain_literal_values() {
     assert!(events.contains(&Event::Value(
         Value::Text("odd (\"x\")\n\t\\name".into()).display()
     )));
-    type_text(&mut repl, "str \"$l");
+    type_text(&mut repl, "str \"\\$l");
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, "str \"$literal\" ");
+    assert_eq!(repl.session.input.body, "str \"\\$literal\" ");
     assert!(
         repl.input(Key::Enter)
-            .contains(&Event::Value("\"$literal\"".into()))
+            .contains(&Event::Value("\"\\$literal\"".into()))
     );
     assert_eq!(host.runs.get(), 0);
 }
@@ -307,6 +307,61 @@ fn quoted_directory_completion_can_continue_into_the_next_component() {
         repl.input(Key::Enter)
             .contains(&Event::Value("\"folder name/你好.txt\"".into()))
     );
+}
+
+#[test]
+fn quoted_variable_and_expression_completion_preserve_the_surrounding_text() {
+    let host = TestHost::default();
+    let mut repl = Repl::with_host(host.clone()).unwrap();
+    execute(&mut repl, "(let TAB_NAME retained)");
+    repl.session.input = Input {
+        body: r#"str "prefix $TAB_Nwrong/suffix" tail"#.into(),
+        cursor: r#"str "prefix $TAB_N"#.len(),
+        explicit: false,
+    };
+    repl.input(Key::Tab);
+    assert_eq!(
+        repl.session.input.body,
+        r#"str "prefix $TAB_NAME/suffix" tail"#
+    );
+    assert_eq!(repl.session.input.cursor, r#"str "prefix $TAB_NAME"#.len());
+    repl.input(Key::ClearInput);
+    type_text(&mut repl, r#"str "$(st"#);
+    repl.input(Key::Tab);
+    assert_eq!(repl.session.input.body, r#"str "$(str "#);
+    type_text(&mut repl, r#""inner")!""#);
+    assert!(
+        repl.input(Key::Enter)
+            .contains(&Event::Value(r#""inner!""#.into()))
+    );
+    type_text(&mut repl, r#"str "$(echo no-run) $TAB_N"#);
+    repl.input(Key::Tab);
+    assert_eq!(repl.session.input.body, r#"str "$(echo no-run) $TAB_NAME"#);
+    assert_eq!(host.runs.get(), 0);
+}
+
+#[test]
+fn single_quote_path_completion_preserves_literal_content_and_handles_apostrophes() {
+    let host = TestHost::default();
+    host.paths
+        .borrow_mut()
+        .push("/home/playground/quote's $literal".into());
+    let mut repl = Repl::with_host(host.clone()).unwrap();
+    type_text(&mut repl, "str '$l");
+    repl.input(Key::Tab);
+    assert_eq!(repl.session.input.body, "str '$literal' ");
+    assert!(
+        repl.input(Key::Enter)
+            .contains(&Event::Value(r#""\$literal""#.into()))
+    );
+    type_text(&mut repl, "str 'quote");
+    repl.input(Key::Tab);
+    assert_eq!(repl.session.input.body, r#"str "quote's \$literal" "#);
+    assert!(
+        repl.input(Key::Enter)
+            .contains(&Event::Value(r#""quote's \$literal""#.into()))
+    );
+    assert_eq!(host.runs.get(), 0);
 }
 
 #[test]

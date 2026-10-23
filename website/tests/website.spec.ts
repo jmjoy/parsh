@@ -135,6 +135,64 @@ test("bindings, closures, conditions, loops and Unicode retain shared semantics"
   await expect(terminal(page)).toContainText('"name"');
 });
 
+test("quoted strings share variable and expression interpolation semantics", async ({ page }) => {
+  await playground(page);
+  await execute(page, String.raw`(let name parsh)
+(let 名字 世界)
+(defn name () (str called))
+(list "hello, $name" "$(get name)_suffix" "sum=$(+ 1 2)"
+  "$(name)" "nested=$(str "a" 'b')" "$名字")
+(eq '$name $(+ 1 2)\n' "\$name \$(+ 1 2)\\n")
+(str "capture=$(printf "line\n\n")")`);
+  await expect(terminal(page)).toContainText(
+    '("hello, parsh" "parsh_suffix" "sum=3" "called" "nested=ab" "世界")',
+  );
+  await expect.poll(async () =>
+    (await terminal(page).innerText()).split("\n").some(line => line.trim() === "true"),
+  ).toBe(true);
+  await expect(terminal(page)).toContainText('"capture=line"');
+  await execute(page, '(str "value=$missing") (str skipped-interpolation)');
+  await expect(terminal(page)).toContainText("undefined variable $missing");
+  await expect(terminal(page)).not.toContainText('"skipped-interpolation"');
+  await execute(page, '(str "$(get name)_recovered")');
+  await expect(terminal(page)).toContainText('"parsh_recovered"');
+});
+
+test("unfinished interpolations wait before executing the browser batch", async ({ page }) => {
+  await playground(page);
+  await paste(page, '(str BEFORE_INTERPOLATION) (str "sum=$(+ 1');
+  await page.locator("[data-terminal-host] textarea").focus();
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).not.toContainText('"BEFORE_INTERPOLATION"');
+  await page.keyboard.type(' 2)")');
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('"BEFORE_INTERPOLATION"');
+  await expect(terminal(page)).toContainText('"sum=3"');
+});
+
+test("quoted completion handles interpolation and literal dollar filenames", async ({ page }) => {
+  await playground(page);
+  await execute(page, "(let TAB_NAME retained) (touch '$literal')");
+  await page.locator("[data-terminal-host] textarea").focus();
+  await page.keyboard.type('str "value=$TAB_N');
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText('str "value=$TAB_NAME');
+  await page.keyboard.type('"');
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('"value=retained"');
+  await page.keyboard.type('str "$(st');
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText('str "$(str ');
+  await page.keyboard.type('"inner")!"');
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('"inner!"');
+  await page.keyboard.type("str '$l");
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText("str '$literal'");
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText(String.raw`"\$literal"`);
+});
+
 test("binding targets reject variable references and allow recovery", async ({
   page,
 }) => {

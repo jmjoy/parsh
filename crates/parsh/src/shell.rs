@@ -18,7 +18,7 @@ use crate::{
         CommandOutput, ExecutionHost, FileMode, HostError, HostStreams, MAX_OUTPUT_BYTES,
         OutputChunk, Stream,
     },
-    reader::{Expr, Kind},
+    reader::{Expr, Kind, variable_name},
     streams::{HostFile, Io, Output, SharedHost},
 };
 
@@ -54,7 +54,7 @@ impl Value {
 
     pub fn display(&self) -> String {
         match self {
-            Self::Text(text) => format!("{text:?}"),
+            Self::Text(text) => format!("{text:?}").replace('$', "\\$"),
             Self::Number(number) => number.to_string(),
             Self::Bool(boolean) => boolean.to_string(),
             Self::List(values) => format!(
@@ -161,9 +161,9 @@ pub struct Shell {
 }
 
 const BUILTINS: &[&str] = &[
-    "do", "let", "set", "if", "for", "defn", "list", "str", "eq", "not", "glob", "cd", "export",
-    "exit", "+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">=", "|", "|>", "|1>", "|>>", "|1>>",
-    "<|", "|2>", "|2>>",
+    "do", "let", "set", "get", "if", "for", "defn", "list", "str", "eq", "not", "glob", "cd",
+    "export", "exit", "+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">=", "|", "|>", "|1>", "|>>",
+    "|1>>", "<|", "|2>", "|2>>",
 ];
 
 fn builtin(name: &str) -> bool {
@@ -175,14 +175,6 @@ fn requires_host(name: &str) -> bool {
         name,
         "glob" | "cd" | "|" | "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>"
     )
-}
-
-fn variable_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars
-        .next()
-        .is_some_and(|ch| ch == '_' || ch.is_alphabetic())
-        && chars.all(|ch| ch == '_' || ch.is_alphanumeric())
 }
 
 /// Normalize virtual paths using the host's POSIX filesystem rules.
@@ -473,6 +465,17 @@ impl Shell {
             .map_err(|message| Error::new(expr, message))
     }
 
+    fn variable(&self, expr: &Expr, name: &str, env: &Env) -> Result<Value, Error> {
+        Self::valid_name(expr, name)?;
+        Scope::get(env, name)
+            .or_else(|| {
+                self.environment
+                    .get(&OsString::from(name))
+                    .map(|s| Value::Text(s.to_string_lossy().into_owned()))
+            })
+            .ok_or_else(|| Error::new(expr, format!("undefined variable ${name}")))
+    }
+
     fn number(&mut self, expr: &Expr, env: &Env, io: &Io) -> Result<Number, Error> {
         match self.value(expr, env, io)? {
             Value::Number(number) => Ok(number),
@@ -565,15 +568,13 @@ impl Shell {
     fn eval_inner(&mut self, expr: &Expr, env: &Env, mode: Mode, io: &Io) -> Result<Value, Error> {
         let items = match &expr.kind {
             Kind::Text(text) | Kind::Word(text) => return Ok(Value::Text(text.clone())),
-            Kind::Variable(name) => {
-                Self::valid_name(expr, name)?;
-                return Scope::get(env, name)
-                    .or_else(|| {
-                        self.environment
-                            .get(&OsString::from(name))
-                            .map(|s| Value::Text(s.to_string_lossy().into_owned()))
-                    })
-                    .ok_or_else(|| Error::new(expr, format!("undefined variable ${name}")));
+            Kind::Variable(name) => return self.variable(expr, name, env),
+            Kind::Interpolated(parts) => {
+                let mut text = String::new();
+                for part in parts {
+                    text.push_str(&self.scalar(part, env, io)?);
+                }
+                return Ok(Value::Text(text));
             }
             Kind::Comment => return Ok(Value::Nil),
             Kind::List(items) => items,
@@ -583,7 +584,7 @@ impl Shell {
         };
         let name = match &head.kind {
             Kind::Text(name) | Kind::Word(name) => name.clone(),
-            Kind::Variable(_) => self.scalar(head, env, io)?,
+            Kind::Variable(_) | Kind::Interpolated(_) => self.scalar(head, env, io)?,
             _ => {
                 return Err(Error::new(
                     head,
@@ -602,6 +603,13 @@ impl Shell {
         }
         match name.as_str() {
             "do" => self.sequence(args, env, mode, io),
+            "get" => {
+                Self::arity(expr, args, 1, 1)?;
+                let Value::Text(name) = self.value(&args[0], env, io)? else {
+                    return Err(Error::new(&args[0], "get expects a text variable name"));
+                };
+                self.variable(&args[0], &name, env)
+            }
             "let" | "set" => {
                 Self::arity(expr, args, 2, 2)?;
                 let variable = Self::binding(&args[0])?;
@@ -906,20 +914,21 @@ impl Shell {
                             "pipeline stages must be external command calls",
                         ));
                     };
-                    let Some(Expr {
-                        kind: Kind::Text(command) | Kind::Word(command),
-                        ..
-                    }) = call.first()
-                    else {
+                    let Some(head) = call.first() else {
                         return Err(Error::new(stage, "pipeline stage needs a command name"));
                     };
-                    if builtin(command) || self.functions.contains_key(command) {
+                    let command = match &head.kind {
+                        Kind::Text(command) | Kind::Word(command) => command.clone(),
+                        Kind::Interpolated(_) => self.scalar(head, env, io)?,
+                        _ => return Err(Error::new(stage, "pipeline stage needs a command name")),
+                    };
+                    if builtin(&command) || self.functions.contains_key(&command) {
                         return Err(Error::new(
                             stage,
                             "v1 pipeline stages must be external commands",
                         ));
                     }
-                    stages.push(self.argv(command, &call[1..], env, io)?);
+                    stages.push(self.argv(&command, &call[1..], env, io)?);
                 }
                 self.commands(expr, &stages, mode, io)
             }

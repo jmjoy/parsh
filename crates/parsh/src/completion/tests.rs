@@ -30,13 +30,9 @@ fn context_tracks_lists_comments_and_declarations() {
             "su",
         ),
         ("(str $HO", Kind::Variable, "$HO"),
-        (
-            "(str \"$HO",
-            Kind::Path {
-                directories_only: false,
-            },
-            "$HO",
-        ),
+        ("(str \"$HO", Kind::Variable, "$HO"),
+        ("(str \"$(st", Kind::Command, "st"),
+        ("(str \"$(str \"$HO", Kind::Variable, "$HO"),
         ("(defn f (name) (st", Kind::Command, "st"),
         (
             "(do (; ignored (nested)) (cd su",
@@ -76,8 +72,65 @@ fn quoted_paths_decode_only_reader_supported_escapes() {
     let source = "(str \"a\\\"b\\\\c\\n\\r\\t";
     let context = Context::parse(source, source.len()).unwrap();
     assert_eq!(context.prefix, "a\"b\\c\n\r\t");
-    assert!(context.quoted);
+    assert_eq!(context.quote, Quote::Double);
     assert!(!context.closed);
+}
+
+#[test]
+fn nested_interpolation_contexts_preserve_outer_string_boundaries() {
+    for (marked, kind, prefix) in [
+        (
+            r#"(str "prefix $HO|ME/suffix" tail)"#,
+            Kind::Variable,
+            "$HO",
+        ),
+        (
+            r#"(str "prefix $(st|r "inner") suffix" tail)"#,
+            Kind::Command,
+            "st",
+        ),
+        (r#"(str "$(str "$(ge|t name)")")"#, Kind::Command, "ge"),
+        (
+            r#"(str 'a\n $HO|')"#,
+            Kind::Path {
+                directories_only: false,
+            },
+            r#"a\n $HO"#,
+        ),
+        (
+            r#"(str "\$HO|")"#,
+            Kind::Path {
+                directories_only: false,
+            },
+            "$HO",
+        ),
+        (
+            r#"(cd "$(str x)" fo|)"#,
+            Kind::Path {
+                directories_only: false,
+            },
+            "fo",
+        ),
+    ] {
+        let cursor = marked.find('|').unwrap();
+        let source = marked.replacen('|', "", 1);
+        let context = Context::parse(&source, cursor).unwrap();
+        assert_eq!(
+            (context.kind, context.prefix.as_str()),
+            (kind, prefix),
+            "{marked}"
+        );
+    }
+    for marked in [
+        r#"(str "$HOME/fo|")"#,
+        r#"(str "fo|$(echo later)")"#,
+        r#"(; "$(st|r x)")"#,
+        r#"(str "$(; (st|r x))")"#,
+    ] {
+        let cursor = marked.find('|').unwrap();
+        let source = marked.replacen('|', "", 1);
+        assert!(Context::parse(&source, cursor).is_none(), "{marked}");
+    }
 }
 
 #[test]
@@ -86,6 +139,8 @@ fn every_cursor_boundary_in_unfinished_source_is_safe() {
         "(str \"你好 👩‍💻 e\u{301}\" tail)",
         "(do (; \"quotes\\\"\" (nested)) (str $name))",
         "(str \"unterminated\\",
+        r#"(str "prefix $名字 $(str "inner $HOME" '(a b)) suffix" tail)"#,
+        r#"(str 'raw\n $HOME $(str "inner")' tail)"#,
         "(str ) extra))",
         "(\"\")",
         "\"",
@@ -111,7 +166,10 @@ fn completed_literals_round_trip_through_the_reader() {
         "a file",
         "a(b)",
         "a\"b",
+        "a'b",
         "$literal",
+        "$(echo unexpected)",
+        "a $literal file",
         ";",
         "a\nb\tc\rd\\e",
         "你好👩‍💻",

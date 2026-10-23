@@ -959,6 +959,182 @@ mod syntax_tests {
     }
 
     #[test]
+    fn strings_interpolate_variables_calls_and_nested_strings() {
+        let events = execute(
+            &mut Repl::new(),
+            r#"
+            (let name parsh)
+            (let _名字2 世界)
+            (defn name () (str called))
+            (list "$name" "$(get name)_suffix" "sum=$(+ 1 2)"
+                "$(name)" "nested=$(str "a" (str 'b'))" "$_名字2$name" "" '')
+            (list (eq '$name $(+ 1 2)\n' "\$name \$(+ 1 2)\\n")
+                (eq '${name}' "${name}") (eq '$1 $!' "$1 $!"))
+            (let literal '$missing $(missing)')
+            (eq "$literal" '$missing $(missing)')
+            (; "$undefined $(missing)")
+        "#,
+        );
+        assert!(diagnostics(&events).is_empty(), "{events:?}");
+        assert_eq!(
+            values(&events),
+            [
+                r#"("parsh" "parsh_suffix" "sum=3" "called" "nested=ab" "世界parsh" "" "")"#,
+                "(true true true)",
+                "true",
+            ]
+        );
+    }
+
+    #[test]
+    fn get_preserves_types_and_shares_lexical_and_environment_lookup() {
+        let events = execute(
+            &mut Repl::new(),
+            r#"
+            (export GREETING hello)
+            (let name outer)
+            (let number (+ 2))
+            (let flag (eq a a))
+            (let nothing (do))
+            (let items (list a b))
+            (defn read () (get name))
+            (defn caller (name) (read))
+            (list (caller inner) (get (str na me)) (get number) (get flag)
+                (get nothing) (get items) (get GREETING))
+            (str "$number|$flag|$nothing")
+            (set name changed)
+            (read)
+        "#,
+        );
+        assert!(diagnostics(&events).is_empty(), "{events:?}");
+        assert_eq!(
+            values(&events),
+            [
+                r#"("outer" "outer" 2 true nil ("a" "b") "hello")"#,
+                r#""2|true|""#,
+                r#""changed""#,
+            ]
+        );
+    }
+
+    #[test]
+    fn interpolations_evaluate_once_in_order_and_at_call_time() {
+        let events = execute(
+            &mut Repl::new(),
+            r#"
+            (let count (+ 0))
+            (let name before)
+            (defn show () (str "$name"))
+            (str "$(do (set count (+ $count 1)) $count)$(do (set count (+ $count 1)) $count)")
+            (get count)
+            (set name after)
+            (show)
+        "#,
+        );
+        assert!(diagnostics(&events).is_empty(), "{events:?}");
+        assert_eq!(values(&events), [r#""12""#, "2", r#""after""#]);
+    }
+
+    #[test]
+    fn interpolation_errors_locate_the_operand_and_allow_next_submission() {
+        for (source, message, location) in [
+            (
+                r#"(str "你好 $missing")"#,
+                "undefined variable $missing",
+                "interactive:1:10:",
+            ),
+            (
+                "(str \"sum=$(/ 1\n 0)\")",
+                "division by zero",
+                "interactive:2:2:",
+            ),
+            (
+                r#"(str "$args")"#,
+                "expected a scalar value, got a list",
+                "interactive:1:7:",
+            ),
+            (
+                r#"(str "$(list a)")"#,
+                "expected a scalar value, got a list",
+                "interactive:1:8:",
+            ),
+        ] {
+            let mut repl = Repl::new();
+            let events = execute(&mut repl, &format!("{source} (str skipped)"));
+            let errors = diagnostics(&events);
+            assert_eq!(errors.len(), 1, "{events:?}");
+            assert!(errors[0].starts_with(location), "{errors:?}");
+            assert!(errors[0].contains(message), "{errors:?}");
+            assert!(values(&events).is_empty(), "{events:?}");
+            assert_eq!(
+                values(&execute(&mut repl, "(str recovered)")),
+                [r#""recovered""#]
+            );
+        }
+        for (source, message) in [
+            ("(get)", "expected 1 arguments"),
+            ("(get a b)", "expected 1 arguments"),
+            ("(get (+ 1))", "get expects a text variable name"),
+            ("(get bad-name)", "invalid variable name"),
+            ("(get missing)", "undefined variable $missing"),
+            ("(defn get () (str invalid))", "function name is reserved"),
+        ] {
+            let events = execute(&mut Repl::new(), source);
+            assert!(
+                diagnostics(&events)[0].contains(message),
+                "{source}: {events:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unfinished_interpolations_wait_for_the_whole_batch() {
+        let mut repl = Repl::new();
+        repl.paste("(str before) (str \"$(+ 1");
+        let events = repl.input(Key::Enter);
+        assert!(values(&events).is_empty());
+        assert!(diagnostics(&events).is_empty());
+        type_text(&mut repl, " 2)\")");
+        assert_eq!(values(&repl.input(Key::Enter)), [r#""before""#, r#""3""#]);
+
+        repl.paste("(str 'line");
+        assert!(values(&repl.input(Key::Enter)).is_empty());
+        type_text(&mut repl, "two')");
+        assert_eq!(values(&repl.input(Key::Enter)), [r#""line\ntwo""#]);
+    }
+
+    #[test]
+    fn interpolations_share_the_evaluation_depth_limit() {
+        // Match the native main thread's stack when exercising the full depth limit.
+        std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(|| {
+                let mut source = "(str done)".to_owned();
+                for _ in 0..70 {
+                    source = format!("(str \"${source}\")");
+                }
+                let events = execute(&mut Repl::new(), &source);
+                assert!(
+                    diagnostics(&events)[0].contains("evaluation nesting exceeds 128"),
+                    "{events:?}"
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn displayed_text_can_be_read_without_interpolating_its_dollars() {
+        let text = "$name $(missing) \"quoted\" \\ newline\n";
+        let displayed = Value::Text(text.into()).display();
+        let Read::Form(expr) = Reader::new(&displayed).read() else {
+            panic!("{displayed}")
+        };
+        assert_eq!(expr.kind, Kind::Text(text.into()));
+    }
+
+    #[test]
     fn arithmetic_parses_text_and_preserves_integer_and_float_results() {
         for (source, expected) in [
             ("(+)", "0"),
@@ -1633,6 +1809,34 @@ mod host_tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn interpolated_host_commands_capture_stdout_and_propagate_failures() {
+        let mut repl = Repl::with_host(TestHost).unwrap();
+        let events = execute(&mut repl, r#"(str "cwd=$(pwd); $(echo "a b")")"#);
+        assert!(outputs(&events).is_empty(), "{events:?}");
+        assert!(
+            events.contains(&Event::Value(r#""cwd=/home/playground; a b""#.into())),
+            "{events:?}"
+        );
+        for source in [
+            r#"(str "$(false)") (echo skipped)"#,
+            r#"(str "$(binary)") (echo skipped)"#,
+        ] {
+            let events = execute(&mut repl, source);
+            assert!(outputs(&events).is_empty(), "{events:?}");
+            assert!(
+                events
+                    .iter()
+                    .any(|event| matches!(event, Event::Diagnostic(_))),
+                "{events:?}"
+            );
+        }
+        assert_eq!(
+            outputs(&execute(&mut repl, "(echo recovered)")),
+            "recovered\n"
+        );
     }
 
     #[test]

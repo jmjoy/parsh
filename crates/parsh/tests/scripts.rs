@@ -13,6 +13,7 @@ fn quote(text: &str) -> String {
         "\"{}\"",
         text.replace('\\', "\\\\")
             .replace('"', "\\\"")
+            .replace('$', "\\$")
             .replace('\n', "\\n")
             .replace('\r', "\\r")
             .replace('\t', "\\t")
@@ -109,6 +110,50 @@ fn literal_atoms_variables_and_parameter_boundaries() {
 }
 
 #[test]
+fn interpolated_strings_capture_commands_without_splitting_arguments() {
+    let output = run(r#"
+        (let name "a b")
+        (defn greet () (str "$name!"))
+        (printf "<%s>\n" "$name $(+ 1 2)" '$name\n'
+            "text=$(printf "x\n\n")" "$(greet)" "nested=$(str "a" 'b')"
+            "$(sh -c 'printf captured; printf warning >&2')")
+    "#);
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "<a b 3>\n<$name\\n>\n<text=x>\n<a b!>\n<nested=ab>\n<captured>\n"
+    );
+    assert_eq!(stderr(&output), "warning");
+    let output = run(r#"(printf %s "$(false)") (echo skipped)"#);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn interpolated_command_names_pipelines_and_redirection_paths_work() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("out ' $literal.txt");
+    let output = run(&format!(
+        r#"
+        (let name "a b")
+        (let command printf)
+        ("$command" "<%s>\n" "$(get name)")
+        (| ("$(get command)" %s "sum=$(+ 1 2)") (cat))
+        (let path {})
+        (|> "$path" (printf %s "file=$(+ 2 3)"))
+        (cat "$path")
+    "#,
+        quote(path.to_str().unwrap())
+    ));
+    success(&output);
+    assert_eq!(stdout(&output), "<a b>\nsum=3file=5");
+    assert_eq!(fs::read_to_string(path).unwrap(), "file=5");
+    let output = run(r#"(let command str) (| ("$command" no) (cat))"#);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("pipeline stages must be external commands"));
+}
+
+#[test]
 fn arithmetic_composes_with_command_capture_functions_arguments_and_environment() {
     let output = run(r#"
         (let count (+ (printf "  0012 \n") 3))
@@ -118,9 +163,9 @@ fn arithmetic_composes_with_command_capture_functions_arguments_and_environment(
             (list (+ 1 2) (/ 5 2)) (str result= (/ 8 2)) 00123)
         (export PARSH_NUMBER (/ 8 2))
         (printf "<%s>\n" $PARSH_NUMBER)
-        (sh -c "printf '<%s>\\n' \"$PARSH_NUMBER\"")
+        (sh -c "printf '<%s>\\n' \"\$PARSH_NUMBER\"")
         (set PARSH_NUMBER (+ 1 2))
-        (sh -c "printf '<%s>\\n' \"$PARSH_NUMBER\"")
+        (sh -c "printf '<%s>\\n' \"\$PARSH_NUMBER\"")
         (if (= $count 16.0) (printf equal))
         "#);
     success(&output);
@@ -377,7 +422,7 @@ fn glob_is_explicit_sorted_and_expands_lists() {
 #[test]
 fn export_updates_shell_environment_and_local_binding() {
     let output = run(
-        r#"(let PARSH_TEST old) (export PARSH_TEST "a b") (printf "<%s>" $PARSH_TEST) (sh -c "printf '[%s]' \"$PARSH_TEST\"")"#,
+        r#"(let PARSH_TEST old) (export PARSH_TEST "a b") (printf "<%s>" $PARSH_TEST) (sh -c "printf '[%s]' \"\$PARSH_TEST\"")"#,
     );
     success(&output);
     assert_eq!(stdout(&output), "<a b>[a b]");

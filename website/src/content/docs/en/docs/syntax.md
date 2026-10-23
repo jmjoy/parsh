@@ -11,12 +11,14 @@ Every call is a parenthesized expression. Inner calls are evaluated as arguments
 ```
 
 In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no
-special literal meaning. Double-quoted strings support `\"`, `\\`, `\n`, `\r`, and `\t`.
-Strings do not interpolate variables. Variable references use `$name`. Binding
+special literal meaning. Double-quoted strings interpolate `$name` and `$(...)`,
+and support `\"`, `\\`, `\n`, `\r`, `\t`, and `\$`. Single-quoted strings preserve
+their content without interpolation or escapes. `${name}` remains literal text.
+Outside strings, variable references use `$name`. Binding
 and assignment targets use bare names, including function parameters, loop
 bindings, and environment settings.
 
-The reader creates text, variable references, and lists of expressions. Evaluation can return text, numbers, booleans, lists, nil, or native command statuses. These are different value types even though words such as `true` and `nil` themselves are just text.
+The reader creates text, variable references, interpolated strings, and lists of expressions. Evaluation can return text, numbers, booleans, lists, nil, or native command statuses. These are different value types even though words such as `true` and `nil` themselves are just text.
 
 ```parsh
 (eq true true)
@@ -25,6 +27,43 @@ The reader creates text, variable references, and lists of expressions. Evaluati
 ```
 
 The interactive results are `true`, `true`, and `("a" "b c" true)`. Text is displayed with quotes and escapes; nil is not displayed. A file or `-c` script runs expressions without automatically printing their results.
+
+## Strings and interpolation
+
+```parsh
+(let name parsh)
+(str "hello, $name")
+(str "$(get name)_suffix")
+(str "sum=$(+ 1 2)")
+(str "nested=$(str "a" 'b')")
+(str "cwd=$(pwd)")
+(str '$name $(+ 1 2)\n')
+(str "\$name \$(+ 1 2)")
+```
+
+`$name` reads the longest valid variable name. Use `$(get name)` when text such
+as `_suffix` follows the name. `${name}` has no special meaning, and a `$` that
+does not start a variable name or `$(` remains text.
+
+The parentheses in `$(...)` are an ordinary call expression. `$(name)` invokes
+the zero-argument function or command `name`; `$(get name)` reads the variable.
+All existing expressions are supported, including nested calls, control flow,
+and structured comments. Inner strings use normal parsh syntax without extra
+escaping for the outer string. The `pwd` example needs a command execution host.
+
+Parts evaluate once from left to right, in the current scope, with the same
+effects and errors as ordinary calls. Scalars convert as `str` does: numbers and
+booleans become text, nil becomes empty text, and lists are errors. External
+commands capture UTF-8 stdout and remove trailing LF characters; stderr keeps
+its destination. Errors stop the current batch. The resulting text stays one
+argument, and inserted values are never parsed or interpolated again.
+
+Single quotes preserve everything until the next single quote, including
+backslashes, dollar signs, and newlines. Use double quotes to include a single
+quote character. Adjacent quoted and bare expressions do not concatenate.
+To pass a literal `$name` or `$(...)` to another program such as `sh -c`, use
+single quotes or escape the dollar with `\$`. Text display also escapes dollars
+so copying a displayed string does not trigger interpolation.
 
 ## Arithmetic and numeric comparisons
 

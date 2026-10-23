@@ -361,8 +361,9 @@ fn foreground_interrupt_restores_terminal_and_reaps_child() {
 #[test]
 fn queued_paste_never_becomes_child_stdin() {
     let mut terminal = Terminal::new();
-    let offset = terminal
-        .execute(r#"(sh -c "IFS= read -r line; printf 'GOT:%s\n' \"$line\"") (echo NEXT_COMMAND)"#);
+    let offset = terminal.execute(
+        r#"(sh -c "IFS= read -r line; printf 'GOT:%s\n' \"\$line\"") (echo NEXT_COMMAND)"#,
+    );
     terminal.expect(b"\x1b[?2004l", offset);
     let deadline = Instant::now() + Duration::from_secs(3);
     while tcgetpgrp(&terminal.master).unwrap().as_raw() == terminal.child.id() as i32 {

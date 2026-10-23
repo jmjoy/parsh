@@ -32,8 +32,10 @@ Use `parsh -- -script.parsh` for a script filename beginning with `-`.
 ## Variables and values
 
 In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no
-special literal meaning. Double-quoted strings support `\"`, `\\`, `\n`, `\r`, and `\t`.
-Strings do not interpolate variables. Variable references use `$name`. Binding
+special literal meaning. Double-quoted strings interpolate `$name` and `$(...)`,
+and support `\"`, `\\`, `\n`, `\r`, `\t`, and `\$`. Single-quoted strings preserve
+their content without interpolation or escapes. `${name}` remains literal text.
+Outside strings, variable references use `$name`. Binding
 and assignment targets use bare names, including function parameters, loop
 bindings, and environment settings. Names start with a letter or `_`, followed
 by letters, digits, or `_`. Binding targets must be bare names, not quoted strings
@@ -43,7 +45,9 @@ or expressions.
 (let name "a friend")
 (echo hello $name)
 (set name world)
-(echo (str "hello, " $name))
+(echo "hello, $name")
+(echo "sum=$(+ 1 2)")
+(echo 'literal $name and $(pwd)\n')
 (export EDITOR vim)
 ```
 
@@ -52,6 +56,16 @@ binding, or an existing environment entry, and errors if the name is undefined.
 Lookups fall back to the inherited environment. `export` sets the environment for
 subsequent children and updates an existing local binding of the same name.
 Environment and working directory changes belong to this parsh session.
+
+`(get name)` is the function form of `$name`: it takes one text variable name
+and returns the original value, using the same lookup rules. Use
+`"$(get name)_suffix"` to delimit a variable name. `$(name)` calls the zero-argument
+function or command `name`; interpolation accepts all existing expressions,
+including nested calls and captured command output. Parts evaluate once from
+left to right and convert scalars as `str` does; nil becomes empty text and lists
+are rejected. The result stays one argument, and inserted values are not parsed
+again. Use `\$` or single quotes when passing a literal `$` to another program.
+Single quotes now delimit strings; use double quotes for words with apostrophes.
 
 ```lisp
 (let files (list "a file.rs" other.rs))

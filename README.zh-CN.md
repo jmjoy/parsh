@@ -28,7 +28,8 @@ cargo run -- examples/hello.parsh world
 ## 变量与值
 
 在值的位置，裸词表示文本：`123`、`true`、`false` 和 `nil` 都没有特殊的字面量含义。
-双引号字符串支持 `\"`、`\\`、`\n`、`\r` 和 `\t` 转义，不支持变量插值。
+双引号字符串支持 `$name` 和 `$(...)` 插值，以及 `\"`、`\\`、`\n`、`\r`、`\t` 和 `\$` 转义。
+单引号字符串完全保留原文，不插值也不处理转义。`${name}` 保持为普通文本。
 读取变量值时使用 `$name`；绑定和赋值目标使用裸名字，包括函数参数、循环绑定和环境变量设置。
 变量名以字母或 `_` 开头，后续可包含字母、数字和 `_`。绑定目标不接受引号字符串或表达式。
 
@@ -36,7 +37,9 @@ cargo run -- examples/hello.parsh world
 (let name "a friend")
 (echo hello $name)
 (set name world)
-(echo (str "hello, " $name))
+(echo "hello, $name")
+(echo "sum=$(+ 1 2)")
+(echo 'literal $name and $(pwd)\n')
 (export EDITOR vim)
 ```
 
@@ -44,6 +47,12 @@ cargo run -- examples/hello.parsh world
 名称未定义时会报错。查找不到局部变量时，会继续查找继承的环境变量。
 `export` 为后续子进程设置环境变量，并更新已有的同名局部绑定。
 环境变量与工作目录的修改属于当前 parsh 会话。
+
+`(get name)` 是 `$name` 的函数形式：接受一个文本变量名，按相同规则查找并返回原始类型的值。
+需要明确变量名边界时，使用 `"$(get name)_suffix"`。`$(name)` 调用名为 `name` 的零参数函数或命令；
+插值支持所有现有表达式，包括嵌套调用和命令输出捕获。各片段从左到右求值一次，按 `str` 的规则
+转换标量；nil 转为空文本，列表报错。整个结果保持为一个参数，插入的值不会再次解析。
+传给其他程序的字面 `$` 使用 `\$` 或单引号保留。单引号现在是字符串边界，含单引号的词需用双引号包裹。
 
 ```lisp
 (let files (list "a file.rs" other.rs))
