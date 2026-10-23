@@ -1,0 +1,18 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/arithmetic.parsh )
+
+(let numbers (list 3 5 7 9))
+(let total (+))
+(for number $numbers
+  (set total (+ $total $number)))
+
+(printf "number: %s\n" $numbers)
+(printf "sum=%s mean=%s\n" $total (/ $total 4))
+(printf "square of 9=%s\n" (* 9 9))
+
+(if (>= $total 20)
+    (echo "the total is at least twenty")
+    (echo "the total is less than twenty"))
+
+(; Bare words remain text; numeric comparisons parse numeric text. )
+(printf "text equality=%s numeric equality=%s\n" (eq 001 1) (= 001 1))

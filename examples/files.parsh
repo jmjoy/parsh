@@ -1,0 +1,28 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/files.parsh )
+(; Work in a fresh temporary directory and remove it at the end. )
+
+(let original_directory $PWD)
+(let temporary_directory (mktemp -d))
+(cd $temporary_directory)
+
+(|> fruits.txt (printf "pear\napple\npear\nbanana\n"))
+(|>> fruits.txt (echo apple))
+(|> sorted.txt (| (cat fruits.txt) (sort) (uniq)))
+(echo "sorted unique fruit:")
+(<| sorted.txt (cat))
+
+(for file (glob *.txt)
+  (echo "found $file"))
+
+(; Conditions can handle a failed command while stderr goes to a file. )
+(|2> errors.txt
+  (if (cat missing.txt)
+      (echo "missing.txt exists")
+      (echo "missing.txt: failure handled")))
+(if (test -s errors.txt)
+    (echo "stderr saved in errors.txt"))
+
+(cd $original_directory)
+(rm -r $temporary_directory)
+(echo "temporary directory removed")

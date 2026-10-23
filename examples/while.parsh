@@ -1,0 +1,30 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/while.parsh )
+
+(; Update outer bindings with set; let inside the loop is local to each iteration. )
+(let count 0)
+(let total 0)
+(while (< $count 10)
+  (set count (+ $count 1))
+  (if (= $count 2) (continue))
+  (if (>= $count 6) (break))
+  (set total (+ $total $count))
+  (printf "step %s: total=%s\n" $count $total))
+(printf "stopped at=%s total=%s\n" $count $total)
+
+(; A loop used as a value can return a computed value with break. )
+(let candidate 1)
+(let result
+  (while (eq searching searching)
+    (let square (* $candidate $candidate))
+    (if (> $square 20) (break $square))
+    (set candidate (+ $candidate 1))))
+(printf "first square above twenty: %s\n" $result)
+
+(; On normal completion, while returns the result of its last complete iteration. )
+(let remaining 3)
+(let last
+  (while (> $remaining 0)
+    (set remaining (- $remaining 1))
+    (str "remaining=$remaining")))
+(echo "last body value: $last")

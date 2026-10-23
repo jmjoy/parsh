@@ -29,6 +29,9 @@ Options are parsed by clap. After the script path or `-c SOURCE`, every remainin
 argument is passed through unchanged, including `--help` and `--`.
 Use `parsh -- -script.parsh` for a script filename beginning with `-`.
 
+See [examples](examples/README.md) for runnable scripts covering variables,
+functions, loops, pipelines, and file operations.
+
 ## Variables and values
 
 In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no

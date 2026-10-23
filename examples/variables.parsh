@@ -1,0 +1,20 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/variables.parsh )
+
+(let language parsh)
+(let name "shell users")
+(echo "hello, $name")
+(set name "你好，parsh")
+(printf "interpolated: <%s>\n" "$name: $(str parenthesis " shell")")
+
+(; Single quotes keep dollar signs, command expressions, and backslashes literal. )
+(printf "literal: <%s>\n" '$name $(pwd)\n')
+
+(; Lists expand into arguments; spaces and empty strings stay intact. )
+(let items (list "one item" second ""))
+(printf "item: <%s>\n" $items)
+
+(let field language)
+(printf "get: %s\n" (get $field))
+(export PARSH_EXAMPLE_MESSAGE "hello from $language")
+(printf "child environment: %s\n" (printenv PARSH_EXAMPLE_MESSAGE))

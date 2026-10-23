@@ -1,0 +1,29 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/functions.parsh )
+
+(defn factorial (n)
+  (if (<= $n 1)
+      (+ 1)
+      (* $n (factorial (- $n 1)))))
+(echo "6! = $(factorial 6)")
+
+(; A function reads the lexical scope where it was defined. )
+(let greeting hello)
+(defn greet (name)
+  (str "$greeting, $name"))
+(defn caller (greeting)
+  (greet parsh))
+(echo (caller temporary))
+(set greeting welcome)
+(echo (caller temporary))
+
+(defn names ()
+  (list "Ada Lovelace" "Grace Hopper"))
+(for name (names)
+  (echo (greet $name)))
+
+(; Calling a function as a value captures stdout across its whole body. )
+(defn banner (name)
+  (printf "hello, ")
+  (printf "%s\n" $name))
+(printf "captured function output: <%s>\n" (banner parsh))

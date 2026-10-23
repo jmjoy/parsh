@@ -1,0 +1,20 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/pipelines.parsh )
+
+(export LC_ALL C)
+(let fruits (list pear apple pear banana apple))
+(echo "sorted counts:")
+(| (printf "%s\n" $fruits)
+   (sort)
+   (uniq -c))
+
+(; A pipeline used as a value captures stdout and keeps it as one argument. )
+(let unique
+  (| (printf "%s\n" $fruits)
+     (sort)
+     (uniq)))
+(printf "captured as one argument:\n<%s>\n" $unique)
+
+(; Arithmetic can consume the numeric text produced by an external command. )
+(let lines (+ (| (printf "%s\n" $fruits) (wc -l)) 0))
+(echo "lines=$lines double=$(* $lines 2)")
