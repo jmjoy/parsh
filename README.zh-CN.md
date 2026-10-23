@@ -32,6 +32,8 @@ cargo run -- examples/hello.parsh world
 在值的位置，裸词表示文本：`123`、`true`、`false` 和 `nil` 都没有特殊的字面量含义。
 双引号字符串支持 `$name` 和 `$(...)` 插值，以及 `\"`、`\\`、`\n`、`\r`、`\t` 和 `\$` 转义。
 单引号字符串完全保留原文，不插值也不处理转义。`${name}` 保持为普通文本。
+三引号字符串 `"""..."""` 和 `'''...'''` 保留换行与缩进；三重双引号支持相同的插值和转义，
+三重单引号完全保留原文。
 读取变量值时使用 `$name`；绑定和赋值目标使用裸名字，包括函数参数、循环绑定和环境变量设置。
 变量名以字母或 `_` 开头，后续可包含字母、数字和 `_`。绑定目标不接受引号字符串或表达式。
 
@@ -42,6 +44,10 @@ cargo run -- examples/hello.parsh world
 (echo "hello, $name")
 (echo "sum=$(+ 1 2)")
 (echo 'literal $name and $(pwd)\n')
+(echo """hello, "$name"
+sum=$(+ 1 2)""")
+(echo '''literal '$name'
+$(pwd)\n''')
 (export EDITOR vim)
 ```
 

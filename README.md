@@ -38,6 +38,8 @@ In value positions, bare words are text: `123`, `true`, `false`, and `nil` have 
 special literal meaning. Double-quoted strings interpolate `$name` and `$(...)`,
 and support `\"`, `\\`, `\n`, `\r`, `\t`, and `\$`. Single-quoted strings preserve
 their content without interpolation or escapes. `${name}` remains literal text.
+Triple-quoted strings, `"""..."""` and `'''...'''`, preserve newlines and indentation.
+Triple double quotes support the same interpolation and escapes; triple single quotes preserve everything literally.
 Outside strings, variable references use `$name`. Binding
 and assignment targets use bare names, including function parameters, loop
 bindings, and environment settings. Names start with a letter or `_`, followed
@@ -51,6 +53,10 @@ or expressions.
 (echo "hello, $name")
 (echo "sum=$(+ 1 2)")
 (echo 'literal $name and $(pwd)\n')
+(echo """hello, "$name"
+sum=$(+ 1 2)""")
+(echo '''literal '$name'
+$(pwd)\n''')
 (export EDITOR vim)
 ```
 

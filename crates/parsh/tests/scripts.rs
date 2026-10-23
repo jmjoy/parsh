@@ -130,6 +130,28 @@ fn interpolated_strings_capture_commands_without_splitting_arguments() {
 }
 
 #[test]
+fn triple_quoted_strings_keep_multiline_command_arguments_intact() {
+    let output = run(r#"
+        (let name "a b")
+        (printf "<%s>\n" """hello "$name"
+sum=$(+ 1 2)
+capture=$(printf "x\n\n")""" ''''$missing' $(missing)\n
+literal''')
+    "#);
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "<hello \"a b\"\nsum=3\ncapture=x>\n<'$missing' $(missing)\\n\nliteral>\n"
+    );
+    for delimiter in ["\"\"\"", "'''"] {
+        let output = run(&format!("(printf %s {delimiter}unfinished"));
+        assert_eq!(output.status.code(), Some(2));
+        assert!(stderr(&output).contains("unclosed triple-"));
+        assert!(output.stdout.is_empty());
+    }
+}
+
+#[test]
 fn interpolated_command_names_pipelines_and_redirection_paths_work() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("out ' $literal.txt");

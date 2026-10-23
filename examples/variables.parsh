@@ -10,6 +10,12 @@
 (; Single quotes keep dollar signs, command expressions, and backslashes literal. )
 (printf "literal: <%s>\n" '$name $(pwd)\n')
 
+(; Triple quotes preserve newlines and allow individual quotes inside. )
+(printf "multiline: <%s>\n" """hello, "$name"
+sum=$(+ 1 2)""")
+(printf "raw multiline: <%s>\n" '''literal '$name'
+$(pwd)\n''')
+
 (; Lists expand into arguments; spaces and empty strings stay intact. )
 (let items (list "one item" second ""))
 (printf "item: <%s>\n" $items)

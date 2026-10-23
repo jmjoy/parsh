@@ -7,6 +7,8 @@ In value positions, bare words are text: `123`, `true`, `false`, and `nil` have 
 special literal meaning. Double-quoted strings interpolate `$name` and `$(...)`,
 and support `\"`, `\\`, `\n`, `\r`, `\t`, and `\$`. Single-quoted strings preserve
 their content without interpolation or escapes. `${name}` remains literal text.
+Triple quotes preserve newlines and indentation: `"""..."""` supports the same
+interpolation and escapes, while `'''...'''` preserves all content literally.
 Outside strings, variable references use `$name`. Binding
 and assignment targets use bare names, including function parameters, loop
 bindings, and environment settings. Names start with a letter or `_`, followed

@@ -314,16 +314,67 @@ fn paths_with_quotes_whitespace_and_dollar_signs_remain_literal_values() {
 
 #[test]
 fn quoted_directory_completion_can_continue_into_the_next_component() {
-    let mut repl = Repl::with_host(TestHost::default()).unwrap();
-    type_text(&mut repl, "str fol");
+    for delimiter in ["", "\"\"\"", "'''"] {
+        let mut repl = Repl::with_host(TestHost::default()).unwrap();
+        type_text(&mut repl, &format!("str {delimiter}fol"));
+        let delimiter = if delimiter.is_empty() {
+            "\""
+        } else {
+            delimiter
+        };
+        repl.input(Key::Tab);
+        assert_eq!(
+            repl.session.input.body,
+            format!("str {delimiter}folder name/")
+        );
+        repl.input(Key::Tab);
+        assert_eq!(
+            repl.session.input.body,
+            format!("str {delimiter}folder name/你好.txt{delimiter} ")
+        );
+        assert!(
+            repl.input(Key::Enter)
+                .contains(&Event::Value("\"folder name/你好.txt\"".into()))
+        );
+    }
+}
+
+#[test]
+fn triple_quoted_completion_preserves_embedded_variables_and_calls() {
+    let host = TestHost::default();
+    let mut repl = Repl::with_host(host.clone()).unwrap();
+    execute(&mut repl, "(let TAB_NAME retained)");
+    repl.session.input = Input {
+        body: r#"str """prefix "$TAB_Nwrong/suffix""" tail"#.into(),
+        cursor: r#"str """prefix "$TAB_N"#.len(),
+        explicit: false,
+    };
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, "str \"folder name/");
+    assert_eq!(
+        repl.session.input.body,
+        r#"str """prefix "$TAB_NAME/suffix""" tail"#
+    );
+    assert_eq!(
+        repl.session.input.cursor,
+        r#"str """prefix "$TAB_NAME"#.len()
+    );
+    repl.input(Key::ClearInput);
+    type_text(&mut repl, r#"str """$(st"#);
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, "str \"folder name/你好.txt\" ");
+    assert_eq!(repl.session.input.body, r#"str """$(str "#);
+    type_text(&mut repl, r#"'''inner''')!""""#);
     assert!(
         repl.input(Key::Enter)
-            .contains(&Event::Value("\"folder name/你好.txt\"".into()))
+            .contains(&Event::Value(r#""inner!""#.into()))
     );
+    type_text(&mut repl, "str '''$l");
+    repl.input(Key::Tab);
+    assert_eq!(repl.session.input.body, "str '''$literal''' ");
+    assert!(
+        repl.input(Key::Enter)
+            .contains(&Event::Value(r#""\$literal""#.into()))
+    );
+    assert_eq!(host.runs.get(), 0);
 }
 
 #[test]

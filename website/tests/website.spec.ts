@@ -204,6 +204,65 @@ test("unfinished interpolations wait before executing the browser batch", async 
   await expect(terminal(page)).toContainText('"sum=3"');
 });
 
+test("triple quoted strings preserve newlines and distinguish interpolation from literal text", async ({ page }) => {
+  await playground(page);
+  await execute(page, String.raw`(let name parsh)
+(list """""" '''''')
+(str """hello, "$name"
+sum=$(+ 1 2)""")
+(str '''literal '$missing'
+$(missing)\n''')
+(str """nested=$(str """inner "$name" text""" ''''literal' '' quotes''')""")
+(str """capture=$(printf "line\n\n")""")`);
+  await expect(terminal(page)).toContainText('("" "")');
+  await expect(terminal(page)).toContainText(String.raw`"hello, \"parsh\"\nsum=3"`);
+  await expect(terminal(page)).toContainText(String.raw`"literal '\$missing'\n\$(missing)\\n"`);
+  await expect(terminal(page)).toContainText(String.raw`"nested=inner \"parsh\" text'literal' '' quotes"`);
+  await expect(terminal(page)).toContainText('"capture=line"');
+});
+
+test("triple quoted strings wait for all three closing quotes before executing a browser batch", async ({ page }) => {
+  await playground(page);
+  for (const [index, delimiter] of ['"""', "'''"].entries()) {
+    const before = `BEFORE_TRIPLE_${index}`;
+    await paste(page, `(str ${before}) (str ${delimiter}line`);
+    await page.locator("[data-terminal-host] textarea").focus();
+    await page.keyboard.press("Enter");
+    await expect(terminal(page)).not.toContainText(`"${before}"`);
+    await page.keyboard.type(`two${delimiter.slice(0, 2)}`);
+    await page.keyboard.press("Enter");
+    await expect(terminal(page)).not.toContainText(`"${before}"`);
+    await page.keyboard.type(`end${delimiter})`);
+    await page.keyboard.press("Enter");
+    await expect(terminal(page)).toContainText(`"${before}"`);
+    const text = `line\ntwo${delimiter.slice(0, 2)}\nend`;
+    await expect(terminal(page)).toContainText(JSON.stringify(text));
+  }
+});
+
+test("triple quoted completion preserves delimiters, variables, and raw dollar filenames", async ({ page }) => {
+  await playground(page);
+  await execute(page, "(let TRIPLE_NAME retained) (touch '$literal')");
+  await page.locator("[data-terminal-host] textarea").focus();
+  await page.keyboard.type('str """value=$TRIPLE_N');
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText('str """value=$TRIPLE_NAME');
+  await page.keyboard.type('"""');
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('"value=retained"');
+  await page.keyboard.type('str """$(st');
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText('str """$(str ');
+  await page.keyboard.type("'''inner''')!\"\"\"");
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('"inner!"');
+  await page.keyboard.type("str '''$l");
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText("str '''$literal'''");
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText(String.raw`"\$literal"`);
+});
+
 test("quoted completion handles interpolation and literal dollar filenames", async ({ page }) => {
   await playground(page);
   await execute(page, "(let TAB_NAME retained) (touch '$literal')");

@@ -31,7 +31,10 @@ fn context_tracks_lists_comments_and_declarations() {
         ),
         ("(str $HO", Kind::Variable, "$HO"),
         ("(str \"$HO", Kind::Variable, "$HO"),
+        ("(str \"\"\"$HO", Kind::Variable, "$HO"),
+        ("(str \"\"\"$", Kind::Variable, "$"),
         ("(str \"$(st", Kind::Command, "st"),
+        ("(str \"\"\"$(st", Kind::Command, "st"),
         ("(str \"$(str \"$HO", Kind::Variable, "$HO"),
         ("(defn f (name) (st", Kind::Command, "st"),
         (
@@ -91,6 +94,23 @@ fn nested_interpolation_contexts_preserve_outer_string_boundaries() {
         ),
         (r#"(str "$(str "$(ge|t name)")")"#, Kind::Command, "ge"),
         (
+            r#"(str """prefix "$HO|ME/suffix""" tail)"#,
+            Kind::Variable,
+            "$HO",
+        ),
+        (
+            r#"(str """prefix $(str """$(ge|t name)""") suffix""" tail)"#,
+            Kind::Command,
+            "ge",
+        ),
+        (
+            r#"(str '''a'\n $HO|''')"#,
+            Kind::Path {
+                directories_only: false,
+            },
+            r#"a'\n $HO"#,
+        ),
+        (
             r#"(str 'a\n $HO|')"#,
             Kind::Path {
                 directories_only: false,
@@ -126,6 +146,9 @@ fn nested_interpolation_contexts_preserve_outer_string_boundaries() {
         r#"(str "fo|$(echo later)")"#,
         r#"(; "$(st|r x)")"#,
         r#"(str "$(; (st|r x))")"#,
+        r#"(str """$HOME/fo|""")"#,
+        r#"(str """fo|$(echo later)""")"#,
+        r#"(; """$(st|r x)""")"#,
     ] {
         let cursor = marked.find('|').unwrap();
         let source = marked.replacen('|', "", 1);
@@ -141,6 +164,10 @@ fn every_cursor_boundary_in_unfinished_source_is_safe() {
         "(str \"unterminated\\",
         r#"(str "prefix $名字 $(str "inner $HOME" '(a b)) suffix" tail)"#,
         r#"(str 'raw\n $HOME $(str "inner")' tail)"#,
+        r#"(str """你好 "quotes" "" $名字 $(str '''inner''')""" tail)"#,
+        r#"(str '''raw 'quotes' ''\n $HOME $(str "inner")''' tail)"#,
+        r#"(str """unfinished\""""#,
+        r#"(str '''unfinished''"#,
         "(str ) extra))",
         "(\"\")",
         "\"",
@@ -194,6 +221,76 @@ fn completed_literals_round_trip_through_the_reader() {
         );
         assert_eq!(edit.cursor, edit.text.len());
         assert!(!completion.labels()[0].chars().any(char::is_control));
+    }
+}
+
+#[test]
+fn completion_ignores_cursors_inside_triple_quote_delimiters() {
+    for delimiter in ["\"\"\"", "'''"] {
+        let source = format!("(str {delimiter}file{delimiter})");
+        for start in [5, 5 + delimiter.len() + "file".len()] {
+            for within in 1..delimiter.len() {
+                assert!(Context::parse(&source, start + within).is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn triple_quoted_completions_round_trip_and_preserve_following_arguments() {
+    for delimiter in ["\"\"\"", "'''"] {
+        for closed in [false, true] {
+            let source = if closed {
+                format!("(str {delimiter}{delimiter} tail)")
+            } else {
+                format!("(str {delimiter}")
+            };
+            let cursor = 5 + delimiter.len();
+            for text in [
+                "a file",
+                "a'b",
+                "a''b",
+                "a'''b",
+                "ends'",
+                "ends''",
+                "ends'''",
+                "\"",
+                "\"\"",
+                "\"\"\"",
+                "$literal",
+                "$(echo unexpected)",
+                "a\nb\tc\rd\\e",
+                "你好👩‍💻",
+            ] {
+                let completion = Completion {
+                    context: Context::parse(&source, cursor).unwrap(),
+                    candidates: vec![Candidate::word(text)],
+                };
+                let edit = completion.edit(&source).unwrap();
+                let final_cursor = edit.range.start + edit.cursor;
+                let mut completed = source.clone();
+                completed.replace_range(edit.range, &edit.text);
+                if !closed {
+                    completed.push(')');
+                }
+                let Read::Form(expr) = Reader::new(&completed).read() else {
+                    panic!("{completed}")
+                };
+                let ExprKind::List(items) = expr.kind else {
+                    panic!()
+                };
+                assert_eq!(items[1].kind, ExprKind::Text(text.into()), "{completed}");
+                if closed {
+                    assert_eq!(items.len(), 3, "{completed}");
+                    assert_eq!(items[2].kind, ExprKind::Word("tail".into()));
+                    assert_eq!(&completed[final_cursor..], " tail)");
+                } else {
+                    assert_eq!(items.len(), 2, "{completed}");
+                    assert_eq!(&completed[final_cursor..], ")");
+                }
+                assert!(completed.is_char_boundary(final_cursor));
+            }
+        }
     }
 }
 

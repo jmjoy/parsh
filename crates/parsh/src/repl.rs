@@ -987,6 +987,41 @@ mod syntax_tests {
     }
 
     #[test]
+    fn triple_quoted_strings_preserve_whitespace_and_evaluate_interpolations_once() {
+        let events = execute(
+            &mut Repl::new(),
+            r#"
+            (let name 世界)
+            (let count 0)
+            (list """""" '''''')
+            (str """
+  hello, "$name"
+  sum=$(+ 1 2)
+""")
+            (str '''
+  '$missing' $(missing)\n
+''')
+            (str """$(do (set count (+ $count 1)) $count)$(do (set count (+ $count 1)) $count)""")
+            (get count)
+            (str """nested=$(str """inner "$name" text""" ''''literal' '' quotes''')""")
+            (; """$undefined $(missing) ')'""")
+        "#,
+        );
+        assert!(diagnostics(&events).is_empty(), "{events:?}");
+        assert_eq!(
+            values(&events),
+            [
+                r#"("" "")"#,
+                r#""\n  hello, \"世界\"\n  sum=3\n""#,
+                r#""\n  '\$missing' \$(missing)\\n\n""#,
+                r#""12""#,
+                "2",
+                r#""nested=inner \"世界\" text'literal' '' quotes""#,
+            ]
+        );
+    }
+
+    #[test]
     fn get_preserves_types_and_shares_lexical_and_environment_lookup() {
         let events = execute(
             &mut Repl::new(),
@@ -1058,6 +1093,16 @@ mod syntax_tests {
                 "expected a scalar value, got a list",
                 "interactive:1:8:",
             ),
+            (
+                "(str \"\"\"你好\n  $missing\"\"\")",
+                "undefined variable $missing",
+                "interactive:2:3:",
+            ),
+            (
+                "(str \"\"\"sum=$(/ 1\n 0)\"\"\")",
+                "division by zero",
+                "interactive:2:2:",
+            ),
         ] {
             let mut repl = Repl::new();
             let events = execute(&mut repl, &format!("{source} (str skipped)"));
@@ -1101,6 +1146,24 @@ mod syntax_tests {
         assert!(values(&repl.input(Key::Enter)).is_empty());
         type_text(&mut repl, "two')");
         assert_eq!(values(&repl.input(Key::Enter)), [r#""line\ntwo""#]);
+    }
+
+    #[test]
+    fn unfinished_triple_strings_wait_without_executing_the_batch() {
+        for delimiter in ["\"\"\"", "'''"] {
+            let mut repl = Repl::new();
+            repl.paste(&format!("(str before) (str {delimiter}line"));
+            let events = repl.input(Key::Enter);
+            assert!(values(&events).is_empty());
+            assert!(diagnostics(&events).is_empty());
+            type_text(&mut repl, &format!("two{}", &delimiter[..2]));
+            let events = repl.input(Key::Enter);
+            assert!(values(&events).is_empty());
+            assert!(diagnostics(&events).is_empty());
+            type_text(&mut repl, &format!("three{delimiter})"));
+            let expected = Value::Text(format!("line\ntwo{}\nthree", &delimiter[..2])).display();
+            assert_eq!(values(&repl.input(Key::Enter)), [r#""before""#, &expected]);
+        }
     }
 
     #[test]

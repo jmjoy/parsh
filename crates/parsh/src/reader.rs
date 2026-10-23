@@ -52,6 +52,47 @@ pub enum Read {
     Error(Diagnostic),
 }
 
+/// String boundaries shared by the reader and completion scanner.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Quote {
+    #[default]
+    None,
+    Single,
+    Double,
+    TripleSingle,
+    TripleDouble,
+}
+
+impl Quote {
+    pub(crate) fn at(source: &str) -> Self {
+        if source.starts_with("'''") {
+            Self::TripleSingle
+        } else if source.starts_with("\"\"\"") {
+            Self::TripleDouble
+        } else if source.starts_with('\'') {
+            Self::Single
+        } else if source.starts_with('"') {
+            Self::Double
+        } else {
+            Self::None
+        }
+    }
+
+    pub(crate) fn delimiter(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Single => "'",
+            Self::Double => "\"",
+            Self::TripleSingle => "'''",
+            Self::TripleDouble => "\"\"\"",
+        }
+    }
+
+    pub(crate) fn interpolates(self) -> bool {
+        matches!(self, Self::Double | Self::TripleDouble)
+    }
+}
+
 /// An incremental reader. An unexpected top-level ')' is always consumed.
 pub struct Reader<'a> {
     source: &'a str,
@@ -147,20 +188,11 @@ impl<'a> Reader<'a> {
                     Kind::List(items)
                 }
             }
-            Some('\'') => {
-                let mut text = String::new();
-                loop {
-                    match self.bump() {
-                        None => {
-                            return Err(self.error(offset, "unclosed single-quoted string", true));
-                        }
-                        Some('\'') => break,
-                        Some(ch) => text.push(ch),
-                    }
-                }
-                Kind::Text(text)
+            Some('\'' | '"') => {
+                let quote = Quote::at(&self.source[offset..]);
+                self.offset = offset + quote.delimiter().len();
+                self.string(offset, depth, quote)?
             }
-            Some('"') => self.string(offset, depth)?,
             Some(ch) => {
                 let mut text = String::from(ch);
                 while self.peek().is_some_and(word_character) {
@@ -177,15 +209,31 @@ impl<'a> Reader<'a> {
         Ok(Expr { kind, offset })
     }
 
-    fn string(&mut self, offset: usize, depth: usize) -> Result<Kind, (bool, Diagnostic)> {
+    fn string(
+        &mut self,
+        offset: usize,
+        depth: usize,
+        quote: Quote,
+    ) -> Result<Kind, (bool, Diagnostic)> {
         let mut parts = Vec::new();
         let mut text = String::new();
         let mut text_offset = self.offset;
         loop {
+            if self.source[self.offset..].starts_with(quote.delimiter()) {
+                self.offset += quote.delimiter().len();
+                break;
+            }
             match self.bump() {
-                None => return Err(self.error(offset, "unclosed string", true)),
-                Some('"') => break,
-                Some('\\') => {
+                None => {
+                    let message = match quote {
+                        Quote::Single => "unclosed single-quoted string",
+                        Quote::TripleSingle => "unclosed triple-single-quoted string",
+                        Quote::TripleDouble => "unclosed triple-double-quoted string",
+                        _ => "unclosed string",
+                    };
+                    return Err(self.error(offset, message, true));
+                }
+                Some('\\') if quote.interpolates() => {
                     let escape_at = self.offset - 1;
                     let Some(ch) = self.bump() else {
                         return Err(self.error(offset, "unclosed string escape", true));
@@ -195,7 +243,7 @@ impl<'a> Reader<'a> {
                             .ok_or_else(|| self.error(escape_at, "unknown string escape", false))?,
                     );
                 }
-                Some('$') => {
+                Some('$') if quote.interpolates() => {
                     let variable_offset = self.offset - 1;
                     let part = match self.peek() {
                         Some('(') => self.expr(depth + 1)?,
@@ -373,6 +421,98 @@ mod tests {
     }
 
     #[test]
+    fn triple_quotes_preserve_whitespace_and_short_quote_runs() {
+        let text = "\n  one \"two\" \"\" three 'four' ''\r\n\tend\n";
+        for delimiter in ["\"\"\"", "'''"] {
+            for text in ["", text] {
+                let source = format!("{delimiter}{text}{delimiter}tail");
+                let mut reader = Reader::new(&source);
+                assert_eq!(
+                    reader.read(),
+                    Read::Form(Expr {
+                        kind: Kind::Text(text.into()),
+                        offset: 0,
+                    }),
+                    "{source}"
+                );
+                assert_eq!(reader.offset, delimiter.len() * 2 + text.len());
+                assert!(
+                    matches!(reader.read(), Read::Form(Expr { kind: Kind::Word(word), .. }) if word == "tail")
+                );
+                assert_eq!(reader.read(), Read::End);
+            }
+        }
+    }
+
+    #[test]
+    fn triple_double_quotes_share_escapes_and_nested_interpolation_offsets() {
+        let source = r#""""hello $名字
+$(str """inner "quoted" $名字""" '''$missing\n''')!""""#;
+        let Read::Form(Expr {
+            kind: Kind::Interpolated(parts),
+            ..
+        }) = Reader::new(source).read()
+        else {
+            panic!()
+        };
+        assert_eq!(parts.len(), 5);
+        assert_eq!(parts[0].kind, Kind::Text("hello ".into()));
+        assert_eq!(parts[0].offset, 3);
+        assert_eq!(parts[1].kind, Kind::Variable("名字".into()));
+        assert_eq!(parts[1].offset, source.find("$名字").unwrap());
+        assert_eq!(parts[2].kind, Kind::Text("\n".into()));
+        assert_eq!(parts[3].offset, source.find("$(str").unwrap() + 1);
+        let Kind::List(call) = &parts[3].kind else {
+            panic!()
+        };
+        assert!(matches!(&call[1].kind, Kind::Interpolated(_)));
+        assert_eq!(call[2].kind, Kind::Text(r#"$missing\n"#.into()));
+        assert_eq!(parts[4].kind, Kind::Text("!".into()));
+
+        for (source, expected) in [
+            (
+                r#""""\""" \\ \n \r \t \$name \$(+ 1 2) ${name} $1 $!""""#,
+                "\"\"\" \\ \n \r \t $name $(+ 1 2) ${name} $1 $!",
+            ),
+            (r#""""end\\""""#, "end\\"),
+            (r#"'''$name $(+ 1 2)\n\"()\'''"#, r#"$name $(+ 1 2)\n\"()\"#),
+        ] {
+            assert_eq!(
+                Reader::new(source).read(),
+                Read::Form(Expr {
+                    kind: Kind::Text(expected.into()),
+                    offset: 0,
+                }),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn unfinished_triple_quotes_wait_for_the_full_delimiter() {
+        for delimiter in ["\"\"\"", "'''"] {
+            for text in ["", "line\n  你好 )", "\\"] {
+                for closing in 0..3 {
+                    let source = format!("(str {delimiter}{text}{}", &delimiter[..closing]);
+                    assert!(
+                        matches!(
+                            Reader::new(&source).read(),
+                            Read::Incomplete(Diagnostic { offset: 5, .. })
+                        ),
+                        "{source}"
+                    );
+                }
+            }
+            assert!(complete(&format!("(; {delimiter}) $missing{delimiter})")));
+        }
+        let source = r#"(str """你好\q""")"#;
+        assert!(matches!(Reader::new(source).read(), Read::Error(diagnostic)
+            if diagnostic.offset == source.find('\\').unwrap()
+                && diagnostic.message == "unknown string escape"));
+        assert!(complete(r#"(str '''你好\q''')"#));
+    }
+
+    #[test]
     fn escaped_dollars_and_non_interpolation_prefixes_remain_text() {
         let source = r#""\$name \$(+ 1 2) ${name} $1 $!""#;
         let Read::Form(expr) = Reader::new(source).read() else {
@@ -390,13 +530,15 @@ mod tests {
 
     #[test]
     fn nested_interpolations_share_the_reader_depth_limit() {
-        let mut source = "(str done)".to_owned();
-        for _ in 0..130 {
-            source = format!("(str \"${source}\")");
+        for delimiter in ["\"", "\"\"\""] {
+            let mut source = "(str done)".to_owned();
+            for _ in 0..130 {
+                source = format!("(str {delimiter}${source}{delimiter})");
+            }
+            assert!(
+                matches!(Reader::new(&source).read(), Read::Error(diagnostic) if diagnostic.message.contains("nesting exceeds 256"))
+            );
         }
-        assert!(
-            matches!(Reader::new(&source).read(), Read::Error(diagnostic) if diagnostic.message.contains("nesting exceeds 256"))
-        );
     }
 
     #[test]

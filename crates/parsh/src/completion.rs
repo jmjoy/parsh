@@ -1,7 +1,10 @@
 //! Completion for unfinished source, without evaluating any of it.
 use std::ops::Range;
 
-use crate::{reader, shell::Shell};
+use crate::{
+    reader::{self, Quote},
+    shell::Shell,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Candidate {
@@ -23,14 +26,6 @@ enum Kind {
     Command,
     Path { directories_only: bool },
     Variable,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum Quote {
-    #[default]
-    None,
-    Single,
-    Double,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -187,8 +182,7 @@ impl Scanner<'_> {
                     self.offset += 1;
                     return;
                 }
-                '"' => self.string(Quote::Double, depth),
-                '\'' => self.string(Quote::Single, depth),
+                '"' | '\'' => self.string(depth),
                 _ => {
                     let start = self.offset;
                     while self.peek().is_some_and(reader::word_character) {
@@ -219,20 +213,26 @@ impl Scanner<'_> {
         }
     }
 
-    fn string(&mut self, quote: Quote, depth: usize) {
+    fn string(&mut self, depth: usize) {
         let start = self.offset;
-        let delimiter = if quote == Quote::Single { '\'' } else { '"' };
-        self.offset += 1;
+        let quote = Quote::at(&self.source[start..]);
+        let delimiter = quote.delimiter();
+        self.offset += delimiter.len();
+        let content_start = self.offset;
+        if self.cursor > start && self.cursor < content_start {
+            self.found = true;
+            return;
+        }
         let mut text = String::new();
         let mut closed = false;
         let mut interpolated = false;
         while let Some(ch) = self.peek() {
-            if ch == delimiter {
-                self.offset += 1;
+            if self.source[self.offset..].starts_with(delimiter) {
+                self.offset += delimiter.len();
                 closed = true;
                 break;
             }
-            if quote == Quote::Double && ch == '\\' {
+            if quote.interpolates() && ch == '\\' {
                 self.offset += 1;
                 let Some(escaped) = self.peek().and_then(reader::string_escape) else {
                     self.found = true;
@@ -240,7 +240,7 @@ impl Scanner<'_> {
                 };
                 text.push(escaped);
                 self.offset += self.peek().unwrap().len_utf8();
-            } else if quote == Quote::Double && ch == '$' {
+            } else if quote.interpolates() && ch == '$' {
                 let variable_start = self.offset;
                 self.offset += 1;
                 if self.peek() == Some('(') {
@@ -250,7 +250,9 @@ impl Scanner<'_> {
                         return;
                     }
                 } else if self.peek().is_some_and(reader::variable_start)
-                    || (self.cursor == self.offset && self.peek().is_none_or(|ch| ch == '"'))
+                    || (self.cursor == self.offset
+                        && (self.peek().is_none()
+                            || self.source[self.offset..].starts_with(delimiter)))
                 {
                     interpolated = true;
                     while self.peek().is_some_and(reader::variable_continue) {
@@ -260,7 +262,7 @@ impl Scanner<'_> {
                         self.context(
                             variable_start..self.offset,
                             self.source[variable_start..self.cursor].into(),
-                            Quote::Double,
+                            quote,
                             false,
                         );
                         if let Some(context) = &mut self.context {
@@ -279,15 +281,16 @@ impl Scanner<'_> {
         if (start..=self.offset).contains(&self.cursor) {
             self.found = true;
             if !interpolated {
-                let end = self
-                    .cursor
-                    .max(start + 1)
-                    .min(self.offset - usize::from(closed));
-                let prefix = &self.source[start + 1..end];
-                let prefix = if quote == Quote::Single {
-                    Some(prefix.to_owned())
-                } else {
+                let content_end = self.offset - if closed { delimiter.len() } else { 0 };
+                if self.cursor > content_end && self.cursor < self.offset {
+                    return;
+                }
+                let end = self.cursor.max(content_start).min(content_end);
+                let prefix = &self.source[content_start..end];
+                let prefix = if quote.interpolates() {
                     unescape(prefix)
+                } else {
+                    Some(prefix.to_owned())
                 };
                 if let Some(prefix) = prefix {
                     self.context(start..self.offset, prefix, quote, closed);
@@ -423,27 +426,35 @@ impl Completion {
             &first.text[..length]
         };
         let embedded_variable =
-            self.context.kind == Kind::Variable && self.context.quote == Quote::Double;
+            self.context.kind == Kind::Variable && self.context.quote.interpolates();
         let finished = unique && !first.directory && !embedded_variable;
         let quote = if self.context.kind == Kind::Variable {
             Quote::None
         } else if self.context.quote == Quote::Single && !text.contains('\'') {
             Quote::Single
+        } else if self.context.quote == Quote::TripleSingle
+            && !text.contains("'''")
+            && !text.ends_with('\'')
+        {
+            Quote::TripleSingle
+        } else if self.context.quote == Quote::TripleDouble {
+            Quote::TripleDouble
         } else if self.context.quote != Quote::None || needs_quotes(text) {
             Quote::Double
         } else {
             Quote::None
         };
-        let mut replacement = match quote {
-            Quote::Single => format!("'{text}"),
-            Quote::Double => format!("\"{}", quoted_content(text)),
-            Quote::None => text.into(),
+        let content = if quote.interpolates() {
+            quoted_content(text)
+        } else {
+            text.into()
         };
+        let mut replacement = format!("{}{content}", quote.delimiter());
         let mut cursor = replacement.len();
         if quote != Quote::None && (finished || self.context.closed) {
-            replacement.push(if quote == Quote::Single { '\'' } else { '"' });
+            replacement.push_str(quote.delimiter());
             if finished {
-                cursor += 1;
+                cursor += quote.delimiter().len();
             }
         }
         if finished

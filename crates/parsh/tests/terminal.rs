@@ -310,6 +310,21 @@ fn incomplete_input_and_control_j_allow_multiline_editing() {
 }
 
 #[test]
+fn triple_quoted_terminal_input_waits_for_complete_delimiters() {
+    let mut terminal = Terminal::new();
+    for delimiter in ["\"\"\"", "'''"] {
+        let offset = terminal.paste(&format!("echo {delimiter}FIRST"));
+        terminal.send(b"\r");
+        terminal.send(format!("SECOND{}\r", &delimiter[..2]).as_bytes());
+        terminal.send(format!("THIRD{delimiter}\r").as_bytes());
+        let expected = format!("\r\nFIRST\r\nSECOND{}\r\nTHIRD\r\n", &delimiter[..2]);
+        let end = terminal.expect(expected.as_bytes(), offset);
+        terminal.ready_after(end);
+    }
+    terminal.exit(0);
+}
+
+#[test]
 fn runtime_failure_stops_the_batch_and_preserves_exit_status() {
     let mut terminal = Terminal::new();
     let offset = terminal.execute("(false) (echo BAD_AFTER_FAILURE)");

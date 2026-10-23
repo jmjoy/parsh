@@ -45,7 +45,23 @@ export default {
   ],
   repository: {
     string: {
-      patterns: [{ include: "#single-string" }, { include: "#double-string" }],
+      patterns: [
+        { include: "#triple-single-string" },
+        { include: "#triple-double-string" },
+        { include: "#single-string" },
+        { include: "#double-string" },
+      ],
+    },
+    "triple-single-string": {
+      name: "string.quoted.single.parsh",
+      begin: "'''",
+      end: "'''",
+    },
+    "triple-double-string": {
+      name: "string.quoted.double.parsh",
+      begin: '"""',
+      end: '"""',
+      patterns: [{ include: "#double-string-content" }],
     },
     "single-string": {
       name: "string.quoted.single.parsh",
@@ -56,6 +72,9 @@ export default {
       name: "string.quoted.double.parsh",
       begin: '\"',
       end: '\"',
+      patterns: [{ include: "#double-string-content" }],
+    },
+    "double-string-content": {
       patterns: [
         { name: "constant.character.escape.parsh", match: "\\\\." },
         { include: "#interpolation" },

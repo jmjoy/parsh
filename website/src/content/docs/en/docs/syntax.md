@@ -58,12 +58,29 @@ commands capture UTF-8 stdout and remove trailing LF characters; stderr keeps
 its destination. Errors stop the current batch. The resulting text stays one
 argument, and inserted values are never parsed or interpolated again.
 
-Single quotes preserve everything until the next single quote, including
+Ordinary single quotes preserve everything until the next single quote, including
 backslashes, dollar signs, and newlines. Use double quotes to include a single
 quote character. Adjacent quoted and bare expressions do not concatenate.
 To pass a literal `$name` or `$(...)` to another program such as `sh -c`, use
 single quotes or escape the dollar with `\$`. Text display also escapes dollars
 so copying a displayed string does not trigger interpolation.
+
+Triple quotes let strings contain individual quotes or pairs of quotes of the
+same kind without escaping them. `"""..."""` supports the same interpolation and
+escapes as ordinary double quotes; `'''...'''` preserves all content literally:
+
+```parsh
+(str """hello, "$name"
+sum=$(+ 1 2)""")
+(str '''literal '$name'
+$(pwd)\n''')
+```
+
+All newlines, indentation, and leading or trailing whitespace are preserved,
+including a newline immediately after the opening delimiter. Only three matching
+quotes end the string. In triple double quotes, `\"` escapes a quote, so `\"""`
+inserts three literal double quotes. Six consecutive matching quotes form an
+empty string. Adjacent strings remain separate expressions.
 
 ## Arithmetic and numeric comparisons
 
