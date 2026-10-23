@@ -3,32 +3,26 @@ title: "Interactive editing"
 description: "The parenthesis prompt, multiline editing, Tab completion, paste, and history."
 ---
 
-- `(` supplies the outer opening parenthesis. Enter inserts a newline. Typing
-  `)` submits the source to the left of the cursor, including the new `)`, when
-  it forms a complete expression. Inner parentheses and parentheses inside
-  strings or comments do not submit it.
-  The implicit `(` is gray while input is blank and returns to the terminal's
-  default text color when you start an expression. An explicitly entered `(`
-  uses the default text color.
-- Submitting from the middle of the edit buffer preserves the text to the right
-  as the next draft, with the cursor at its start. The draft is not executed
-  automatically and is preserved even if evaluation of the submitted source
-  fails. This applies to typed `)` characters; paste follows the batch rules below.
-- Starting a fresh input with `(` switches to explicit source mode: the
-  prompt's implicit opening parenthesis disappears. Pasting a complete script
-  therefore shows and reads its own parentheses exactly once.
-- Bracketed paste is processed in order. Each complete expression executes
-  before the remainder is consumed. After the first expression, the remainder
-  of that paste is explicit source, with no new implicit opening parenthesis.
-  An unfinished tail remains editable.
-- Every unexpected top-level `)` produces its own position-tagged error and is
-  consumed. Later valid expressions still execute. For example,
-  `(echo a))) (echo b)` prints a, reports two errors, then prints b.
-- A runtime failure stops further evaluation of that batch, but the reader
-  continues reporting extra closing parentheses in the received source. Ctrl+C
-  cancels the current task and the rest of its paste batch.
-- Remaining pasted source stays in parsh's queue; an interactive child reads
-  subsequent terminal input, not that queued source.
+- The prompt is `$ ()` for regular users and `# ()` for root, with the cursor
+  immediately before the closing parenthesis. The native terminal checks the
+  effective user ID; the browser uses `$ ()`. Parentheses are gray while input
+  is blank; the implicit `(` returns to the default color when you start typing.
+  The prefix and gray closing hint are display-only.
+- Enter checks the entire edit buffer, wherever the cursor is. Complete source
+  executes immediately; otherwise parsh tries appending exactly one `)`. If the
+  source is still unfinished, Enter inserts a newline at the cursor. Ctrl+J
+  always inserts a newline. Blank input does not execute or enter history.
+- Typing `)` only edits text. Starting fresh input with `(` switches to explicit
+  source, so a complete expression or script keeps its own parentheses exactly once.
+- Pasting only inserts text, including newlines and tabs; it never executes.
+  Press Enter to submit. Every top-level expression must be complete and valid
+  before any expression in the batch executes. Syntax errors report their
+  position and preserve the draft and undo history for correction. An unfinished
+  batch stays editable without executing its complete prefix.
+- A runtime failure stops later expressions in the submitted batch; earlier
+  effects remain. Ctrl+C cancels the current task and the rest of the batch.
+  Queued source stays in parsh; an interactive child reads subsequent terminal
+  input, not queued commands.
 - Arrow keys, Home/End, Backspace/Delete, Ctrl+A/E, and Ctrl+U/K edit text.
   Editing and display account for Unicode grapheme clusters and character
   width. Up/Down move between lines and recall session history at the buffer
@@ -40,10 +34,10 @@ description: "The parenthesis prompt, multiline editing, Tab completion, paste, 
   `cd` completes directories only; hidden files require a `.` prefix. Strings do
   not expand variables, and structural comments are not completed. Pasted tabs
   remain literal tabs.
-- History keeps complete source. Recalling an entry removes its outer closing
-  `)` from the edit buffer and places the cursor at the end. Append arguments
-  directly, or press `)` to run it again. Returning to your draft restores it
-  unchanged.
+- History keeps each executed top-level expression in full. Recall displays its
+  complete parentheses and places the cursor immediately before the outer `)`.
+  Append arguments directly, or press Enter
+  to run it again. Returning to your draft restores it unchanged.
 - Ctrl+C clears the input or interrupts the foreground task. Ctrl+D exits on an
   empty buffer and deletes forward otherwise.
 
@@ -55,6 +49,7 @@ grapheme clusters; Home/End, Ctrl+A/E, and Ctrl+U/K operate on the current logic
 
 | Keys | Action |
 | --- | --- |
+| Ctrl+J | Insert a newline without executing |
 | Ctrl+B/F, Ctrl+H | Move left/right; delete backward |
 | Alt+B/F | Move to the previous word's start/next word's end |
 | Ctrl+W | Kill backward, using whitespace to separate words |
@@ -75,7 +70,7 @@ History search matches case-sensitive substrings of complete source without wrap
 Typing or pasting edits the query; Backspace removes a grapheme. Repeat Ctrl+R/S for the
 previous/next match; repeating with an empty query reuses the last search. A failed search
 keeps the last preview and shows a failure prompt. Enter or Esc accepts the result for
-editing without executing or inserting a newline; press `)` afterward to execute.
+editing without executing or inserting a newline; press Enter again afterward to execute.
 Ctrl+G restores the original draft and cursor. Other editing commands accept the result
 before acting; Ctrl+L preserves the search and Ctrl+C cancels the input.
 
@@ -88,7 +83,7 @@ Browser shortcuts apply while the terminal has focus. Some browser or operating-
 shortcuts cannot reach the page; use an Esc prefix when Alt conflicts. Copy and paste
 continue using the browser's shortcuts.
 
-Errors include the source, line, and column. Script execution also recovers
+Errors include the source, line, and column. Script execution recovers
 unexpected top-level `)` and continues with later expressions. Such errors give
 a script exit status of 2 unless a runtime failure or explicit `exit` supersedes
 it. Command failures keep their exit status; startup failures use 127 for a

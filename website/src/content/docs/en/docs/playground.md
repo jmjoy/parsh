@@ -7,7 +7,7 @@ description: "Run parsh, coreutils, and command pipelines in your browser."
 
 ## Your first command
 
-The prompt supplies an opening parenthesis. Type `echo hello)` to execute it, or paste complete expressions:
+The `$ ()` prompt supplies the outer parentheses. Type `echo hello` and press Enter, or paste complete expressions and press Enter:
 
 ```parsh
 (echo "hello, parsh")
@@ -48,10 +48,10 @@ Browser pipelines run one stage at a time with buffered output. They report the 
 ## Sessions and keys
 
 - Tab completes commands, temporary paths, and `$variable` names. Multiple matches extend the common prefix; press Tab again to list them. For example, `cat fru` followed by Tab completes `fruits.txt`.
-- Enter inserts a newline. A closing outer `)` evaluates the expression.
-- Up/Down move between lines or recall history. Ctrl+P/N always browse history. Recalling an entry removes its outer closing `)` and places the cursor at the end, ready to append arguments or press `)` to run it again.
+- Enter evaluates the entire buffer, supplying one final `)` if needed. Unfinished input continues on a new line; Ctrl+J always inserts a newline. Typing `)` and pasting only edit text. A pasted batch is checked in full before execution.
+- Up/Down move between lines or recall history. Ctrl+P/N always browse history. Recall displays the complete source and places the cursor before the outer `)`, ready to append arguments or press Enter to run it again.
 - Emacs-style word editing, Ctrl+Y yanking, Alt+Y cycling, Ctrl+T transposition, Ctrl+L clearing, and Ctrl+_ undo are supported. Ctrl+R/S searches history; Enter/Esc accepts without executing and Ctrl+G restores the draft. Alt keys also accept an Esc prefix. See [interactive editing](/parsh/en/docs/interactive/). Browser-reserved shortcuts may not reach the terminal.
-- Unicode editing, multiline input, full-script paste, and batch error recovery use the shared native editor model.
+- Unicode editing, multiline input, full-script paste, and batch validation use the shared native editor model.
 - Clear and idle Ctrl+C preserve files, bindings, and the working directory.
 - Reset, refresh, or leaving the page ends the temporary session; browser back-forward caching can temporarily preserve a page.
 - During execution, Ctrl+C immediately stops and resets the entire session.

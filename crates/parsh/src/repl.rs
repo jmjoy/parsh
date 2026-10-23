@@ -2,10 +2,10 @@
 use crate::{
     completion::Completion,
     host::{ExecutionHost, HostError, Stream},
-    reader::{self, Diagnostic, Kind, Read, Reader},
+    reader::{Diagnostic, Expr, Kind, Read, Reader},
     shell::{Shell, Value},
 };
-use std::{io, rc::Rc};
+use std::{io, ops::Range, rc::Rc};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -21,10 +21,39 @@ pub(crate) struct Input {
     pub(crate) explicit: bool,
 }
 
-enum Outcome {
-    Ready(String),
-    ExtraClose,
-    Invalid(String, Diagnostic),
+enum Submission {
+    Complete(Vec<(Expr, Range<usize>)>),
+    Incomplete,
+    Invalid(Diagnostic),
+}
+
+fn submission(source: &str) -> Submission {
+    let mut reader = Reader::new(source);
+    let mut forms: Vec<(Expr, Range<usize>)> = Vec::new();
+    loop {
+        let start = reader.offset;
+        match reader.read() {
+            Read::Form(expr) if matches!(expr.kind, Kind::List(_) | Kind::Comment) => {
+                forms.push((expr, start..reader.offset));
+            }
+            Read::Form(expr) => {
+                return Submission::Invalid(Diagnostic {
+                    offset: expr.offset,
+                    message: "top-level expressions must be parenthesized calls".into(),
+                });
+            }
+            Read::End => {
+                if let Some((_, range)) = forms.last_mut() {
+                    range.end = source.len();
+                }
+                return Submission::Complete(forms);
+            }
+            Read::Incomplete(_) => return Submission::Incomplete,
+            Read::ExtraClose(diagnostic) | Read::Error(diagnostic) => {
+                return Submission::Invalid(diagnostic);
+            }
+        }
+    }
 }
 
 impl Input {
@@ -47,44 +76,12 @@ impl Input {
         self.explicit = explicit;
     }
 
-    fn insert(&mut self, ch: char, pasted: bool) -> Option<Outcome> {
-        let at_end = self.cursor == self.body.len();
-        if ch == ')' && at_end && !pasted && reader::complete(&self.source()) {
-            return Some(Outcome::Ready(self.source()));
-        }
+    fn insert(&mut self, ch: char) {
         if ch == '(' && self.body.trim().is_empty() {
             self.explicit = true;
         }
-        let empty_close = ch == ')' && self.body[..self.cursor].trim().is_empty();
         self.body.insert(self.cursor, ch);
         self.cursor += ch.len_utf8();
-        if ch != ')' || (pasted && !at_end) {
-            return None;
-        }
-        if empty_close {
-            return Some(Outcome::ExtraClose);
-        }
-        let source = self.source_until(self.cursor);
-        let mut reader = Reader::new(&source);
-        match reader.read() {
-            Read::Form(expr) if matches!(expr.kind, Kind::List(_) | Kind::Comment) => {
-                if reader.read() == Read::End {
-                    Some(Outcome::Ready(source))
-                } else {
-                    None
-                }
-            }
-            Read::Form(expr) => Some(Outcome::Invalid(
-                source,
-                Diagnostic {
-                    offset: expr.offset,
-                    message: "top-level expressions must be parenthesized calls".into(),
-                },
-            )),
-            Read::ExtraClose(_) => Some(Outcome::ExtraClose),
-            Read::Error(diagnostic) => Some(Outcome::Invalid(source, diagnostic)),
-            _ => None,
-        }
     }
 
     fn left(&mut self) {
@@ -176,10 +173,10 @@ impl History {
         if let Read::Form(expr) = reader.read()
             && matches!(expr.kind, Kind::List(_) | Kind::Comment)
         {
-            // Reopen only the outer form; keep the stored source and whitespace.
-            input.body.remove(reader.offset - 1);
+            input.cursor = reader.offset - 1;
+        } else {
+            input.cursor = input.body.len();
         }
-        input.cursor = input.body.len();
         input.explicit = true;
     }
 
@@ -277,23 +274,75 @@ pub(crate) fn layout(input: &Input, width: usize) -> (Vec<String>, (usize, usize
     (lines, cursor)
 }
 
+/// A gray prompt character, positioned in terminal cells within the visible view.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DimmedCell {
+    pub row: usize,
+    pub column: usize,
+    pub character: char,
+}
+
+pub(crate) struct View {
+    pub(crate) lines: Vec<String>,
+    pub(crate) cursor: (usize, usize),
+    pub(crate) dimmed_cells: Vec<DimmedCell>,
+}
+
 pub(crate) fn view_layout(
     input: &Input,
     search: Option<&str>,
+    prefix: &str,
     width: usize,
-) -> (Vec<String>, (usize, usize)) {
-    let (mut lines, mut cursor) = layout(input, width);
+    rows: usize,
+) -> View {
+    let mut text = input.source();
+    let caret = input.cursor + usize::from(!input.explicit);
+    let mut dimmed = Vec::new();
+    if !input.explicit && input.body.trim().is_empty() {
+        dimmed.push((0, '('));
+    }
+    if matches!(submission(&text), Submission::Incomplete) {
+        dimmed.push((text.len(), ')'));
+        text.push(')');
+    }
+    let mut rendered = Input {
+        body: format!("{prefix}{text}"),
+        cursor: prefix.len() + caret,
+        explicit: true,
+    };
+    let (mut lines, mut cursor) = layout(&rendered, width.max(2));
+    let mut dimmed_cells = Vec::new();
+    for (offset, character) in dimmed {
+        rendered.cursor = prefix.len() + offset;
+        let (_, (row, column)) = layout(&rendered, width.max(2));
+        dimmed_cells.push(DimmedCell {
+            row,
+            column,
+            character,
+        });
+    }
     if let Some(prompt) = search {
         let status = Input {
             body: prompt.into(),
             cursor: prompt.len(),
             explicit: true,
         };
-        let (status_lines, status_cursor) = layout(&status, width);
+        let (status_lines, status_cursor) = layout(&status, width.max(2));
         cursor = (lines.len() + status_cursor.0, status_cursor.1);
         lines.extend(status_lines);
     }
-    (lines, cursor)
+    let available = rows.max(3) - 1;
+    let first = cursor.0.saturating_sub(available - 1);
+    let last = lines.len().min(first + available);
+    dimmed_cells.retain(|cell| (first..last).contains(&cell.row));
+    for cell in &mut dimmed_cells {
+        cell.row -= first;
+    }
+    View {
+        lines: lines[first..last].to_vec(),
+        cursor: (cursor.0 - first, cursor.1),
+        dimmed_cells,
+    }
 }
 
 pub(crate) fn completion_lines(candidates: &[String], width: usize) -> Vec<String> {
@@ -366,124 +415,111 @@ impl Session {
         Ok(())
     }
 
-    fn accept(
+    fn enter(
         &mut self,
         shell: &mut Shell,
         console: &mut impl ConsoleBackend,
-        outcome: Outcome,
-        paste: Option<(&str, usize)>,
-        halted: &mut bool,
     ) -> io::Result<Option<i32>> {
-        self.editing.baseline();
-        console.draw(&self.input, None)?;
-        console.pause()?;
-        match outcome {
-            Outcome::Ready(source) if !*halted => {
-                if let Read::Form(expr) = Reader::new(&source).read() {
-                    self.history.add(source.clone());
-                    console.activity(true);
-                    let result = shell.execute(&expr);
-                    for chunk in shell.take_output() {
-                        console.output(chunk.stream, &chunk.bytes)?;
-                    }
-                    console.activity(false);
-                    match result {
-                        Ok(value) => {
-                            if !matches!(value, Value::Nil | Value::Status(_)) {
-                                console.value(&value.display())?;
-                            }
-                            self.last_code = 0;
-                        }
-                        Err(error) => {
-                            if error.exit {
-                                return Ok(Some(error.code));
-                            }
-                            console.diagnostic(
-                                &Diagnostic {
-                                    offset: error.offset,
-                                    message: error.message,
-                                }
-                                .render("interactive", &source),
-                            )?;
-                            self.last_code = error.code;
-                            *halted = true;
-                        }
-                    }
-                }
-            }
-            Outcome::ExtraClose => {
-                let diagnostic = Diagnostic {
-                    offset: paste.map_or(0, |(_, offset)| offset),
-                    message: "unexpected ')'".into(),
-                };
-                console.diagnostic(&if let Some((source, _)) = paste {
-                    diagnostic.render("paste", source)
-                } else {
-                    diagnostic.render("interactive", ")")
-                })?;
-                if !*halted {
-                    self.last_code = 2;
-                }
-            }
-            Outcome::Invalid(source, diagnostic) => {
-                console.diagnostic(&diagnostic.render("interactive", &source))?;
-                if !*halted {
-                    self.last_code = 2;
-                }
-                *halted = true;
-            }
-            Outcome::Ready(_) => {}
+        if self.input.body.trim().is_empty() {
+            return Ok(None);
         }
-        self.input.reset(paste.is_some());
+        let mut source = self.input.source();
+        let mut parsed = submission(&source);
+        if matches!(parsed, Submission::Incomplete) {
+            let candidate = format!("{source})");
+            if let Submission::Complete(forms) = submission(&candidate) {
+                source = candidate;
+                parsed = Submission::Complete(forms);
+            }
+        }
+        let forms = match parsed {
+            Submission::Complete(forms) => forms,
+            Submission::Incomplete => {
+                self.input.insert('\n');
+                return Ok(None);
+            }
+            Submission::Invalid(diagnostic) => {
+                console.draw(&self.input, None)?;
+                console.pause()?;
+                console.diagnostic(&diagnostic.render("interactive", &source))?;
+                self.last_code = 2;
+                console.resume()?;
+                return Ok(None);
+            }
+        };
+        self.editing.baseline();
+        // Commit the exact accepted source.
+        console.draw(
+            &Input {
+                body: source.clone(),
+                cursor: source.len(),
+                explicit: true,
+            },
+            None,
+        )?;
+        console.pause()?;
+        for (expr, range) in forms {
+            self.history.add(source[range].to_owned());
+            console.activity(true);
+            let result = shell.execute(&expr);
+            for chunk in shell.take_output() {
+                console.output(chunk.stream, &chunk.bytes)?;
+            }
+            console.activity(false);
+            match result {
+                Ok(value) => {
+                    if !matches!(value, Value::Nil | Value::Status(_)) {
+                        console.value(&value.display())?;
+                    }
+                    self.last_code = 0;
+                }
+                Err(error) => {
+                    if error.exit {
+                        return Ok(Some(error.code));
+                    }
+                    console.diagnostic(
+                        &Diagnostic {
+                            offset: error.offset,
+                            message: error.message,
+                        }
+                        .render("interactive", &source),
+                    )?;
+                    self.last_code = error.code;
+                    break;
+                }
+            }
+        }
+        self.input.reset(false);
         self.history.index = None;
         console.resume()?;
         Ok(None)
     }
 
-    pub(crate) fn paste(
-        &mut self,
-        shell: &mut Shell,
-        console: &mut impl ConsoleBackend,
-        text: &str,
-    ) -> io::Result<Option<i32>> {
+    pub(crate) fn paste(&mut self, text: &str) {
         self.completion = None;
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
         self.editing.break_command();
         if let Some(search) = &mut self.search {
             search.query.push_str(&normalized);
             search.find(&self.history, &self.input, false);
-            return Ok(None);
+            return;
         }
-        let mut before = self.input.clone();
+        let before = self.input.clone();
         if self.input.body.trim().is_empty() && normalized.trim_start().starts_with('(') {
             self.input.explicit = true;
         }
-        let mut halted = false;
-        for (offset, ch) in normalized.char_indices() {
-            if let Some(outcome) = self.input.insert(ch, true) {
-                if let Some(code) = self.accept(
-                    shell,
-                    console,
-                    outcome,
-                    Some((&normalized, offset)),
-                    &mut halted,
-                )? {
-                    return Ok(Some(code));
-                }
-                before = Input::default();
-                if halted && self.last_code == 130 {
-                    self.input.reset(false);
-                    break;
-                }
-            }
-        }
-        if halted || self.input.body.trim().is_empty() {
-            self.input.reset(false);
-        }
+        self.input.body.insert_str(self.input.cursor, &normalized);
+        self.input.cursor += normalized.len();
         self.input.align_cursor();
         self.editing.record(before, &self.input, false);
-        Ok(None)
     }
+}
+
+#[cfg(test)]
+fn execute(repl: &mut Repl, source: &str) -> Vec<Event> {
+    let mut events = repl.paste(source);
+    events.extend(repl.input(Key::Enter));
+    events
 }
 
 #[cfg(test)]
@@ -491,78 +527,145 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_outer_closer_submits() {
+    fn inserting_brackets_only_edits_and_explicit_source_replaces_the_prompt() {
         let mut input = Input::default();
-        for ch in "echo \"x)\" (pwd)\n".chars() {
-            assert!(input.insert(ch, false).is_none());
+        for ch in "echo \"x)\" (pwd))".chars() {
+            input.insert(ch);
         }
-        assert!(
-            matches!(input.insert(')', false), Some(Outcome::Ready(source)) if source == "(echo \"x)\" (pwd)\n)")
-        );
+        assert_eq!(input.source(), "(echo \"x)\" (pwd))");
+        input.reset(false);
+        for ch in "(echo x)".chars() {
+            input.insert(ch);
+        }
+        assert_eq!(input.source(), "(echo x)");
     }
 
     #[test]
-    fn full_source_replaces_implicit_open_and_complete_source_can_submit() {
-        let mut input = Input::default();
-        for ch in "(echo x".chars() {
-            input.insert(ch, false);
-        }
-        assert_eq!(input.source(), "(echo x");
-        assert!(matches!(input.insert(')', true), Some(Outcome::Ready(_))));
-        assert!(
-            matches!(input.insert(')', false), Some(Outcome::Ready(source)) if source == "(echo x)")
-        );
-    }
-
-    #[test]
-    fn history_recall_reopens_only_the_outer_form_and_preserves_the_draft() {
-        for (source, recalled) in [
-            ("(str hello)", "(str hello"),
-            ("(str (str hello))", "(str (str hello)"),
-            (
-                r#"(str "x)" (; ignored (nested)))"#,
-                r#"(str "x)" (; ignored (nested))"#,
-            ),
-            ("(; ignored (; nested))", "(; ignored (; nested)"),
-            ("(str\n  \"甲e\u{301}👩‍💻\")", "(str\n  \"甲e\u{301}👩‍💻\""),
-            (" \n(str hello)\t \n", " \n(str hello\t \n"),
-            ("()", "("),
+    fn history_recall_preserves_complete_source_and_positions_before_the_outer_closer() {
+        for source in [
+            "(str hello)",
+            "(str (str hello))",
+            r#"(str "x)" (; ignored (nested)))"#,
+            "(; ignored (; nested))",
+            "(str\n  \"甲e\u{301}👩‍💻\")",
+            " \n(str hello)\t \n",
+            "()",
         ] {
             let mut history = History::default();
             history.add(source.into());
             let mut input = Input {
-                body: "(str saved)".into(),
-                explicit: true,
-                ..Input::default()
+                body: "str saved".into(),
+                cursor: 9,
+                explicit: false,
             };
-
             history.previous(&mut input);
-            assert_eq!(input.source(), recalled);
-            assert_eq!(input.cursor, input.body.len());
+            assert_eq!(input.source(), source);
+            let mut reader = Reader::new(source);
+            reader.read();
+            assert_eq!(input.cursor, reader.offset - 1);
             assert!(input.explicit);
-            assert_eq!(history.entries, [source]);
-            assert!(matches!(input.insert(')', false), Some(Outcome::Ready(_))));
-
             history.next(&mut input);
-            assert_eq!(input.source(), "(str saved)");
-            assert_eq!(input.cursor, input.body.len());
-            assert!(input.explicit);
-
-            history.previous(&mut input);
-            assert_eq!(input.source(), recalled);
+            assert_eq!(input.source(), "(str saved");
+            assert!(!input.explicit);
             assert_eq!(history.entries, [source]);
         }
     }
 
     #[test]
-    fn extra_closer_does_not_use_a_new_implicit_open() {
-        let mut input = Input {
+    fn prompt_hints_are_dimmed_and_never_become_source() {
+        for prefix in ["$ ", "# "] {
+            let input = Input::default();
+            let view = view_layout(&input, None, prefix, 80, 24);
+            assert_eq!(view.lines, [format!("{prefix}()")]);
+            assert_eq!(view.cursor, (0, 3));
+            assert_eq!(
+                view.dimmed_cells,
+                [
+                    DimmedCell {
+                        row: 0,
+                        column: 2,
+                        character: '('
+                    },
+                    DimmedCell {
+                        row: 0,
+                        column: 3,
+                        character: ')'
+                    },
+                ]
+            );
+            assert_eq!(input.source(), "(");
+            let input = Input {
+                body: "str 甲".into(),
+                cursor: 7,
+                explicit: false,
+            };
+            let view = view_layout(&input, None, prefix, 80, 24);
+            assert_eq!(view.lines, [format!("{prefix}(str 甲)")]);
+            assert_eq!(view.cursor, (0, 9));
+            assert_eq!(
+                view.dimmed_cells,
+                [DimmedCell {
+                    row: 0,
+                    column: 9,
+                    character: ')'
+                },]
+            );
+            assert_eq!(input.source(), "(str 甲");
+        }
+    }
+
+    #[test]
+    fn complete_history_has_no_padding_or_ghost_closer() {
+        let input = Input {
+            body: "(str hello)".into(),
+            cursor: 10,
             explicit: true,
-            ..Input::default()
         };
-        assert!(matches!(input.insert(')', true), Some(Outcome::ExtraClose)));
-        input.reset(true);
-        assert!(matches!(input.insert(')', true), Some(Outcome::ExtraClose)));
+        let view = view_layout(&input, None, "$ ", 80, 24);
+        assert_eq!(view.lines, ["$ (str hello)"]);
+        assert_eq!(view.cursor, (0, 12));
+        assert!(view.dimmed_cells.is_empty());
+        let input = Input {
+            cursor: input.body.len(),
+            ..input
+        };
+        assert_eq!(
+            view_layout(&input, None, "$ ", 80, 24).lines,
+            ["$ (str hello)"]
+        );
+        assert_eq!(input.source(), "(str hello)");
+    }
+
+    #[test]
+    fn prompt_cells_wrap_and_clip_to_the_visible_view() {
+        let view = view_layout(&Input::default(), None, "$ ", 2, 3);
+        assert_eq!(view.lines, ["$ ", "()"]);
+        assert_eq!(view.cursor, (1, 1));
+        assert_eq!(
+            view.dimmed_cells[1],
+            DimmedCell {
+                row: 1,
+                column: 1,
+                character: ')',
+            }
+        );
+        let input = Input {
+            body: "\n\n\n".into(),
+            cursor: 3,
+            explicit: false,
+        };
+        let view = view_layout(&input, None, "$ ", 4, 3);
+        assert_eq!(view.lines, ["", ")"]);
+        assert_eq!(view.cursor, (1, 0));
+        assert_eq!(
+            view.dimmed_cells,
+            [DimmedCell {
+                row: 1,
+                column: 0,
+                character: ')',
+            }]
+        );
+        assert_eq!(completion_lines(&["(candidate".into()], 80), ["(candidate"]);
     }
 
     #[test]
@@ -588,6 +691,7 @@ mod tests {
 pub enum Key {
     Character(char),
     Enter,
+    Newline,
     Tab,
     Left,
     Right,
@@ -629,7 +733,7 @@ pub enum Event {
         lines: Vec<String>,
         row: usize,
         column: usize,
-        dim_prompt: bool,
+        dimmed_cells: Vec<DimmedCell>,
     },
     Commit,
     ClearScreen,
@@ -659,15 +763,12 @@ impl ConsoleBackend for EventConsole {
         }
     }
     fn draw(&mut self, input: &Input, search: Option<&str>) -> io::Result<()> {
-        let (lines, cursor) = view_layout(input, search, self.columns.max(2));
-        let available = self.rows.max(3) - 1;
-        let first = cursor.0.saturating_sub(available - 1);
-        let last = lines.len().min(first + available);
+        let view = view_layout(input, search, "$ ", self.columns, self.rows);
         self.events.push(Event::Render {
-            lines: lines[first..last].to_vec(),
-            row: cursor.0 - first,
-            column: cursor.1,
-            dim_prompt: search.is_none() && !input.explicit && input.body.trim().is_empty(),
+            lines: view.lines,
+            row: view.cursor.0,
+            column: view.cursor.1,
+            dimmed_cells: view.dimmed_cells,
         });
         Ok(())
     }
@@ -778,7 +879,10 @@ impl Repl {
     }
 
     pub fn paste(&mut self, source: &str) -> Vec<Event> {
-        self.dispatch(|session, shell, console| session.paste(shell, console, source))
+        self.dispatch(|session, _, _| {
+            session.paste(source);
+            Ok(None)
+        })
     }
 
     pub fn resize(&mut self, columns: usize, rows: usize) -> Vec<Event> {
@@ -833,17 +937,25 @@ mod syntax_tests {
     #[test]
     fn syntax_session_has_no_host_environment_and_keeps_its_bindings() {
         let mut repl = Repl::new();
-        assert_eq!(values(&repl.paste("(list $args)")), ["(())"]);
-        assert!(diagnostics(&repl.paste("(str $HOME)"))[0].contains("undefined variable $HOME"));
-        assert!(values(&repl.paste("(let name world) (export GREETING hello)")).is_empty());
+        assert_eq!(values(&execute(&mut repl, "(list $args)")), ["(())"]);
+        assert!(
+            diagnostics(&execute(&mut repl, "(str $HOME)"))[0].contains("undefined variable $HOME")
+        );
+        assert!(
+            values(&execute(
+                &mut repl,
+                "(let name world) (export GREETING hello)"
+            ))
+            .is_empty()
+        );
         assert_eq!(
-            values(&repl.paste(r#"(str $GREETING ", " $name)"#)),
+            values(&execute(&mut repl, r#"(str $GREETING ", " $name)"#)),
             ["\"hello, world\""]
         );
         repl.input(Key::Interrupt);
-        assert_eq!(values(&repl.paste("(str $name)")), ["\"world\""]);
+        assert_eq!(values(&execute(&mut repl, "(str $name)")), ["\"world\""]);
         repl.reset();
-        assert!(diagnostics(&repl.paste("(str $name)"))[0].contains("undefined variable"));
+        assert!(diagnostics(&execute(&mut repl, "(str $name)"))[0].contains("undefined variable"));
     }
 
     #[test]
@@ -881,7 +993,7 @@ mod syntax_tests {
                 r#"("123" "00123" 3 4.0)"#,
             ),
         ] {
-            let events = Repl::new().paste(source);
+            let events = execute(&mut Repl::new(), source);
             assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
             assert_eq!(values(&events), [expected], "{source}");
         }
@@ -908,7 +1020,7 @@ mod syntax_tests {
             ("(= 9223372036854775807 9223372036854775808.0)", "false"),
             ("(= -9223372036854775808 -9223372036854775808.0)", "true"),
         ] {
-            let events = Repl::new().paste(source);
+            let events = execute(&mut Repl::new(), source);
             assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
             assert_eq!(values(&events), [expected], "{source}");
         }
@@ -950,7 +1062,7 @@ mod syntax_tests {
             ("(if (> 3 2) (str yes) (unavailable))", r#""yes""#),
             ("(if (< 3 2) (unavailable) (str no))", r#""no""#),
         ] {
-            let events = Repl::new().paste(source);
+            let events = execute(&mut Repl::new(), source);
             assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
             assert_eq!(values(&events), [expected], "{source}");
         }
@@ -958,7 +1070,8 @@ mod syntax_tests {
 
     #[test]
     fn numeric_comparisons_evaluate_operands_once_from_left_to_right() {
-        let events = Repl::new().paste(
+        let events = execute(
+            &mut Repl::new(),
             r#"
             (let count (+))
             (defn next () (set count (+ $count 1)) $count)
@@ -983,7 +1096,7 @@ mod syntax_tests {
         for operator in ["!=", "<", "<=", ">", ">="] {
             for args in ["", "1", "1 2 3"] {
                 let source = format!("({operator} {args})");
-                let events = Repl::new().paste(&source);
+                let events = execute(&mut Repl::new(), &source);
                 let errors = diagnostics(&events);
                 assert_eq!(errors.len(), 1, "{source}: {events:?}");
                 assert!(
@@ -1002,7 +1115,7 @@ mod syntax_tests {
             ] {
                 let mut repl = Repl::new();
                 let source = format!("({operator} 1\n {operand}) (str skipped)");
-                let events = repl.paste(&source);
+                let events = execute(&mut repl, &source);
                 let errors = diagnostics(&events);
                 assert_eq!(errors.len(), 1, "{source}: {events:?}");
                 assert!(
@@ -1011,14 +1124,18 @@ mod syntax_tests {
                 );
                 assert!(errors[0].contains(message), "{source}: {errors:?}");
                 assert!(values(&events).is_empty(), "{source}: {events:?}");
-                assert_eq!(values(&repl.paste("(str recovered)")), [r#""recovered""#]);
+                assert_eq!(
+                    values(&execute(&mut repl, "(str recovered)")),
+                    [r#""recovered""#]
+                );
             }
         }
     }
 
     #[test]
     fn numeric_values_survive_bindings_functions_and_left_to_right_evaluation() {
-        let events = Repl::new().paste(
+        let events = execute(
+            &mut Repl::new(),
             r#"
             (let n (+ 1 2))
             (defn increment (n) (+ $n 1))
@@ -1082,14 +1199,17 @@ mod syntax_tests {
                 "a condition must be a boolean or command status",
             ),
         ] {
-            let events = Repl::new().paste(source);
+            let events = execute(&mut Repl::new(), source);
             let errors = diagnostics(&events);
             assert_eq!(errors.len(), 1, "{source}: {events:?}");
             assert!(errors[0].contains(message), "{source}: {errors:?}");
             assert!(values(&events).is_empty(), "{source}: {events:?}");
         }
         for operator in ["+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">="] {
-            let events = Repl::new().paste(&format!("(defn {operator} () (str invalid))"));
+            let events = execute(
+                &mut Repl::new(),
+                &format!("(defn {operator} () (str invalid))"),
+            );
             assert!(diagnostics(&events)[0].contains("function name is reserved"));
         }
     }
@@ -1097,18 +1217,19 @@ mod syntax_tests {
     #[test]
     fn numeric_diagnostics_locate_the_operand_and_halt_only_the_current_batch() {
         let mut repl = Repl::new();
-        let events = repl.paste("(str before)\n(+ 1\n bad)\n(str skipped)");
+        let events = execute(&mut repl, "(str before)\n(+ 1\n bad)\n(str skipped)");
         assert_eq!(values(&events), [r#""before""#]);
         let errors = diagnostics(&events);
         assert_eq!(errors.len(), 1, "{events:?}");
         assert!(errors[0].starts_with("interactive:3:2:"), "{errors:?}");
         assert!(errors[0].contains("invalid number"), "{errors:?}");
-        assert_eq!(values(&repl.paste("(+ 2 3)")), ["5"]);
+        assert_eq!(values(&execute(&mut repl, "(+ 2 3)")), ["5"]);
     }
 
     #[test]
     fn bare_binding_names_and_variable_references_have_distinct_roles() {
-        let events = Repl::new().paste(
+        let events = execute(
+            &mut Repl::new(),
             r#"
             (let name world)
             (let copy $name)
@@ -1156,7 +1277,7 @@ mod syntax_tests {
                 format!("(defn f ({target}) (str bad))"),
                 format!("(export {target} value)"),
             ] {
-                let events = Repl::new().paste(&source);
+                let events = execute(&mut Repl::new(), &source);
                 let errors = diagnostics(&events);
                 assert_eq!(errors.len(), 1, "{source}: {events:?}");
                 assert!(errors[0].contains(message), "{source}: {errors:?}");
@@ -1174,7 +1295,7 @@ mod syntax_tests {
                 "function parameters must be a list of bare variable names",
             ),
         ] {
-            let events = Repl::new().paste(source);
+            let events = execute(&mut Repl::new(), source);
             let errors = diagnostics(&events);
             assert_eq!(errors.len(), 1, "{source}: {events:?}");
             assert!(errors[0].contains(message), "{source}: {errors:?}");
@@ -1183,7 +1304,8 @@ mod syntax_tests {
 
     #[test]
     fn functions_capture_lexical_scope_and_return_typed_values() {
-        let events = Repl::new().paste(
+        let events = execute(
+            &mut Repl::new(),
             r#"
             (let name outer)
             (defn show () (str $name))
@@ -1205,7 +1327,8 @@ mod syntax_tests {
 
     #[test]
     fn conditions_comments_and_loops_follow_native_value_semantics() {
-        let events = Repl::new().paste(
+        let events = execute(
+            &mut Repl::new(),
             r#"
             (; (echo $undefined) (; nested))
             (if (not (eq a b)) (str yes) (echo unavailable))
@@ -1229,7 +1352,7 @@ mod syntax_tests {
             "(<| input.txt (str x))",
             "(|2>> errors.txt (str x))",
         ] {
-            let events = Repl::new().paste(source);
+            let events = execute(&mut Repl::new(), source);
             let errors = diagnostics(&events);
             assert_eq!(errors.len(), 1, "{source}: {events:?}");
             assert!(errors[0].starts_with("interactive:1:1:"), "{errors:?}");
@@ -1239,230 +1362,183 @@ mod syntax_tests {
     }
 
     #[test]
-    fn paste_recovers_extra_closers_and_stops_only_the_failed_batch() {
-        let mut repl = Repl::new();
-        let events = repl.paste("(str a))) (str b)");
-        assert_eq!(values(&events), ["\"a\"", "\"b\""]);
-        assert_eq!(diagnostics(&events).len(), 2);
-        let events = repl.paste("(str before) (echo unavailable))) (str skipped)");
-        assert_eq!(values(&events), ["\"before\""]);
-        assert_eq!(diagnostics(&events).len(), 3);
-        assert_eq!(values(&repl.paste("(str recovered)")), ["\"recovered\""]);
-    }
-
-    #[test]
-    fn enter_inserts_a_newline_and_history_requires_a_closer() {
-        let mut repl = Repl::new();
-        for ch in "str hello".chars() {
-            assert!(values(&repl.input(Key::Character(ch))).is_empty());
+    fn enter_submits_implicit_explicit_and_manually_closed_source() {
+        for text in ["str hello", "str hello)", "(str hello", "(str hello)"] {
+            let mut repl = Repl::new();
+            assert!(values(&type_text(&mut repl, text)).is_empty());
+            assert_eq!(values(&repl.input(Key::Enter)), ["\"hello\""]);
+            assert_eq!(repl.session.history.entries, ["(str hello)"]);
+            assert_eq!(values(&repl.input(Key::Enter)), Vec::<&str>::new());
         }
-        assert!(values(&repl.input(Key::Enter)).is_empty());
-        assert_eq!(values(&repl.input(Key::Character(')'))), ["\"hello\""]);
-        let events = repl.input(Key::Previous);
-        assert!(
-            matches!(events.last(), Some(Event::Render { lines, row: 1, column: 0, .. }) if lines == &["(str hello".to_string(), String::new()])
-        );
-        assert!(values(&events).is_empty());
-        assert_eq!(values(&repl.input(Key::Character(')'))), ["\"hello\""]);
-        assert_eq!(repl.session.history.entries, ["(str hello\n)"]);
     }
 
     #[test]
-    fn history_navigation_allows_appending_and_restores_the_implicit_draft() {
+    fn enter_checks_the_entire_buffer_at_any_cursor_position() {
+        for cursor in 0..=9 {
+            let mut repl = Repl::new();
+            type_text(&mut repl, "str hello");
+            repl.session.input.cursor = cursor;
+            assert_eq!(values(&repl.input(Key::Enter)), ["\"hello\""]);
+            assert!(repl.session.input.body.is_empty());
+        }
+    }
+
+    #[test]
+    fn incomplete_input_only_adds_a_newline_and_never_partial_closers() {
+        for text in [
+            "str (str hello",
+            "str \"hello",
+            "str \"hello\\",
+            "str (; nested (str x",
+        ] {
+            let mut repl = Repl::new();
+            type_text(&mut repl, text);
+            let events = repl.input(Key::Enter);
+            assert!(values(&events).is_empty());
+            assert!(diagnostics(&events).is_empty());
+            assert_eq!(repl.session.input.body, format!("{text}\n"));
+            assert!(repl.session.history.entries.is_empty());
+        }
+        let mut repl = Repl::new();
+        type_text(&mut repl, "str (str a");
+        repl.input(Key::Home);
+        repl.input(Key::Enter);
+        assert_eq!(repl.session.input.body, "\nstr (str a");
+    }
+
+    #[test]
+    fn forced_newlines_and_string_parentheses_follow_the_reader() {
+        let mut repl = Repl::new();
+        type_text(&mut repl, "str \"x)\" (str y)");
+        assert!(values(&repl.input(Key::Newline)).is_empty());
+        assert_eq!(values(&repl.input(Key::Enter)), ["\"x)y\""]);
+        assert_eq!(repl.session.history.entries, ["(str \"x)\" (str y)\n)"]);
+    }
+
+    #[test]
+    fn paste_is_one_edit_and_enter_validates_the_whole_batch() {
+        let mut repl = Repl::new();
+        let events = repl.paste("(let name saved)\r\n(str $name)\r");
+        assert!(
+            events
+                .iter()
+                .all(|event| matches!(event, Event::Render { .. }))
+        );
+        assert!(repl.session.history.entries.is_empty());
+        assert_eq!(repl.session.input.body, "(let name saved)\n(str $name)\n");
+        assert_eq!(values(&repl.input(Key::Enter)), ["\"saved\""]);
+        assert_eq!(
+            repl.session.history.entries,
+            ["(let name saved)", "\n(str $name)\n"]
+        );
+        assert_eq!(
+            values(&execute(&mut repl, "(str a) (str b")),
+            ["\"a\"", "\"b\""]
+        );
+    }
+
+    #[test]
+    fn syntax_errors_retain_the_draft_and_prevent_all_execution() {
+        for source in [
+            "(let name bad))) (str later)",
+            r#"(let name bad) (str "\q")"#,
+            "(let name bad) bare",
+        ] {
+            let mut repl = Repl::new();
+            let events = execute(&mut repl, source);
+            assert_eq!(diagnostics(&events).len(), 1, "{events:?}");
+            assert!(values(&events).is_empty());
+            assert_eq!(repl.session.input.body, source);
+            assert!(repl.session.history.entries.is_empty());
+            assert_eq!(repl.session.last_code, 2);
+            repl.input(Key::Undo);
+            assert!(repl.session.input.body.is_empty());
+            assert!(
+                diagnostics(&execute(&mut repl, "(str $name)"))[0].contains("undefined variable")
+            );
+        }
+    }
+
+    #[test]
+    fn an_incomplete_batch_waits_without_executing_its_prefix() {
+        let mut repl = Repl::new();
+        let source = "(let name bad) (str (str unfinished";
+        let events = execute(&mut repl, source);
+        assert!(values(&events).is_empty());
+        assert!(diagnostics(&events).is_empty());
+        assert_eq!(repl.session.input.body, format!("{source}\n"));
+        assert!(repl.session.history.entries.is_empty());
+        repl.input(Key::ClearInput);
+        assert!(diagnostics(&execute(&mut repl, "(str $name)"))[0].contains("undefined variable"));
+    }
+
+    #[test]
+    fn runtime_errors_stop_only_the_submitted_batch() {
+        let mut repl = Repl::new();
+        let events = execute(&mut repl, "(str before) (str $missing) (str skipped)");
+        assert_eq!(values(&events), ["\"before\""]);
+        assert_eq!(diagnostics(&events).len(), 1);
+        assert_eq!(repl.session.history.entries.len(), 2);
+        assert_eq!(
+            values(&execute(&mut repl, "(str recovered)")),
+            ["\"recovered\""]
+        );
+    }
+
+    #[test]
+    fn complete_history_allows_appending_and_restores_the_implicit_draft() {
         for (previous, next) in [(Key::Up, Key::Down), (Key::Previous, Key::Next)] {
             let mut repl = Repl::new();
-            repl.paste("(str first)(str second)");
+            execute(&mut repl, "(str first)(str second)");
             type_text(&mut repl, "str saved");
             for (key, source) in [
-                (previous, "(str second"),
-                (previous, "(str first"),
-                (next, "(str second"),
+                (previous, "(str second)"),
+                (previous, "(str first)"),
+                (next, "(str second)"),
                 (next, "(str saved"),
             ] {
                 let events = repl.input(key);
                 assert!(
                     events
                         .iter()
-                        .all(|event| matches!(event, Event::Render { .. })),
-                    "{events:?}"
+                        .all(|event| matches!(event, Event::Render { .. }))
                 );
                 assert_eq!(repl.session.input.source(), source);
-                assert_eq!(repl.session.input.cursor, repl.session.input.body.len());
             }
             assert!(!repl.session.input.explicit);
-            assert_eq!(values(&type_text(&mut repl, ")")), ["\"saved\""]);
-
+            assert_eq!(values(&repl.input(Key::Enter)), ["\"saved\""]);
             repl.input(previous);
-            let events = type_text(&mut repl, " 你好)");
-            assert_eq!(values(&events), ["\"saved你好\""]);
-            assert!(diagnostics(&events).is_empty());
-            assert_eq!(
-                repl.session.history.entries,
-                [
-                    "(str first)",
-                    "(str second)",
-                    "(str saved)",
-                    "(str saved 你好)"
-                ]
-            );
+            type_text(&mut repl, " 你好");
+            assert_eq!(values(&repl.input(Key::Enter)), ["\"saved你好\""]);
         }
     }
 
     #[test]
-    fn middle_closer_preserves_drafts_and_commits_only_the_prefix() {
-        for (prefix, tail, value) in [
-            ("str a", "bc", "\"a\""),
-            ("(str a", "bc", "\"a\""),
-            ("str 你", "好e\u{301}👩‍💻", "\"你\""),
-            ("str a", "\n  bc\n", "\"a\""),
-            ("str a", "  \n", "\"a\""),
-            ("str a", " \n(str bc)", "\"a\""),
-        ] {
-            let mut repl = Repl::new();
-            assert!(values(&type_text(&mut repl, &format!("{prefix}{tail}"))).is_empty());
-            for _ in tail.graphemes(true) {
-                repl.input(Key::Left);
-            }
-            let events = repl.input(Key::Character(')'));
-            assert_eq!(values(&events), [value], "{events:?}");
-            assert!(diagnostics(&events).is_empty(), "{events:?}");
-            let source = if prefix.starts_with('(') {
-                format!("{prefix})")
-            } else {
-                format!("({prefix})")
-            };
-            assert!(
-                matches!(events.first(), Some(Event::Render { lines, .. }) if lines == std::slice::from_ref(&source)),
-                "{events:?}"
-            );
-            assert_eq!(events[1], Event::Commit);
-            assert_eq!(repl.session.history.entries, [source]);
-            assert_eq!(repl.session.input.body, tail);
-            assert_eq!(repl.session.input.cursor, 0);
-            let explicit = tail.trim_start().starts_with('(');
-            assert_eq!(repl.session.input.explicit, explicit);
-            assert!(
-                matches!(events.last(), Some(Event::Render { row: 0, column, .. }) if *column == usize::from(!explicit)),
-                "{events:?}"
-            );
-            if reader::complete(tail) {
-                assert!(values(&repl.resize(80, 24)).is_empty());
-                repl.input(Key::Down);
-                repl.input(Key::End);
-                assert_eq!(values(&repl.input(Key::Character(')'))), ["\"bc\""]);
-            }
-        }
-    }
-
-    #[test]
-    fn preserved_draft_can_be_prefixed_with_the_next_command() {
+    fn empty_enter_preserves_status_and_does_not_add_history() {
         let mut repl = Repl::new();
-        type_text(&mut repl, "str abc");
-        repl.input(Key::Left);
-        repl.input(Key::Left);
-        assert_eq!(values(&repl.input(Key::Character(')'))), ["\"a\""]);
-        type_text(&mut repl, "str ");
-        repl.input(Key::End);
-        assert_eq!(values(&repl.input(Key::Character(')'))), ["\"bc\""]);
-        repl.input(Key::Previous);
-        assert_eq!(repl.session.input.source(), "(str bc");
-        repl.input(Key::Previous);
-        assert_eq!(repl.session.input.source(), "(str a");
-    }
-
-    #[test]
-    fn middle_closer_in_nested_forms_strings_and_comments_does_not_submit() {
-        for (prefix, tail) in [
-            ("str (str a", "bc"),
-            ("str \"a", "bc\""),
-            ("str (; a", "bc"),
-            ("(; a (str b", "cd"),
-        ] {
-            let mut repl = Repl::new();
-            type_text(&mut repl, &format!("{prefix}{tail}"));
-            for _ in tail.graphemes(true) {
-                repl.input(Key::Left);
-            }
-            let events = repl.input(Key::Character(')'));
-            assert!(
-                events
-                    .iter()
-                    .all(|event| matches!(event, Event::Render { .. })),
-                "{events:?}"
-            );
-            assert_eq!(repl.session.input.body, format!("{prefix}){tail}"));
-            assert_eq!(repl.session.input.cursor, prefix.len() + 1);
-        }
-    }
-
-    #[test]
-    fn middle_closer_submits_a_complete_top_level_comment() {
-        let mut repl = Repl::new();
-        type_text(&mut repl, "(; ignoredtail");
-        for _ in 0..4 {
-            repl.input(Key::Left);
-        }
-        let events = repl.input(Key::Character(')'));
-        assert!(events.contains(&Event::Commit));
-        assert!(values(&events).is_empty());
-        assert!(diagnostics(&events).is_empty());
-        assert_eq!(repl.session.history.entries, ["(; ignored)"]);
-        assert_eq!(repl.session.input.body, "tail");
-        assert_eq!(repl.session.input.cursor, 0);
-    }
-
-    #[test]
-    fn middle_closer_keeps_the_draft_after_errors() {
-        for (prefix, message) in [
-            ("str $missing", "undefined variable $missing"),
-            (r#"str "\q""#, "unknown string escape"),
-            ("", "unexpected ')'"),
-            ("  \n", "unexpected ')'"),
-        ] {
-            let mut repl = Repl::new();
-            type_text(&mut repl, &format!("{prefix}saved"));
-            for _ in 0..5 {
-                repl.input(Key::Left);
-            }
-            let events = repl.input(Key::Character(')'));
-            assert_eq!(diagnostics(&events).len(), 1, "{events:?}");
-            assert!(diagnostics(&events)[0].contains(message), "{events:?}");
+        repl.session.last_code = 17;
+        repl.paste(" \n\t");
+        for _ in 0..3 {
+            let events = repl.input(Key::Enter);
             assert!(values(&events).is_empty());
-            assert_eq!(repl.session.input.body, "saved");
-            assert_eq!(repl.session.input.cursor, 0);
-            type_text(&mut repl, "str ");
-            repl.input(Key::End);
-            assert_eq!(values(&repl.input(Key::Character(')'))), ["\"saved\""]);
+            assert!(diagnostics(&events).is_empty());
+            assert_eq!(repl.session.last_code, 17);
+            assert!(repl.session.history.entries.is_empty());
         }
-    }
-
-    #[test]
-    fn pasted_middle_closer_remains_an_edit() {
-        let mut repl = Repl::new();
-        type_text(&mut repl, "str abc");
-        repl.input(Key::Left);
-        repl.input(Key::Left);
-        let events = repl.paste(")");
-        assert!(
-            events
-                .iter()
-                .all(|event| matches!(event, Event::Render { .. })),
-            "{events:?}"
-        );
-        assert_eq!(repl.session.input.body, "str a)bc");
-        assert_eq!(repl.session.input.cursor, "str a)".len());
-        assert!(repl.session.history.entries.is_empty());
     }
 
     #[test]
     fn explicit_exit_and_eof_close_until_reset() {
         let mut repl = Repl::new();
-        assert!(repl.paste("(exit 7)").contains(&Event::Exit(7)));
-        assert!(repl.paste("(str unreachable)").is_empty());
+        assert!(execute(&mut repl, "(exit 7)").contains(&Event::Exit(7)));
+        assert!(execute(&mut repl, "(str unreachable)").is_empty());
         repl.reset();
         assert!(repl.input(Key::Eof).contains(&Event::Exit(0)));
         repl.reset();
-        assert_eq!(values(&repl.paste("(str restarted)")), ["\"restarted\""]);
+        assert_eq!(
+            values(&execute(&mut repl, "(str restarted)")),
+            ["\"restarted\""]
+        );
     }
 }
 
@@ -1562,8 +1638,10 @@ mod host_tests {
     #[test]
     fn host_commands_capture_through_functions_without_leaking_output() {
         let mut repl = Repl::with_host(TestHost).unwrap();
-        let events =
-            repl.paste("(defn place () (echo (pwd))) (let path (place)) (echo $path) (str $path)");
+        let events = execute(
+            &mut repl,
+            "(defn place () (echo (pwd))) (let path (place)) (echo $path) (str $path)",
+        );
         assert_eq!(outputs(&events), "/home/playground\n");
         assert!(events.contains(&Event::Value("\"/home/playground\"".into())));
         assert!(
@@ -1576,13 +1654,16 @@ mod host_tests {
     #[test]
     fn host_conditions_globs_environment_and_reset_keep_language_semantics() {
         let mut repl = Repl::with_host(TestHost).unwrap();
-        let events = repl.paste("(export MESSAGE hello) (printenv MESSAGE) (if (false) (echo wrong) (echo right)) (glob *.txt) (cd /tmp) (pwd)");
+        let events = execute(
+            &mut repl,
+            "(export MESSAGE hello) (printenv MESSAGE) (if (false) (echo wrong) (echo right)) (glob *.txt) (cd /tmp) (pwd)",
+        );
         assert_eq!(outputs(&events), "hello\nright\n/tmp\n");
         assert!(events.contains(&Event::Value("(\"a.txt\" \"b.txt\")".into())));
-        let events = repl.paste("(glob /)");
+        let events = execute(&mut repl, "(glob /)");
         assert!(events.contains(&Event::Value("(\"/\")".into())));
         repl.reset();
-        let events = repl.paste("(pwd) (str $MESSAGE)");
+        let events = execute(&mut repl, "(pwd) (str $MESSAGE)");
         assert_eq!(outputs(&events), "/home/playground\n");
         assert!(events.iter().any(|event| matches!(event, Event::Diagnostic(text) if text.contains("undefined variable $MESSAGE"))));
     }
@@ -1590,19 +1671,22 @@ mod host_tests {
     #[test]
     fn failed_host_commands_and_non_utf8_capture_halt_only_the_current_batch() {
         let mut repl = Repl::with_host(TestHost).unwrap();
-        let events = repl.paste("(missing) (echo skipped)");
+        let events = execute(&mut repl, "(missing) (echo skipped)");
         assert!(outputs(&events).is_empty());
         assert!(events.iter().any(
             |event| matches!(event, Event::Diagnostic(text) if text.contains("missing command"))
         ));
-        let events = repl.paste("(let bytes (binary)) (echo skipped)");
+        let events = execute(&mut repl, "(let bytes (binary)) (echo skipped)");
         assert!(outputs(&events).is_empty());
         assert!(
             events.iter().any(
                 |event| matches!(event, Event::Diagnostic(text) if text.contains("not UTF-8"))
             )
         );
-        assert_eq!(outputs(&repl.paste("(echo recovered)")), "recovered\n");
+        assert_eq!(
+            outputs(&execute(&mut repl, "(echo recovered)")),
+            "recovered\n"
+        );
     }
 }
 

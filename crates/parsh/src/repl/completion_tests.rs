@@ -130,7 +130,8 @@ fn single_command_completes_without_running_or_changing_status_and_history() {
     assert_eq!(repl.session.last_code, 17);
     assert!(repl.session.history.entries.is_empty());
     assert_eq!(host.runs.get(), 0);
-    type_text(&mut repl, "hello)");
+    type_text(&mut repl, "hello");
+    repl.input(Key::Enter);
     assert_eq!(host.runs.get(), 1);
     assert_eq!(repl.session.history.entries, ["(echo hello)"]);
 }
@@ -142,11 +143,14 @@ fn syntax_only_completion_uses_available_builtins_and_current_functions() {
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "str ");
     repl.input(Key::ClearInput);
-    repl.paste("(defn tab-function () (str result))");
+    execute(&mut repl, "(defn tab-function () (str result))");
     type_text(&mut repl, "tab-f");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "tab-function ");
-    assert!(type_text(&mut repl, ")").contains(&Event::Value("\"result\"".into())));
+    assert!(
+        repl.input(Key::Enter)
+            .contains(&Event::Value("\"result\"".into()))
+    );
     repl.reset();
     type_text(&mut repl, "tab-f");
     repl.input(Key::Tab);
@@ -205,7 +209,7 @@ fn double_tab_lists_sorted_unique_candidates_and_then_restores_the_input() {
     );
     assert_eq!(events.first(), Some(&Event::Commit));
     assert!(
-        matches!(events.last(), Some(Event::Render { lines, column: 9, .. }) if lines == &["(host-alp"])
+        matches!(events.last(), Some(Event::Render { lines, column: 11, .. }) if lines == &["$ (host-alp)"])
     );
     type_text(&mut repl, "h");
     repl.input(Key::Tab);
@@ -265,7 +269,7 @@ fn paths_respect_working_directory_hidden_files_and_directory_only_cd() {
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "str .hidden ");
     repl.input(Key::ClearInput);
-    repl.paste("(cd /tmp)");
+    execute(&mut repl, "(cd /tmp)");
     type_text(&mut repl, "str af");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "str after ");
@@ -277,14 +281,17 @@ fn paths_with_quotes_whitespace_and_dollar_signs_remain_literal_values() {
     let mut repl = Repl::with_host(host.clone()).unwrap();
     type_text(&mut repl, "str odd");
     repl.input(Key::Tab);
-    let events = type_text(&mut repl, ")");
+    let events = repl.input(Key::Enter);
     assert!(events.contains(&Event::Value(
         Value::Text("odd (\"x\")\n\t\\name".into()).display()
     )));
     type_text(&mut repl, "str \"$l");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "str \"$literal\" ");
-    assert!(type_text(&mut repl, ")").contains(&Event::Value("\"$literal\"".into())));
+    assert!(
+        repl.input(Key::Enter)
+            .contains(&Event::Value("\"$literal\"".into()))
+    );
     assert_eq!(host.runs.get(), 0);
 }
 
@@ -296,7 +303,10 @@ fn quoted_directory_completion_can_continue_into_the_next_component() {
     assert_eq!(repl.session.input.body, "str \"folder name/");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "str \"folder name/你好.txt\" ");
-    assert!(type_text(&mut repl, ")").contains(&Event::Value("\"folder name/你好.txt\"".into())));
+    assert!(
+        repl.input(Key::Enter)
+            .contains(&Event::Value("\"folder name/你好.txt\"".into()))
+    );
 }
 
 #[test]
@@ -347,7 +357,10 @@ fn unicode_common_prefixes_and_editing_keep_valid_cursor_boundaries() {
 #[test]
 fn variable_completion_sees_executed_bindings_and_exports_but_not_values() {
     let mut repl = Repl::with_host(TestHost::default()).unwrap();
-    repl.paste("(let TAB_NAME retained) (export TAB_ENV secret) (export TAB_NAME retained)");
+    execute(
+        &mut repl,
+        "(let TAB_NAME retained) (export TAB_ENV secret) (export TAB_NAME retained)",
+    );
     type_text(&mut repl, "str $TAB_");
     repl.input(Key::Tab);
     let events = repl.input(Key::Tab);
@@ -356,7 +369,10 @@ fn variable_completion_sees_executed_bindings_and_exports_but_not_values() {
     type_text(&mut repl, "N");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "str $TAB_NAME ");
-    assert!(type_text(&mut repl, ")").contains(&Event::Value("\"retained\"".into())));
+    assert!(
+        repl.input(Key::Enter)
+            .contains(&Event::Value("\"retained\"".into()))
+    );
     repl.reset();
     type_text(&mut repl, "str $TAB_");
     repl.input(Key::Tab);
@@ -409,6 +425,6 @@ fn narrow_candidate_lists_wrap_safely_and_restore_the_current_input() {
     let events = repl.input(Key::Tab);
     assert_eq!(listings(&events)[0], &["host-a", "lpha", "host-a", "lpine"]);
     assert!(
-        matches!(events.last(), Some(Event::Render { lines, row: 1, column: 3, .. }) if lines == &["(host-", "alp"])
+        matches!(events.last(), Some(Event::Render { lines, row: 1, column: 5, .. }) if lines == &["$ (hos", "t-alp)", ""])
     );
 }

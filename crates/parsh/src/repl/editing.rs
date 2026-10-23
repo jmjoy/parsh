@@ -341,12 +341,15 @@ impl Session {
         }
         let before = self.input.clone();
         let history_index = self.history.index;
-        let mut outcome = None;
         match key {
-            Key::Character(ch) => outcome = self.input.insert(ch, false),
+            Key::Character(ch) => self.input.insert(ch),
             Key::Enter => {
-                self.input.insert('\n', false);
+                let code = self.enter(shell, console)?;
+                if code.is_some() || self.input.body.is_empty() {
+                    return Ok(code);
+                }
             }
+            Key::Newline => self.input.insert('\n'),
             Key::Tab => self.complete(shell, console)?,
             Key::Left => self.input.left(),
             Key::Right => self.input.right(),
@@ -435,18 +438,6 @@ impl Session {
         self.input.align_cursor();
         if self.input.body.trim().is_empty() {
             self.input.explicit = false;
-        }
-        if let Some(outcome) = outcome {
-            let remainder = self.input.body.split_off(self.input.cursor);
-            let code = self.accept(shell, console, outcome, None, &mut false)?;
-            if code.is_none() {
-                self.input = Input {
-                    explicit: remainder.trim_start().starts_with('('),
-                    body: remainder,
-                    cursor: 0,
-                };
-            }
-            return Ok(code);
         }
         if self.history.index != history_index {
             self.editing.baseline();

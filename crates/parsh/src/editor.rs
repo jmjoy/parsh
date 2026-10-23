@@ -14,9 +14,11 @@ use crossterm::{
     style::{Color, Print, SetForegroundColor, force_color_output},
     terminal::{self, Clear, ClearType, DisableLineWrap, EnableLineWrap},
 };
+use nix::unistd::geteuid;
 
 struct TerminalConsole {
     output: io::Stderr,
+    prefix: &'static str,
     active: bool,
     rows: usize,
     cursor_row: usize,
@@ -28,6 +30,7 @@ impl TerminalConsole {
         force_color_output(true);
         let mut console = Self {
             output: io::stderr(),
+            prefix: if geteuid().is_root() { "# " } else { "$ " },
             active: false,
             rows: 0,
             cursor_row: 0,
@@ -54,37 +57,48 @@ impl TerminalConsole {
 
     fn draw(&mut self, input: &Input, search: Option<&str>) -> io::Result<()> {
         let (width, height) = terminal::size().unwrap_or((80, 24));
-        let (lines, cursor) = view_layout(input, search, usize::from(width.max(2)));
-        let available = usize::from(height.max(3) - 1);
-        let first = cursor.0.saturating_sub(available - 1);
-        let last = lines.len().min(first + available);
+        let view = view_layout(
+            input,
+            search,
+            self.prefix,
+            usize::from(width),
+            usize::from(height),
+        );
+        let lines = &view.lines;
+        let cursor = view.cursor;
         queue!(self.output, MoveToColumn(0))?;
         if self.cursor_row > 0 {
             queue!(self.output, MoveUp(self.cursor_row as u16))?;
         }
         queue!(self.output, Clear(ClearType::FromCursorDown))?;
-        let dim_prompt = search.is_none() && !input.explicit && input.body.trim().is_empty();
-        for (index, line) in lines[first..last].iter().enumerate() {
+        for (index, line) in lines.iter().enumerate() {
             if index != 0 {
                 queue!(self.output, Print("\r\n"))?;
             }
-            if dim_prompt && first == 0 && index == 0 {
-                queue!(
-                    self.output,
-                    SetForegroundColor(Color::AnsiValue(244)),
-                    Print("("),
-                    SetForegroundColor(Color::Reset),
-                    Print(&line[1..])
-                )?;
-            } else {
-                queue!(self.output, Print(line))?;
-            }
+            queue!(self.output, Print(line))?;
         }
-        self.rows = last - first;
-        self.cursor_row = cursor.0 - first;
-        let up = self.rows - 1 - self.cursor_row;
-        if up > 0 {
-            queue!(self.output, MoveUp(up as u16))?;
+        self.rows = lines.len();
+        self.cursor_row = cursor.0;
+        let mut drawn_row = self.rows - 1;
+        for cell in view.dimmed_cells {
+            if drawn_row > cell.row {
+                queue!(self.output, MoveUp((drawn_row - cell.row) as u16))?;
+            } else if cell.row > drawn_row {
+                queue!(self.output, MoveDown((cell.row - drawn_row) as u16))?;
+            }
+            queue!(
+                self.output,
+                MoveToColumn(cell.column as u16),
+                SetForegroundColor(Color::AnsiValue(244)),
+                Print(cell.character),
+                SetForegroundColor(Color::Reset)
+            )?;
+            drawn_row = cell.row;
+        }
+        if drawn_row > cursor.0 {
+            queue!(self.output, MoveUp((drawn_row - cursor.0) as u16))?;
+        } else if cursor.0 > drawn_row {
+            queue!(self.output, MoveDown((cursor.0 - drawn_row) as u16))?;
         }
         queue!(self.output, MoveToColumn(cursor.1 as u16))?;
         self.output.flush()
@@ -154,7 +168,10 @@ pub fn run(shell: &mut Shell) -> io::Result<i32> {
     loop {
         session.draw(&mut console)?;
         let code = match event::read()? {
-            Event::Paste(text) => session.paste(shell, &mut console, &text)?,
+            Event::Paste(text) => {
+                session.paste(&text);
+                None
+            }
             Event::Key(key) if key.kind != KeyEventKind::Release => {
                 session.key(shell, &mut console, map_key(key))?
             }
@@ -206,7 +223,8 @@ fn map_key(key: KeyEvent) -> Key {
             KeyCode::Char('x') => Key::ControlX,
             // Crossterm's legacy parser reports byte 0x1f as Ctrl+7.
             KeyCode::Char('_' | '/' | '7') => Key::Undo,
-            KeyCode::Char('j' | 'm') | KeyCode::Enter => Key::Enter,
+            KeyCode::Char('j') => Key::Newline,
+            KeyCode::Char('m') | KeyCode::Enter => Key::Enter,
             KeyCode::Char('i') | KeyCode::Tab => Key::Tab,
             _ => Key::Ignore,
         };

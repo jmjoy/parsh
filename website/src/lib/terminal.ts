@@ -27,7 +27,7 @@ const examples: Record<string, string> = {
 };
 const keys: Record<string, string> = {
   "\r": "enter",
-  "\n": "enter",
+  "\n": "newline",
   "\t": "tab",
   "\x7f": "backspace",
   "\b": "backspace",
@@ -83,7 +83,7 @@ export function mountTerminal(root: HTMLElement): void {
         closed: "会话已结束",
         error: "加载失败",
         input: "parsh 终端输入",
-        welcome: "parsh 体验终端 · 输入 echo hello) 开始。",
+        welcome: "parsh 体验终端 · 输入 echo hello 并按 Enter 开始。",
         interrupted: "执行已中断，会话已重置。",
         timeout: "执行超过 5 秒，会话已重置。",
         failed: "无法加载运行环境，请检查网络后重试。",
@@ -97,7 +97,7 @@ export function mountTerminal(root: HTMLElement): void {
         closed: "Session ended",
         error: "Could not load",
         input: "parsh terminal input",
-        welcome: "parsh playground · Type echo hello) to begin.",
+        welcome: "parsh playground · Type echo hello and press Enter to begin.",
         interrupted: "Execution interrupted. The session has been reset.",
         timeout: "Execution exceeded 5 seconds. The session has been reset.",
         failed:
@@ -195,15 +195,18 @@ export function mountTerminal(root: HTMLElement): void {
     let output = "\r";
     if (cursorRow > 0) output += `\x1b[${cursorRow}A`;
     output += "\x1b[J";
-    output += event.lines
-      .map((line, index) =>
-        event.dim_prompt && index === 0
-          ? `\x1b[90m(\x1b[0m${line.slice(1)}`
-          : line,
-      )
-      .join("\r\n");
-    const up = event.lines.length - 1 - event.row;
-    if (up > 0) output += `\x1b[${up}A`;
+    output += event.lines.join("\r\n");
+    let drawnRow = event.lines.length - 1;
+    for (const cell of event.dimmed_cells) {
+      const delta = drawnRow - cell.row;
+      if (delta > 0) output += `\x1b[${delta}A`;
+      else if (delta < 0) output += `\x1b[${-delta}B`;
+      output += `\x1b[${cell.column + 1}G\x1b[90m${cell.character}\x1b[0m`;
+      drawnRow = cell.row;
+    }
+    const delta = drawnRow - event.row;
+    if (delta > 0) output += `\x1b[${delta}A`;
+    else if (delta < 0) output += `\x1b[${-delta}B`;
     output += `\x1b[${event.column + 1}G`;
     terminal.write(output);
     drawnRows = event.lines.length;
@@ -345,7 +348,7 @@ export function mountTerminal(root: HTMLElement): void {
     }
     const name = event.key.toLowerCase();
     const control: Record<string, string> = {
-      a: "home", e: "end", b: "left", f: "right", h: "backspace",
+      j: "newline", m: "enter", a: "home", e: "end", b: "left", f: "right", h: "backspace",
       p: "previous", n: "next", u: "kill-start", k: "kill-end",
       w: "kill-whitespace-word", y: "yank", t: "transpose",
       l: "clear-screen", r: "search-backward", s: "search-forward",
@@ -432,6 +435,7 @@ export function mountTerminal(root: HTMLElement): void {
       notice.hidden = true;
       send({ type: "input", key: "clear-input" });
       send({ type: "paste", source });
+      send({ type: "input", key: "enter" });
       terminal.focus();
     }),
   );

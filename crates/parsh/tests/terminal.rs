@@ -94,6 +94,12 @@ impl Terminal {
         self.send(format!("\x1b[200~{source}\x1b[201~").as_bytes())
     }
 
+    fn execute(&mut self, source: &str) -> usize {
+        let offset = self.paste(source);
+        self.send(b"\r");
+        offset
+    }
+
     fn drain(&mut self) {
         let mut buffer = [0; 8192];
         loop {
@@ -148,7 +154,7 @@ impl Terminal {
         let offset = self.bytes.len();
         self.expect(b"^C", offset);
         self.ready_after(offset);
-        self.send(format!("exit {code})").as_bytes());
+        self.send(format!("exit {code}\r").as_bytes());
         self.wait_exit(code);
     }
 
@@ -225,80 +231,90 @@ impl Drop for Terminal {
 }
 
 #[test]
-fn enter_does_not_execute_and_outer_closer_does() {
+fn prompt_uses_effective_uid_despite_the_user_environment() {
+    let root = nix::unistd::geteuid().is_root();
+    let prompt = if root { "# ()" } else { "$ ()" };
+    let mut terminal = Terminal::configured(|command| {
+        command.env("USER", if root { "ordinary-user" } else { "root" });
+    });
+    terminal.expect(prompt.as_bytes(), 0);
+    let offset = terminal.send(b"str PROMPT_TEST\r");
+    let end = terminal.expect(b"\r\n\"PROMPT_TEST\"\r\n", offset);
+    terminal.ready_after(end);
+    terminal.expect(prompt.as_bytes(), end);
+    terminal.exit(0);
+}
+
+#[test]
+fn enter_submits_and_typed_closers_remain_edits() {
     let mut terminal = Terminal::new();
-    let offset = terminal.send(b"echo ENTER_TEST\r");
-    thread::sleep(Duration::from_millis(100));
+    let offset = terminal.send(b"echo ENTER_TEST)");
+    thread::sleep(Duration::from_millis(80));
     terminal.drain();
     assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\nENTER_TEST\r\n"));
-    terminal.send(b")");
+    terminal.send(b"\r");
     let end = terminal.expect(b"\r\nENTER_TEST\r\n", offset);
     terminal.ready_after(end);
-    let offset = terminal.send(b"echo \"x)\" (printf y))");
+    let offset = terminal.send(b"echo \"x)\" (printf y)\r");
     let end = terminal.expect(b"\r\nx) y\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);
 }
 
 #[test]
-fn middle_closer_executes_the_prefix_and_preserves_the_next_input() {
+fn middle_enter_submits_the_whole_input() {
     let mut terminal = Terminal::new();
-    let offset = terminal.send(b"echo FIRSTSECOND\x1b[D\x1b[D\x1b[D\x1b[D\x1b[D\x1b[D)");
-    let end = terminal.expect(b"\r\nFIRST\r\n", offset);
-    terminal.ready_after(end);
-    terminal.expect(b"(SECOND", end);
-    assert!(!visible_text(&terminal.bytes[offset..]).contains("(echo FIRST)SECOND"));
-
-    let offset = terminal.send(b"echo \x05)");
-    let end = terminal.expect(b"\r\nSECOND\r\n", offset);
+    let offset = terminal.send(b"echo FIRSTSECOND\x1b[D\x1b[D\x1b[D\r");
+    let end = terminal.expect(b"\r\nFIRSTSECOND\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);
 }
 
 #[test]
-fn full_script_paste_recovers_every_extra_closer() {
+fn paste_waits_for_enter_and_syntax_errors_prevent_the_entire_batch() {
     let mut terminal = Terminal::new();
-    let offset = terminal.paste("(echo PASTE_A))) (echo PASTE_B)");
+    let offset = terminal.paste("(echo PASTE_A) (echo PASTE_B)");
+    thread::sleep(Duration::from_millis(80));
+    terminal.drain();
+    assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\nPASTE_A\r\n"));
+    terminal.send(b"\r");
     let end = terminal.expect(b"\r\nPASTE_B\r\n", offset);
     terminal.ready_after(end);
-    let transcript = String::from_utf8_lossy(&terminal.bytes[offset..]);
-    assert_eq!(transcript.matches("unexpected ')'").count(), 2);
-    assert!(transcript.contains("paste:1:15:"), "{transcript}");
-    assert!(transcript.contains("paste:1:16:"), "{transcript}");
-    assert!(!transcript.contains("((echo"), "{transcript}");
-    // A paste beginning with a command body consumes its implicit '(' only once.
-    let offset = terminal.paste("echo BODY_A))) (echo BODY_B)");
-    let end = terminal.expect(b"\r\nBODY_B\r\n", offset);
-    terminal.ready_after(end);
-    assert_eq!(
-        String::from_utf8_lossy(&terminal.bytes[offset..])
-            .matches("unexpected ')'")
-            .count(),
-        2
-    );
-    terminal.exit(0);
-}
-
-#[test]
-fn incomplete_paste_tail_stays_editable() {
-    let mut terminal = Terminal::new();
-    let offset = terminal.paste("(echo FIRST)\n(echo SECOND");
-    let end = terminal.expect(b"\r\nFIRST\r\n", offset);
-    terminal.ready_after(end);
-    terminal.send(b")");
-    let end = terminal.expect(b"\r\nSECOND\r\n", end);
+    let offset = terminal.execute("(echo NEVER_EXECUTED))) (echo ALSO_SKIPPED)");
+    terminal.expect(b"unexpected ')'", offset);
+    terminal.ready_after(offset);
+    terminal.drain();
+    assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\nNEVER_EXECUTED\r\n"));
+    terminal.send(b"\x1f"); // The complete paste is still one undoable edit.
+    let offset = terminal.send(b"echo RECOVERED\r");
+    let end = terminal.expect(b"\r\nRECOVERED\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);
 }
 
 #[test]
-fn runtime_failure_stops_execution_but_reports_remaining_closers() {
+fn incomplete_input_and_control_j_allow_multiline_editing() {
     let mut terminal = Terminal::new();
-    let offset = terminal.paste("(false))) (echo BAD_AFTER_FAILURE)");
-    let end = terminal.expect(b"unexpected ')'", offset);
-    terminal.expect(b"unexpected ')'", end);
-    terminal.ready_after(end);
+    let offset = terminal.paste("echo (str FIRST");
+    terminal.send(b"\r");
     thread::sleep(Duration::from_millis(60));
+    terminal.drain();
+    assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\nFIRST\r\n"));
+    terminal.send(b"SECOND)\r");
+    let end = terminal.expect(b"\r\nFIRSTSECOND\r\n", offset);
+    terminal.ready_after(end);
+    let offset = terminal.send(b"echo FIRST\nSECOND\r");
+    let end = terminal.expect(b"\r\nFIRST SECOND\r\n", offset);
+    terminal.ready_after(end);
+    terminal.exit(0);
+}
+
+#[test]
+fn runtime_failure_stops_the_batch_and_preserves_exit_status() {
+    let mut terminal = Terminal::new();
+    let offset = terminal.execute("(false) (echo BAD_AFTER_FAILURE)");
+    terminal.expect(b"status 1", offset);
+    terminal.ready_after(offset);
     terminal.drain();
     assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\nBAD_AFTER_FAILURE\r\n"));
     terminal.send(b"\x04");
@@ -308,7 +324,7 @@ fn runtime_failure_stops_execution_but_reports_remaining_closers() {
 #[test]
 fn foreground_interrupt_restores_terminal_and_reaps_child() {
     let mut terminal = Terminal::new();
-    let offset = terminal.send(b"sleep 30)");
+    let offset = terminal.send(b"sleep 30\r");
     terminal.expect(b"\x1b[?2004l", offset);
     let deadline = Instant::now() + Duration::from_secs(3);
     let group = loop {
@@ -336,7 +352,7 @@ fn foreground_interrupt_restores_terminal_and_reaps_child() {
         killpg(group, None).is_err(),
         "foreground child was not reaped"
     );
-    let offset = terminal.send(b"echo ALIVE)");
+    let offset = terminal.send(b"echo ALIVE\r");
     let end = terminal.expect(b"\r\nALIVE\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);
@@ -346,7 +362,7 @@ fn foreground_interrupt_restores_terminal_and_reaps_child() {
 fn queued_paste_never_becomes_child_stdin() {
     let mut terminal = Terminal::new();
     let offset = terminal
-        .paste(r#"(sh -c "IFS= read -r line; printf 'GOT:%s\n' \"$line\"") (echo NEXT_COMMAND)"#);
+        .execute(r#"(sh -c "IFS= read -r line; printf 'GOT:%s\n' \"$line\"") (echo NEXT_COMMAND)"#);
     terminal.expect(b"\x1b[?2004l", offset);
     let deadline = Instant::now() + Duration::from_secs(3);
     while tcgetpgrp(&terminal.master).unwrap().as_raw() == terminal.child.id() as i32 {
@@ -364,7 +380,7 @@ fn queued_paste_never_becomes_child_stdin() {
 fn unicode_editing_and_history_require_explicit_submission() {
     let mut terminal = Terminal::new();
     let offset = terminal.paste("echo 甲e\u{301}👩‍💻乙");
-    terminal.send(b"\x7f\x7f)");
+    terminal.send(b"\x7f\x7f\r");
     let end = terminal.expect("\r\n甲e\u{301}\r\n".as_bytes(), offset);
     terminal.ready_after(end);
     let offset = terminal.send(b"\x1b[A");
@@ -372,37 +388,23 @@ fn unicode_editing_and_history_require_explicit_submission() {
     terminal.drain();
     let recalled = visible_text(&terminal.bytes[offset..]);
     assert!(recalled.contains("(echo 甲e\u{301}"));
-    assert!(!recalled.contains("(echo 甲e\u{301})"));
+    assert!(recalled.contains("(echo 甲e\u{301})"));
     assert!(!recalled.contains("\r\n甲e\u{301}\r\n"));
-    terminal.send(b")");
+    terminal.send(b"\r");
     let end = terminal.expect("\r\n甲e\u{301}\r\n".as_bytes(), offset);
     terminal.ready_after(end);
     let offset = terminal.send(b"\x1b[A");
     terminal.expect("(echo 甲e\u{301}".as_bytes(), offset);
-    terminal.send(" 追加)".as_bytes());
+    terminal.send(" 追加\r".as_bytes());
     let end = terminal.expect("\r\n甲e\u{301} 追加\r\n".as_bytes(), offset);
     terminal.ready_after(end);
     terminal.exit(0);
 }
 
 #[test]
-fn leading_extra_closers_are_not_empty_calls() {
-    let mut terminal = Terminal::new();
-    let offset = terminal.paste("))) (echo AFTER_CLOSERS)");
-    let end = terminal.expect(b"\r\nAFTER_CLOSERS\r\n", offset);
-    terminal.ready_after(end);
-    let transcript = visible_text(&terminal.bytes[offset..]);
-    assert_eq!(transcript.matches("unexpected ')'").count(), 3);
-    for column in 1..=3 {
-        assert!(transcript.contains(&format!("paste:1:{column}:")));
-    }
-    terminal.exit(0);
-}
-
-#[test]
 fn foreground_pipeline_reads_terminal_and_restores_child_terminal_changes() {
     let mut terminal = Terminal::new();
-    let offset = terminal.send(b"| (cat) (tr a-z A-Z))");
+    let offset = terminal.send(b"| (cat) (tr a-z A-Z)\r");
     terminal.expect(b"\x1b[?2004l", offset);
     let deadline = Instant::now() + Duration::from_secs(3);
     while tcgetpgrp(&terminal.master).unwrap().as_raw() == terminal.child.id() as i32 {
@@ -412,7 +414,7 @@ fn foreground_pipeline_reads_terminal_and_restores_child_terminal_changes() {
     terminal.send(b"pipeline-input\n\x04");
     let end = terminal.expect(b"\r\nPIPELINE-INPUT\r\n", offset);
     terminal.ready_after(end);
-    let offset = terminal.send(b"stty -echo)");
+    let offset = terminal.send(b"stty -echo\r");
     terminal.expect(b"\x1b[?2004l", offset);
     terminal.ready_after(offset);
     terminal.exit(0);
@@ -433,18 +435,18 @@ fn tab_completes_path_programs_files_and_variables_through_real_terminal_keys() 
             .current_dir(directory.path())
             .env("PATH", directory.path());
     });
-    let offset = terminal.send(b"tab-pro\tTAB_COMMAND)");
+    let offset = terminal.send(b"tab-pro\tTAB_COMMAND\r");
     let end = terminal.expect(b"\r\nTAB_COMMAND\r\n", offset);
     terminal.ready_after(end);
-    let offset = terminal.send(b"str fru\t)");
+    let offset = terminal.send(b"str fru\t\r");
     let end = terminal.expect(b"\r\n\"fruits.txt\"\r\n", offset);
     terminal.ready_after(end);
-    let offset = terminal.paste("(let TAB_VALUE retained)");
+    let offset = terminal.execute("(let TAB_VALUE retained)");
     terminal.ready_after(offset);
-    let offset = terminal.send(b"str $TAB_V\t)");
+    let offset = terminal.send(b"str $TAB_V\t\r");
     let end = terminal.expect(b"\r\n\"retained\"\r\n", offset);
     terminal.ready_after(end);
-    let offset = terminal.send("str 你\t)".as_bytes());
+    let offset = terminal.send("str 你\t\r".as_bytes());
     let end = terminal.expect("\r\n\"你好 file.txt\"\r\n".as_bytes(), offset);
     terminal.ready_after(end);
     terminal.exit(0);
@@ -453,15 +455,15 @@ fn tab_completes_path_programs_files_and_variables_through_real_terminal_keys() 
 #[test]
 fn double_tab_prints_candidates_and_keeps_editing_the_same_expression() {
     let mut terminal = Terminal::new();
-    let offset =
-        terminal.paste("(defn tab-alpha () (str TAB_ALPHA)) (defn tab-alpine () (str TAB_ALPINE))");
+    let offset = terminal
+        .execute("(defn tab-alpha () (str TAB_ALPHA)) (defn tab-alpine () (str TAB_ALPINE))");
     terminal.ready_after(offset);
     let offset = terminal.send(b"tab-a\t");
     terminal.expect(b"(tab-alp", offset);
     let offset = terminal.send(b"\t");
     let end = terminal.expect(b"\r\ntab-alpha\r\ntab-alpine\r\n", offset);
     terminal.expect(b"(tab-alp", end);
-    let offset = terminal.send(b"h\t)");
+    let offset = terminal.send(b"h\t\r");
     let end = terminal.expect(b"\r\n\"TAB_ALPHA\"\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);
@@ -471,16 +473,16 @@ fn double_tab_prints_candidates_and_keeps_editing_the_same_expression() {
 fn emacs_character_word_transpose_and_undo_keys_use_real_control_bytes() {
     let mut terminal = Terminal::new();
     for (keys, expected) in [
-        (b"echo ac\x02b\x06)".as_slice(), "abc"),
-        (b"echo XY\x08Z)".as_slice(), "XZ"),
+        (b"echo ac\x02b\x06\r".as_slice(), "abc"),
+        (b"echo XY\x08Z\r".as_slice(), "XZ"),
         (
-            b"echo path/file.txt\x1bb\x1bdX\x05)".as_slice(),
+            b"echo path/file.txt\x1bb\x1bdX\x05\r".as_slice(),
             "path/file.X",
         ),
-        (b"echo one two\x17\x19)".as_slice(), "one two"),
-        (b"echo RAW\x02X\x1f\x05)".as_slice(), "RAW"),
-        (b"echo CHORD\x02X\x18\x15\x05)".as_slice(), "CHORD"),
-        ("echo 甲e\u{301}👩‍💻乙\x14)".as_bytes(), "甲e\u{301}乙👩‍💻"),
+        (b"echo one two\x17\x19\r".as_slice(), "one two"),
+        (b"echo RAW\x02X\x1f\x05\r".as_slice(), "RAW"),
+        (b"echo CHORD\x02X\x18\x15\x05\r".as_slice(), "CHORD"),
+        ("echo 甲e\u{301}👩‍💻乙\x14\r".as_bytes(), "甲e\u{301}乙👩‍💻"),
     ] {
         let offset = terminal.send(keys);
         let end = terminal.expect(format!("\r\n{expected}\r\n").as_bytes(), offset);
@@ -492,18 +494,18 @@ fn emacs_character_word_transpose_and_undo_keys_use_real_control_bytes() {
 #[test]
 fn emacs_alt_backspace_and_split_escape_prefix_share_the_kill_ring() {
     let mut terminal = Terminal::new();
-    let offset = terminal.send(b"echo one two\x17\x1b\x7f\x19)");
+    let offset = terminal.send(b"echo one two\x17\x1b\x7f\x19\r");
     let end = terminal.expect(b"\r\none two\r\n", offset);
     terminal.ready_after(end);
     let offset = terminal.send(b"echo one two\x17");
     terminal.expect(b"(echo one ", offset);
     terminal.send(b"\x1b");
     thread::sleep(Duration::from_millis(80));
-    terminal.send(b"\x08\x19)");
+    terminal.send(b"\x08\x19\r");
     let end = terminal.expect(b"\r\none two\r\n", offset);
     terminal.ready_after(end);
     // Move between kills so Alt+Y has a second entry to rotate to.
-    let offset = terminal.send(b"echo first second\x17\x02\x17\x19\x1by\x05)");
+    let offset = terminal.send(b"echo first second\x17\x02\x17\x19\x1by\x05\r");
     let end = terminal.expect(b"\r\nsecond\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);
@@ -512,7 +514,7 @@ fn emacs_alt_backspace_and_split_escape_prefix_share_the_kill_ring() {
 #[test]
 fn emacs_search_accepts_without_submitting_and_abort_restores_the_cursor() {
     let mut terminal = Terminal::new();
-    let offset = terminal.paste("(echo SEARCH_FIRST)(echo SEARCH_SECOND)");
+    let offset = terminal.execute("(echo SEARCH_FIRST)(echo SEARCH_SECOND)");
     let end = terminal.expect(b"\r\nSEARCH_SECOND\r\n", offset);
     terminal.ready_after(end);
     let offset = terminal.send(b"echo saved\x02\x12SEARCH");
@@ -522,14 +524,14 @@ fn emacs_search_accepts_without_submitting_and_abort_restores_the_cursor() {
     terminal.expect(b"(echo SEARCH_FIRST", offset);
     let offset = terminal.send(b"\x13");
     terminal.expect(b"(echo SEARCH_SECOND", offset);
-    let offset = terminal.send(b"\x07X\x05)");
+    let offset = terminal.send(b"\x07X\x05\r");
     let end = terminal.expect(b"\r\nsaveXd\r\n", offset);
     terminal.ready_after(end);
     let offset = terminal.send(b"\x12SEARCH_SECOND\r");
     terminal.expect(b"(echo SEARCH_SECOND", offset);
     terminal.drain();
     assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\nSEARCH_SECOND\r\n"));
-    terminal.send(b")");
+    terminal.send(b"\r");
     let end = terminal.expect(b"\r\nSEARCH_SECOND\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);
@@ -541,7 +543,7 @@ fn emacs_clear_screen_preserves_the_draft_and_search() {
     let offset = terminal.send(b"echo CLEAR_SCREEN\x0c");
     let end = terminal.expect(b"\x1b[2J", offset);
     terminal.expect(b"(echo CLEAR_SCREEN", end);
-    terminal.send(b")");
+    terminal.send(b"\r");
     let end = terminal.expect(b"\r\nCLEAR_SCREEN\r\n", offset);
     terminal.ready_after(end);
     let offset = terminal.send(b"\x12CLEAR\x0c");

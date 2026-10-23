@@ -15,10 +15,10 @@ const zh = locale === 'zh-cn';
           <div class="terminal-body">
             <div class="terminal-host" data-terminal-host></div>
           </div>
-          <div class="terminal-bottom"><span class="terminal-state" data-state="loading"><span class="status-dot"></span><span data-status role="status">{zh ? '正在加载运行环境…' : 'Loading the runtime…'}</span></span><span class="terminal-shortcuts"><kbd>)</kbd> {zh ? '求值' : 'evaluate'} <span>·</span> <kbd>Enter</kbd> {zh ? '换行' : 'new line'}</span></div>
+          <div class="terminal-bottom"><span class="terminal-state" data-state="loading"><span class="status-dot"></span><span data-status role="status">{zh ? '正在加载运行环境…' : 'Loading the runtime…'}</span></span><span class="terminal-shortcuts"><kbd>Enter</kbd> {zh ? '求值' : 'evaluate'} <span>·</span> <kbd>Ctrl J</kbd> {zh ? '换行' : 'new line'}</span></div>
         </section>
         <div class="terminal-notice" data-notice hidden><span data-notice-text></span><button data-retry hidden>{zh ? '重试' : 'Retry'}</button></div>
-        <p class="terminal-hint"><span aria-hidden="true">↳</span>{zh ? '提示符已经提供一个左括号。输入 ' : 'The prompt supplies the opening parenthesis. Type '}<code>echo hello)</code>{zh ? '，或直接粘贴完整表达式。' : ' or paste a complete expression.'}</p>
+        <p class="terminal-hint"><span aria-hidden="true">↳</span>{zh ? '提示符 $ () 已提供外层括号。输入 ' : 'The $ () prompt supplies the outer parentheses. Type '}<code>echo hello</code>{zh ? ' 并按 Enter，或粘贴完整表达式后按 Enter。' : ' and press Enter, or paste complete expressions and press Enter.'}</p>
         <noscript><p>{zh ? '交互终端需要 JavaScript。你仍然可以阅读完整文档。' : 'The terminal needs JavaScript. The full documentation is still available.'}</p></noscript>
       </div>
       <aside class="playground-sidebar" aria-label={zh ? '示例与帮助' : 'Examples and help'}>
@@ -36,7 +36,7 @@ const zh = locale === 'zh-cn';
           </div>
         </div>
         <div class="sidebar-section capability-note"><span class="note-symbol" aria-hidden="true">i</span><h3>{zh ? '命令、文件与管道。' : 'Commands, files, and pipes.'}</h3><p>{zh ? '这里运行 29 条真实 coreutils 命令，支持临时文件、管道与重定向。文件仅保留在当前会话中。' : 'Run 29 real coreutils commands with temporary files, pipes, and redirections. Files live only in this session.'}</p><a href={url(locale, 'docs/playground/')}>{zh ? '了解支持范围' : 'See what is supported'} <span aria-hidden="true">→</span></a></div>
-        <div class="keyboard-guide"><h3>{zh ? '顺手的几个按键' : 'A few useful keys'}</h3><div><span>{zh ? '执行完整表达式' : 'Evaluate expression'}</span><kbd>)</kbd></div><div><span>{zh ? '浏览历史' : 'Browse history'}</span><span><kbd>↑</kbd> <kbd>↓</kbd></span></div><div><span>{zh ? '清空输入 / 中断' : 'Cancel / interrupt'}</span><kbd>Ctrl C</kbd></div><div><span>{zh ? '空输入时退出' : 'Exit on empty input'}</span><kbd>Ctrl D</kbd></div></div>
+        <div class="keyboard-guide"><h3>{zh ? '顺手的几个按键' : 'A few useful keys'}</h3><div><span>{zh ? '执行完整表达式' : 'Evaluate expression'}</span><kbd>Enter</kbd></div><div><span>{zh ? '浏览历史' : 'Browse history'}</span><span><kbd>↑</kbd> <kbd>↓</kbd></span></div><div><span>{zh ? '清空输入 / 中断' : 'Cancel / interrupt'}</span><kbd>Ctrl C</kbd></div><div><span>{zh ? '空输入时退出' : 'Exit on empty input'}</span><kbd>Ctrl D</kbd></div></div>
       </aside>
     </div>
     <div class="playground-next"><p>{zh ? '准备在自己的文件上使用 parsh？' : 'Ready to use parsh with your own files?'}</p><a href={url(locale, 'docs/getting-started/')}>{zh ? '在 Linux 上开始使用 parsh' : 'Get started with parsh on Linux'} <span aria-hidden="true">→</span></a></div>

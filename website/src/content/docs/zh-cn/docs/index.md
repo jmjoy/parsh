@@ -5,7 +5,7 @@ description: "一个围绕 S 表达式构建的 Linux Shell。"
 
 **parsh** 意为 **parenthesis shell**。它是一个命令行与脚本共用同一种小巧 Lisp 方言的 Linux Shell。
 
-提示符是一个左括号。输入 `str hello)` 即可求值 `(str hello)`。Enter 插入换行，闭合最外层括号才会提交表达式。
+提示符为 `$ ()`。输入 `str hello` 并按 Enter 即可求值 `(str hello)`。输入未完成时 Enter 换行，Ctrl+J 始终换行。
 
 ```parsh
 (let name world)

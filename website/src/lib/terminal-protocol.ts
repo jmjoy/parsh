@@ -4,7 +4,7 @@ export type TerminalEvent =
       lines: string[];
       row: number;
       column: number;
-      dim_prompt: boolean;
+      dimmed_cells: { row: number; column: number; character: string }[];
     }
   | { type: "output"; stream: "stdout" | "stderr"; bytes: number[] }
   | { type: "commit" }

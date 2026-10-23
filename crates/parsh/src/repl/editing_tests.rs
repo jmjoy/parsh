@@ -205,7 +205,7 @@ fn yanking_and_undoing_complete_source_never_submit() {
     assert_eq!(repl.session.input.source(), "(str safe)");
     assert!(repl.session.history.entries.is_empty());
     assert!(
-        repl.input(Key::Character(')'))
+        repl.input(Key::Enter)
             .contains(&Event::Value("\"safe\"".into()))
     );
 }
@@ -216,7 +216,7 @@ fn submissions_interrupts_and_history_recall_start_undo_baselines() {
     type_text(&mut repl, "str first");
     repl.input(Key::KillWhitespaceWord);
     repl.input(Key::Yank);
-    type_text(&mut repl, ")");
+    repl.input(Key::Enter);
     repl.input(Key::Undo);
     assert!(repl.session.input.body.is_empty());
     repl.input(Key::Yank); // The kill ring survives submission.
@@ -226,54 +226,50 @@ fn submissions_interrupts_and_history_recall_start_undo_baselines() {
     assert!(repl.session.input.body.is_empty());
     repl.input(Key::Previous);
     repl.input(Key::Undo);
-    assert_eq!(repl.session.input.source(), "(str first");
+    assert_eq!(repl.session.input.source(), "(str first)");
     type_text(&mut repl, " second");
     repl.input(Key::Undo);
-    assert_eq!(repl.session.input.source(), "(str first");
+    assert_eq!(repl.session.input.source(), "(str first)");
     repl.reset();
     repl.input(Key::Yank);
     assert!(repl.session.input.body.is_empty());
 }
 
 #[test]
-fn paste_submission_and_preserved_middle_tail_do_not_restore_executed_text() {
+fn paste_and_newline_undo_do_not_restore_executed_text() {
     let mut repl = Repl::new();
     repl.paste("(str first) (str unfinished");
     repl.input(Key::Undo);
     assert!(repl.session.input.body.is_empty());
-    type_text(&mut repl, "str firsttail");
-    for _ in 0..4 {
-        repl.input(Key::Left);
-    }
-    type_text(&mut repl, ")");
+    type_text(&mut repl, "str first");
+    repl.input(Key::Newline);
     repl.input(Key::Undo);
-    assert_eq!(repl.session.input.body, "tail");
-    type_text(&mut repl, "str ");
+    assert_eq!(repl.session.input.body, "str first");
+    repl.input(Key::Enter);
     repl.input(Key::Undo);
-    assert_eq!(repl.session.input.body, "tail");
-    assert_eq!(repl.session.input.cursor, 0);
+    assert!(repl.session.input.body.is_empty());
 }
 
 #[test]
 fn search_walks_both_directions_and_accepts_without_execution() {
     let mut repl = Repl::new();
-    repl.paste("(str first)(str second)(str first-again)");
+    execute(&mut repl, "(str first)(str second)(str first-again)");
     type_text(&mut repl, "str draft");
     repl.input(Key::SearchBackward);
     let events = type_text(&mut repl, "first");
     edited(&events);
     assert!(render(&events).contains("(str first-again"));
     let events = repl.input(Key::SearchBackward);
-    assert!(render(&events).starts_with("(str first\n"));
+    assert!(render(&events).starts_with("$ (str first)\n"));
     assert!(render(&repl.input(Key::SearchForward)).contains("(str first-again"));
     assert!(render(&type_text(&mut repl, "missing")).contains("failed forward-i-search"));
     assert!(render(&repl.resize(80, 24)).contains("failed forward-i-search"));
     edited(&repl.input(Key::Enter));
-    assert_eq!(repl.session.input.source(), "(str first-again");
+    assert_eq!(repl.session.input.source(), "(str first-again)");
     repl.input(Key::Undo); // Search acceptance is a fresh editing baseline.
-    assert_eq!(repl.session.input.source(), "(str first-again");
+    assert_eq!(repl.session.input.source(), "(str first-again)");
     assert!(
-        repl.input(Key::Character(')'))
+        repl.input(Key::Enter)
             .contains(&Event::Value("\"first-again\"".into()))
     );
 }
@@ -282,7 +278,7 @@ fn search_walks_both_directions_and_accepts_without_execution() {
 fn abort_search_restores_draft_cursor_mode_and_undo_history() {
     for draft in ["str saved", "(str saved"] {
         let mut repl = Repl::new();
-        repl.paste("(str 甲e\u{301}👩‍💻)");
+        execute(&mut repl, "(str 甲e\u{301}👩‍💻)");
         type_text(&mut repl, draft);
         repl.input(Key::Left);
         let before = repl.session.input.clone();
@@ -300,7 +296,7 @@ fn abort_search_restores_draft_cursor_mode_and_undo_history() {
 #[test]
 fn search_paste_is_literal_and_empty_queries_and_failures_are_safe() {
     let mut repl = Repl::new();
-    repl.paste("(str retained)");
+    execute(&mut repl, "(str retained)");
     type_text(&mut repl, "str draft");
     repl.input(Key::SearchBackward);
     edited(&repl.paste("(exit 9)\n"));
@@ -319,20 +315,20 @@ fn search_paste_is_literal_and_empty_queries_and_failures_are_safe() {
 #[test]
 fn search_multiline_unicode_resize_clear_and_history_draft_restore() {
     let mut repl = Repl::new();
-    repl.paste("(str\n  甲e\u{301}👩‍💻)");
+    execute(&mut repl, "(str\n  甲e\u{301}👩‍💻)");
     type_text(&mut repl, "str draft");
     repl.input(Key::SearchBackward);
     type_text(&mut repl, "甲e\u{301}👩‍💻");
     let events = repl.resize(8, 4);
     assert!(
-        matches!(events.last(), Some(Event::Render { lines, row, column, dim_prompt: false })
+        matches!(events.last(), Some(Event::Render { lines, row, column, .. })
         if lines.len() <= 3 && *row < lines.len() && *column < 8)
     );
     let events = repl.input(Key::ClearScreen);
     assert!(matches!(events.first(), Some(Event::ClearScreen)));
     assert!(repl.session.search.is_some());
     repl.input(Key::Enter);
-    assert_eq!(repl.session.input.source(), "(str\n  甲e\u{301}👩‍💻");
+    assert_eq!(repl.session.input.source(), "(str\n  甲e\u{301}👩‍💻)");
     repl.input(Key::Next);
     assert_eq!(repl.session.input.source(), "(str draft");
     assert!(!repl.session.input.explicit);
@@ -341,11 +337,11 @@ fn search_multiline_unicode_resize_clear_and_history_draft_restore() {
 #[test]
 fn search_editing_accepts_preview_and_interrupt_preserves_exit_status() {
     let mut repl = Repl::new();
-    repl.paste("(str target)");
+    execute(&mut repl, "(str target)");
     repl.input(Key::SearchBackward);
     type_text(&mut repl, "target");
     repl.input(Key::Home);
-    assert_eq!(repl.session.input.source(), "(str target");
+    assert_eq!(repl.session.input.source(), "(str target)");
     assert_eq!(repl.session.input.cursor, 0);
     repl.input(Key::SearchBackward);
     type_text(&mut repl, "target");
@@ -410,20 +406,20 @@ fn empty_and_single_grapheme_edits_are_no_ops_and_last_search_can_be_reused() {
     repl.input(Key::Transpose);
     assert_eq!(repl.session.input.body, "👩‍💻");
     repl.input(Key::ClearInput);
-    repl.paste("(str TARGET)");
+    execute(&mut repl, "(str TARGET)");
     repl.input(Key::SearchBackward);
     type_text(&mut repl, "TARGET");
     repl.input(Key::Abort);
     repl.input(Key::SearchBackward);
     assert!(render(&repl.input(Key::SearchBackward)).contains("(str TARGET"));
     repl.input(Key::Enter);
-    assert_eq!(repl.session.input.source(), "(str TARGET");
+    assert_eq!(repl.session.input.source(), "(str TARGET)");
 }
 
 #[test]
 fn narrowing_a_search_after_switching_direction_includes_the_current_match() {
     let mut repl = Repl::new();
-    repl.paste("(str first)(str second)(str first-again)");
+    execute(&mut repl, "(str first)(str second)(str first-again)");
     repl.input(Key::SearchBackward);
     type_text(&mut repl, "fir");
     repl.input(Key::SearchBackward);
@@ -431,5 +427,5 @@ fn narrowing_a_search_after_switching_direction_includes_the_current_match() {
     let events = type_text(&mut repl, "st");
     assert!(!render(&events).contains("failed"));
     repl.input(Key::Enter);
-    assert_eq!(repl.session.input.source(), "(str first-again");
+    assert_eq!(repl.session.input.source(), "(str first-again)");
 }

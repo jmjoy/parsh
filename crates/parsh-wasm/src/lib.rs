@@ -4,13 +4,20 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 #[derive(Serialize)]
+struct BrowserDimmedCell {
+    row: usize,
+    column: usize,
+    character: char,
+}
+
+#[derive(Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum BrowserEvent {
     Render {
         lines: Vec<String>,
         row: usize,
         column: usize,
-        dim_prompt: bool,
+        dimmed_cells: Vec<BrowserDimmedCell>,
     },
     Commit,
     ClearScreen,
@@ -40,12 +47,19 @@ fn events(events: Vec<Event>) -> Result<JsValue, JsValue> {
                 lines,
                 row,
                 column,
-                dim_prompt,
+                dimmed_cells,
             } => BrowserEvent::Render {
                 lines,
                 row,
                 column,
-                dim_prompt,
+                dimmed_cells: dimmed_cells
+                    .into_iter()
+                    .map(|cell| BrowserDimmedCell {
+                        row: cell.row,
+                        column: cell.column,
+                        character: cell.character,
+                    })
+                    .collect(),
             },
             Event::Commit => BrowserEvent::Commit,
             Event::ClearScreen => BrowserEvent::ClearScreen,
@@ -100,6 +114,7 @@ impl Session {
         }
         let key = match key {
             "enter" => Key::Enter,
+            "newline" => Key::Newline,
             "tab" => Key::Tab,
             "left" => Key::Left,
             "right" => Key::Right,

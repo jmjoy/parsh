@@ -32,7 +32,7 @@ parsh examples/hello.parsh world
 
 ## 第一次交互
 
-在左括号提示符后输入 `str "hello, " "parsh")`，即可看到 `"hello, parsh"`。Enter 用于多行输入，闭合最外层括号后才会求值。
+在 `$ ()` 提示符中输入 `str "hello, " "parsh"` 并按 Enter，parsh 会补上外层右括号，显示 `"hello, parsh"`。输入未完成时 Enter 换行，Ctrl+J 始终换行。
 
 ```parsh
 (let name world)

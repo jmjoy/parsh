@@ -34,7 +34,7 @@ Use `parsh -- -script.parsh` for a script filename beginning with `-`.
 
 ## Your first session
 
-Type `str "hello, " "parsh")` at the opening-parenthesis prompt. parsh displays `"hello, parsh"`. Enter is for multi-line input; a closing outer parenthesis evaluates the expression.
+Type `str "hello, " "parsh"` at the `$ ()` prompt and press Enter. parsh supplies the outer closing parenthesis and displays `"hello, parsh"`. Enter inserts a newline when input is unfinished; Ctrl+J always inserts a newline.
 
 ```parsh
 (let name world)

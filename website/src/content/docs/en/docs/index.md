@@ -5,7 +5,7 @@ description: "A Linux shell built around S-expressions."
 
 **parsh** stands for **parenthesis shell**. It is a Linux shell whose command line and scripts use the same small Lisp dialect.
 
-The prompt is an opening parenthesis. Type `str hello)` to evaluate `(str hello)`. Enter inserts a newline; closing the outermost parenthesis submits the expression.
+The prompt is `$ ()`. Type `str hello` and press Enter to evaluate `(str hello)`. Enter continues unfinished input on a new line; Ctrl+J always inserts a newline.
 
 ```parsh
 (let name world)

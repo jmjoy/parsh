@@ -10,7 +10,7 @@ use std::{
 #[command(
     version,
     about,
-    after_help = "With no FILE or -c, start interactively on a terminal, otherwise read a script from stdin.\nInteractive: ')' submits a complete expression; Enter inserts a newline."
+    after_help = "With no FILE or -c, start interactively on a terminal, otherwise read a script from stdin.\nInteractive: Enter evaluates complete input, supplying one outer ')' when needed; Ctrl+J inserts a newline."
 )]
 struct Cli {
     /// Execute SOURCE, with remaining arguments available as $args
