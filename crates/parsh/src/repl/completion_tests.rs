@@ -159,12 +159,36 @@ fn syntax_only_completion_uses_available_builtins_and_current_functions() {
 
 #[test]
 fn numeric_builtins_complete_without_an_execution_host() {
-    for operator in ["+", "-", "*", "/", "="] {
+    for operator in ["+", "-", "*", "/", "=", "!=", "<=", ">="] {
         let mut repl = Repl::new();
         type_text(&mut repl, operator);
         repl.input(Key::Tab);
         assert_eq!(repl.session.input.body, format!("{operator} "));
     }
+}
+
+#[test]
+fn comparison_prefixes_list_the_operators_and_input_redirection() {
+    for (prefix, expected) in [("<", vec!["<", "<="]), (">", vec![">", ">="])] {
+        let mut repl = Repl::new();
+        type_text(&mut repl, prefix);
+        repl.input(Key::Tab);
+        let events = repl.input(Key::Tab);
+        let expected: Vec<_> = expected.into_iter().map(str::to_owned).collect();
+        assert_eq!(listings(&events), [&expected]);
+        assert_eq!(repl.session.input.body, prefix);
+    }
+    let mut repl = Repl::with_host(TestHost::default()).unwrap();
+    type_text(&mut repl, "<");
+    repl.input(Key::Tab);
+    let events = repl.input(Key::Tab);
+    assert_eq!(
+        listings(&events),
+        [&vec!["<".to_owned(), "<=".to_owned(), "<|".to_owned()]]
+    );
+    type_text(&mut repl, "=");
+    repl.input(Key::Tab);
+    assert_eq!(repl.session.input.body, "<= ");
 }
 
 #[test]

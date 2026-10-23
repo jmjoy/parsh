@@ -149,6 +149,24 @@ test("binding targets reject variable references and allow recovery", async ({
   await expect(terminal(page)).toContainText('"retained"');
 });
 
+test("numeric comparisons preserve precision and work in browser conditions", async ({ page }) => {
+  await playground(page);
+  await paste(page, `(list (= 001 1.0) (!= 1 1.5) (< 2 10)
+    (<= 3 3.0) (> 10 2) (>= 2.5 3))
+(list (> 9007199254740993 9007199254740992.0)
+    (< 9223372036854775807 9223372036854775808.0) (>= -0.0 0))
+(let count (printf " 3\\n"))
+(if (>= $count 3.0) (str enough) (str missing))`);
+  await expect(terminal(page)).toContainText("(true true true true true false)");
+  await expect(terminal(page)).toContainText("(true true true)");
+  await expect(terminal(page)).toContainText('"enough"');
+  await paste(page, "(> 1 invalid) (str skipped)");
+  await expect(terminal(page)).toContainText("invalid number");
+  await expect(terminal(page)).not.toContainText('"skipped"');
+  await paste(page, "(if (< 1 2) (str recovered))");
+  await expect(terminal(page)).toContainText('"recovered"');
+});
+
 test("paste recovers extra closers and a failed batch allows new input", async ({
   page,
 }) => {

@@ -38,7 +38,7 @@ export default {
     },
     {
       name: "keyword.operator.parsh",
-      match: "(?<=\\()(?:[+*/=-]|\\|[12]?>?>?|<\\|)(?=[\\s)])",
+      match: "(?<=\\()(?:[+*/=-]|!=|[<>]=?|\\|[12]?>?>?|<\\|)(?=[\\s)])",
     },
     { name: "entity.name.function.parsh", match: '(?<=\\()[^\\s()\"$]+' },
     { name: "punctuation.section.parens.parsh", match: "[()]" },

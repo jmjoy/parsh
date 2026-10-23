@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    cmp,
     collections::{HashMap, HashSet},
     ffi::OsString,
     rc::Rc,
@@ -161,7 +162,8 @@ pub struct Shell {
 
 const BUILTINS: &[&str] = &[
     "do", "let", "set", "if", "for", "defn", "list", "str", "eq", "not", "glob", "cd", "export",
-    "exit", "+", "-", "*", "/", "=", "|", "|>", "|1>", "|>>", "|1>>", "<|", "|2>", "|2>>",
+    "exit", "+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">=", "|", "|>", "|1>", "|>>", "|1>>",
+    "<|", "|2>", "|2>>",
 ];
 
 fn builtin(name: &str) -> bool {
@@ -705,11 +707,20 @@ impl Shell {
                 Ok(Value::Text(result))
             }
             "+" | "-" | "*" | "/" => self.arithmetic(expr, &name, args, env, io),
-            "=" => {
+            "=" | "!=" | "<" | "<=" | ">" | ">=" => {
                 Self::arity(expr, args, 2, 2)?;
                 let left = self.number(&args[0], env, io)?;
                 let right = self.number(&args[1], env, io)?;
-                Ok(Value::Bool(left.equals(right)))
+                let result = match name.as_str() {
+                    "=" => left.equals(right),
+                    "!=" => !left.equals(right),
+                    "<" => left.compare(right).is_some_and(cmp::Ordering::is_lt),
+                    "<=" => left.compare(right).is_some_and(cmp::Ordering::is_le),
+                    ">" => left.compare(right).is_some_and(cmp::Ordering::is_gt),
+                    ">=" => left.compare(right).is_some_and(cmp::Ordering::is_ge),
+                    _ => unreachable!("unknown comparison operator"),
+                };
+                Ok(Value::Bool(result))
             }
             "eq" => {
                 Self::arity(expr, args, 2, 2)?;

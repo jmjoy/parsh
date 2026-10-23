@@ -131,8 +131,26 @@ fn arithmetic_composes_with_command_capture_functions_arguments_and_environment(
 }
 
 #[test]
+fn numeric_comparisons_accept_captured_output_and_drive_conditions() {
+    let output = run(r#"
+        (let count (+ (printf "  0012 \n") 3))
+        (defn enough (n) (>= $n 15.0))
+        (printf "%s\n" (< (printf 2) (printf 10))
+            (<= $count 15) (> $count 14.5) (enough $count)
+            (!= $count 15.0) (> 9007199254740993 9007199254740992.0))
+        (if (> $count 10) (printf larger) (echo skipped))
+        (if (< $count 10) (echo skipped) (printf smaller))
+        "#);
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "true\ntrue\ntrue\ntrue\nfalse\ntrue\nlargersmaller"
+    );
+}
+
+#[test]
 fn numeric_results_are_not_implicitly_printed_in_scripts() {
-    let output = run("(+ 1 2) (/ 8 2) (= 001 1)");
+    let output = run("(+ 1 2) (/ 8 2) (= 001 1) (!= 1 2) (< 1 2) (<= 2 2) (> 2 1) (>= 2 2)");
     success(&output);
     assert!(output.stdout.is_empty());
 }
@@ -146,8 +164,17 @@ fn numeric_failures_have_language_error_status_and_stop_the_script() {
         ("(+ 9223372036854775808)", "integer out of range for i64"),
         ("(* 1e308 1e308)", "number must be finite"),
         ("(= 1 (list 1))", "expected a number or numeric text"),
+        ("(< 1 invalid)", "invalid number"),
+        ("(<= 1)", "expected 2 arguments"),
+        ("(> 1 (list 2))", "expected a number or numeric text"),
+        ("(>= 1 1e309)", "number must be finite"),
+        ("(!= 1 2 3)", "expected 2 arguments"),
         (
             "(| (+ 1 2) (cat))",
+            "pipeline stages must be external commands",
+        ),
+        (
+            "(| (> 2 1) (cat))",
             "pipeline stages must be external commands",
         ),
     ] {

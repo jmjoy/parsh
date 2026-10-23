@@ -23,7 +23,7 @@ description: "Lexical functions, branching, sequencing, and iteration."
 ```
 
 `if` evaluates only the selected branch. A condition must produce a boolean
-(from `eq`, `=`, or `not`) or a command status; zero status is true. Text and
+(from `eq`, a numeric comparison, or `not`) or a command status; zero status is true. Text and
 numbers are not implicitly booleans. `do` runs expressions in sequence in the current scope.
 `for` evaluates a list and creates a fresh lexical binding for each iteration.
 

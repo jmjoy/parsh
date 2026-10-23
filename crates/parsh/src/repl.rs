@@ -915,6 +915,108 @@ mod syntax_tests {
     }
 
     #[test]
+    fn numeric_comparisons_return_booleans_for_numbers_and_numeric_text() {
+        for (source, expected) in [
+            ("(< 2 10)", "true"),
+            ("(< 10 2)", "false"),
+            ("(< 2 2.0)", "false"),
+            ("(<= 2 2.0)", "true"),
+            ("(<= 1.5 2)", "true"),
+            ("(<= 2 1.5)", "false"),
+            ("(> 10 2)", "true"),
+            ("(> 2 10)", "false"),
+            ("(> 2.0 2)", "false"),
+            ("(>= 2.0 2)", "true"),
+            ("(>= 2 1.5)", "true"),
+            ("(>= 1.5 2)", "false"),
+            ("(!= 001 1.0)", "false"),
+            ("(!= 1 1.5)", "true"),
+            ("(< -2 -1.5)", "true"),
+            ("(> -1 -1.5)", "true"),
+            ("(< 0 .5)", "true"),
+            ("(> 0 -.5)", "true"),
+            ("(>= -0.0 0)", "true"),
+            (r#"(< " +001 " "2e0")"#, "true"),
+            ("(> (+ 1 2) (/ 5 2))", "true"),
+            ("(< 1e308 1.1e308)", "true"),
+            ("(> 9007199254740993 9007199254740992.0)", "true"),
+            ("(< 9007199254740992.0 9007199254740993)", "true"),
+            ("(> -9007199254740992.0 -9007199254740993)", "true"),
+            ("(< -9007199254740993 -9007199254740992.0)", "true"),
+            ("(< 9223372036854775807 9223372036854775808.0)", "true"),
+            ("(> -9223372036854775808 -1e19)", "true"),
+            ("(<= -9223372036854775808 -9223372036854775808.0)", "true"),
+            ("(!= 9223372036854775807 9223372036854775808.0)", "true"),
+            ("(if (> 3 2) (str yes) (unavailable))", r#""yes""#),
+            ("(if (< 3 2) (unavailable) (str no))", r#""no""#),
+        ] {
+            let events = Repl::new().paste(source);
+            assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
+            assert_eq!(values(&events), [expected], "{source}");
+        }
+    }
+
+    #[test]
+    fn numeric_comparisons_evaluate_operands_once_from_left_to_right() {
+        let events = Repl::new().paste(
+            r#"
+            (let count (+))
+            (defn next () (set count (+ $count 1)) $count)
+            (defn increasing (a b) (< $a $b))
+            (list (< (next) (next)) $count
+                  (<= (next) (next)) $count
+                  (> (next) (next)) $count
+                  (>= (next) (next)) $count
+                  (!= (next) (next)) $count
+                  (increasing (next) (next)) $count)
+        "#,
+        );
+        assert!(diagnostics(&events).is_empty(), "{events:?}");
+        assert_eq!(
+            values(&events),
+            ["(true 2 true 4 false 6 false 8 true 10 true 12)"]
+        );
+    }
+
+    #[test]
+    fn numeric_comparisons_validate_arity_and_locate_invalid_operands() {
+        for operator in ["!=", "<", "<=", ">", ">="] {
+            for args in ["", "1", "1 2 3"] {
+                let source = format!("({operator} {args})");
+                let events = Repl::new().paste(&source);
+                let errors = diagnostics(&events);
+                assert_eq!(errors.len(), 1, "{source}: {events:?}");
+                assert!(
+                    errors[0].contains("expected 2 arguments"),
+                    "{source}: {errors:?}"
+                );
+                assert!(values(&events).is_empty(), "{source}: {events:?}");
+            }
+            for (operand, message) in [
+                ("invalid", "invalid number"),
+                ("(eq a a)", "expected a number or numeric text"),
+                ("(list 1)", "expected a number or numeric text"),
+                ("(do)", "expected a number or numeric text"),
+                ("9223372036854775808", "integer out of range for i64"),
+                ("1e309", "number must be finite"),
+            ] {
+                let mut repl = Repl::new();
+                let source = format!("({operator} 1\n {operand}) (str skipped)");
+                let events = repl.paste(&source);
+                let errors = diagnostics(&events);
+                assert_eq!(errors.len(), 1, "{source}: {events:?}");
+                assert!(
+                    errors[0].starts_with("interactive:2:2:"),
+                    "{source}: {errors:?}"
+                );
+                assert!(errors[0].contains(message), "{source}: {errors:?}");
+                assert!(values(&events).is_empty(), "{source}: {events:?}");
+                assert_eq!(values(&repl.paste("(str recovered)")), [r#""recovered""#]);
+            }
+        }
+    }
+
+    #[test]
     fn numeric_values_survive_bindings_functions_and_left_to_right_evaluation() {
         let events = Repl::new().paste(
             r#"
@@ -986,7 +1088,7 @@ mod syntax_tests {
             assert!(errors[0].contains(message), "{source}: {errors:?}");
             assert!(values(&events).is_empty(), "{source}: {events:?}");
         }
-        for operator in ["+", "-", "*", "/", "="] {
+        for operator in ["+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">="] {
             let events = Repl::new().paste(&format!("(defn {operator} () (str invalid))"));
             assert!(diagnostics(&events)[0].contains("function name is reserved"));
         }

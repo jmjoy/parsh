@@ -67,10 +67,11 @@ values never undergo implicit globbing, word splitting, or tilde expansion.
 `cd` accepts a path, or defaults to `$HOME`; it updates `$PWD` and `$OLDPWD`.
 Relative commands, glob patterns, and redirections use the current directory.
 
-## Arithmetic
+## Arithmetic and comparisons
 
-Bare words remain text. `+`, `-`, `*`, `/`, and `=` accept numbers or numeric
-text, including variables and captured command output. Arithmetic returns a
+Bare words remain text. Arithmetic operators `+`, `-`, `*`, `/` and comparison
+operators `=`, `!=`, `<`, `<=`, `>`, `>=` accept numbers or numeric text,
+including variables and captured command output. Arithmetic returns a
 number; ordinary text such as `00123` keeps its original spelling.
 
 ```lisp
@@ -87,7 +88,19 @@ and `"00123"`. `eq` compares types and values, so text, integers, and floats are
 distinct. `=` compares numeric values, including numeric text; it takes exactly
 two arguments and does not use a floating-point tolerance.
 
-Arguments are evaluated once, from left to right, and operations fold left.
+`!=` tests numeric inequality; `<`, `<=`, `>`, and `>=` test numeric order.
+Each comparison takes exactly two arguments and returns a boolean. Comparisons
+preserve integer precision even when comparing a large integer with a float.
+
+```lisp
+(> 10 2)
+(>= 3 3.0)
+(< 9007199254740992.0 9007199254740993)
+(!= 1 1.5)
+(if (<= $count 3) (echo "at most three"))
+```
+
+Arguments are evaluated once, from left to right; arithmetic operations fold left.
 `+` and `*` accept any number of arguments, with `(+)` returning integer `0` and
 `(*)` returning integer `1`. `-` and `/` require at least one argument; one
 argument means negation or reciprocal. Division always returns a float.
@@ -187,7 +200,7 @@ redirection takes precedence over capturing that expression's output.
 ```
 
 `if` evaluates only the selected branch. A condition must produce a boolean
-(from `eq`, `=`, or `not`) or a command status; zero status is true. Text and
+(from `eq`, a numeric comparison, or `not`) or a command status; zero status is true. Text and
 numbers are not implicitly booleans. `do` runs expressions in sequence in the current scope.
 `for` evaluates a list and creates a fresh lexical binding for each iteration.
 
