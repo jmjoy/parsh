@@ -53,6 +53,13 @@ pub trait ExecutionHost {
         streams: HostStreams,
     ) -> Result<CommandOutput, HostError>;
     fn open(&mut self, cwd: &str, path: &str, mode: FileMode) -> Result<u32, HostError>;
+    /// Write builtin output to an open redirection handle.
+    fn write(&mut self, _handle: u32, _bytes: &[u8]) -> Result<(), HostError> {
+        Err(HostError {
+            code: 2,
+            message: "host does not support writing builtin output to files".into(),
+        })
+    }
     fn close(&mut self, handle: u32);
     fn chdir(&mut self, cwd: &str, path: &str) -> Result<String, HostError>;
     /// Available external command names, without running any commands.

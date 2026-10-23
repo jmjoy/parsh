@@ -34,7 +34,7 @@ export default {
     {
       name: "keyword.control.parsh",
       match:
-        "(?<=\\()(?:do|let|set|get|if|for|while|break|continue|defn|list|str|eq|not|glob|cd|export|exit)(?=[\\s)])",
+        "(?<=\\()(?:do|let|set|get|if|for|while|break|continue|defn|list|str|eq|not|glob|cd|export|exit|type)(?=[\\s)])",
     },
     {
       name: "keyword.operator.parsh",

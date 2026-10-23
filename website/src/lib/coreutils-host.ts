@@ -65,6 +65,11 @@ export class CoreutilsHost {
           value = this.open(cwd, path, mode); break;
         }
         case "close": this.handles.delete(args as number); value = true; break;
+        case "write": {
+          const [handle, bytes] = args as [number, number[]];
+          this.write(handle, new Uint8Array(bytes));
+          value = true; break;
+        }
         case "chdir": {
           const [cwd, path] = args as [string, string];
           const absolute = this.resolve(cwd, path);
@@ -168,6 +173,18 @@ export class CoreutilsHost {
     const fd = this.handles.get(id);
     if (!fd) throw new HostFailure("invalid file handle");
     return fd;
+  }
+
+  private write(handle: number, bytes: Uint8Array): void {
+    const fd = this.handle(handle)!;
+    const growth = fd.file_pos + BigInt(bytes.length) - fd.file.size;
+    if (growth > 0n && this.usedBytes() + Number(growth) > FILE_LIMIT) {
+      throw new HostFailure("virtual files exceed 32 MiB");
+    }
+    const result = fd.fd_write(bytes);
+    if (result.ret !== defs.ERRNO_SUCCESS || result.nwritten !== bytes.length) {
+      throw new HostFailure("could not write builtin output");
+    }
   }
 
   private run(request: RunRequest): { code: number; chunks: Chunk[] } {

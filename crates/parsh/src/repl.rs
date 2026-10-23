@@ -959,6 +959,39 @@ mod syntax_tests {
     }
 
     #[test]
+    fn type_inspects_syntax_builtins_and_functions_and_captures_output() {
+        let mut repl = Repl::new();
+        let events = execute(
+            &mut repl,
+            r#"
+            (defn known () (exit 9))
+            (type type cd known)
+            (str (type -t known))
+            (if (type -t unknown) (exit 9) (str missing))
+            (type -p type)
+            "#,
+        );
+        assert!(diagnostics(&events).is_empty(), "{events:?}");
+        let output: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Output {
+                    stream: Stream::Stdout,
+                    bytes,
+                } => Some(bytes.as_slice()),
+                _ => None,
+            })
+            .flatten()
+            .copied()
+            .collect();
+        assert_eq!(
+            output,
+            b"type is a shell builtin\ncd is a shell builtin\nknown is a function\n"
+        );
+        assert_eq!(values(&events), ["\"function\"", "\"missing\""]);
+    }
+
+    #[test]
     fn strings_interpolate_variables_calls_and_nested_strings() {
         let events = execute(
             &mut Repl::new(),
@@ -1848,6 +1881,11 @@ mod host_tests {
         fn chdir(&mut self, _cwd: &str, path: &str) -> Result<String, HostError> {
             Ok(path.into())
         }
+        fn commands(&mut self) -> Result<Vec<String>, HostError> {
+            Ok(["echo", "pwd", "printenv", "false", "binary"]
+                .map(String::from)
+                .into())
+        }
         fn paths(&mut self) -> Result<Vec<String>, HostError> {
             Ok([
                 "/",
@@ -1872,6 +1910,37 @@ mod host_tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn type_uses_host_command_metadata_and_never_native_path_or_command_execution() {
+        let mut repl = Repl::with_host(TestHost).unwrap();
+        let events = execute(
+            &mut repl,
+            r#"
+            (defn echo () (exit 9))
+            (type type echo pwd)
+            (type -a echo)
+            (type -P echo)
+            (type -f echo)
+            (str (type -t binary))
+            (if (type -t /bin/sh) (exit 9))
+            "#,
+        );
+        assert_eq!(
+            outputs(&events),
+            concat!(
+                "type is a shell builtin\necho is a function\npwd is an external command\n",
+                "echo is a function\necho is an external command\necho\necho is an external command\n"
+            )
+        );
+        assert!(events.contains(&Event::Value("\"file\"".into())));
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, Event::Diagnostic(_))),
+            "{events:?}"
+        );
     }
 
     #[test]

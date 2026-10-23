@@ -167,6 +167,31 @@ are started directly, without passing the expression through another shell.
 The command name may also come from a text variable, as in `($EDITOR file.txt)`;
 its value is one program name, without implicit splitting into flags.
 
+Use `type` to inspect command lookup without executing the command:
+
+```lisp
+(type type cd echo)
+(defn greet (name) (echo hello $name))
+(type greet)
+(type -a echo)
+(let kind (type -t greet))
+(if (type -t optional-tool) (optional-tool))
+```
+
+`type` accepts multiple names, including list arguments, and supports these Bash-style options:
+
+- `-a`: show every match, including all executable paths in PATH order.
+- `-t`: print `builtin`, `function`, or `file` for each match.
+- `-p`: print the external command path, or nothing for a built-in or function.
+- `-P`: search PATH even when a built-in or function has the same name.
+- `-f`: skip function lookup.
+
+Options can be combined; `--` ends option parsing. No arguments succeeds silently.
+An unknown name gives status `1`; an invalid option gives status `2`.
+Output supports capture and redirection. In the browser playground, external
+commands are reported by the host's available command names; `-p` and `-P`
+return those names.
+
 ```lisp
 (echo (pwd))
 (| (find . -name "*.rs") (sort))

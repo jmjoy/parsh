@@ -99,6 +99,32 @@ test("Enter submission, forced multiline editing, and complete history work in t
   await expect(terminal(page)).toContainText('"firstsecond"');
 });
 
+test("type inspects commands and supports capture and file redirection", async ({ page }) => {
+  await playground(page);
+  await execute(page, `(defn echo () (exit 9))
+(type type echo cat)
+(type -a echo)
+(str (type -t cat))
+(|> kinds.txt (type -t type cat))
+(|>> kinds.txt (type -t echo))
+(str (cat kinds.txt))
+(str (|> explicit.txt (type -t type)))
+(str (cat explicit.txt))
+(if (|2> errors.txt (type no-such-parsh-command)) (exit 9))
+(str (cat errors.txt))
+(if (type -t missing-command) (exit 9) (str type-recovered))`);
+  await expect(terminal(page)).toContainText("type is a shell builtin");
+  await expect(terminal(page)).toContainText("echo is a function");
+  await expect(terminal(page)).toContainText("echo is an external command");
+  await expect(terminal(page)).toContainText("cat is an external command");
+  await expect(terminal(page)).toContainText('"file"');
+  await expect(terminal(page)).toContainText('"builtin\\nfile\\nfunction"');
+  await expect(terminal(page)).toContainText('"builtin"');
+  await expect(terminal(page)).toContainText('"type: no-such-parsh-command: not found"');
+  await expect(terminal(page)).toContainText('"type-recovered"');
+  await expect(terminal(page)).not.toContainText("exited with status");
+});
+
 test("bindings, closures, conditions, loops and Unicode retain shared semantics", async ({
   page,
 }) => {

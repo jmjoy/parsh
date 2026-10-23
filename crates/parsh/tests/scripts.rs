@@ -1,7 +1,7 @@
 use std::{
     fs,
     io::{Read, Write},
-    os::unix::process::CommandExt,
+    os::unix::{fs::PermissionsExt, process::CommandExt},
     path::Path,
     process::{Command, Output, Stdio},
     thread,
@@ -85,6 +85,178 @@ fn stderr(output: &Output) -> String {
 }
 fn success(output: &Output) {
     assert!(output.status.success(), "{}", stderr(output));
+}
+
+#[test]
+fn type_reports_builtins_functions_and_external_commands_without_running_them() {
+    let directory = tempfile::tempdir().unwrap();
+    let executable = directory.path().join("type-probe");
+    fs::write(&executable, "#!/bin/sh\nprintf should-not-run\nexit 9\n").unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    let output = run(&format!(
+        r#"
+        (export PATH {})
+        (defn type-function () (exit 9))
+        (type type cd type-function type-probe)
+        (type -t (list type type-function type-probe))
+        (type)
+        "#,
+        quote(directory.path().to_str().unwrap())
+    ));
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "type is a shell builtin\ncd is a shell builtin\ntype-function is a function\ntype-probe is {}\nbuiltin\nfunction\nfile\n",
+            executable.display()
+        )
+    );
+    assert!(stderr(&output).is_empty());
+    let output = run("(defn type () (str overridden))");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("function name is reserved"));
+}
+
+#[test]
+fn type_options_respect_lookup_precedence_and_path_order() {
+    let directory = tempfile::tempdir().unwrap();
+    for bin in ["first", "second"] {
+        fs::create_dir(directory.path().join(bin)).unwrap();
+        for name in ["type", "type-probe"] {
+            let executable = directory.path().join(bin).join(name);
+            fs::write(&executable, "#!/bin/sh\nexit 9\n").unwrap();
+            fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (export PATH first:second)
+        (defn type-probe () (exit 9))
+        (type -at type type-probe)
+        (type -p type type-probe)
+        (type -P type type-probe)
+        (type -ap type type-probe)
+        (type -f type-probe)
+        (type -a type-probe)
+        (type -pt type-probe)
+        (type -tp type-probe)
+        (type -Pt type-probe)
+        "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        concat!(
+            "builtin\nfile\nfile\nfunction\nfile\nfile\n",
+            "first/type\nfirst/type-probe\n",
+            "first/type\nsecond/type\nfirst/type-probe\nsecond/type-probe\n",
+            "type-probe is first/type-probe\n",
+            "type-probe is a function\ntype-probe is first/type-probe\ntype-probe is second/type-probe\n",
+            "function\nfile\n"
+        )
+    );
+    assert!(stderr(&output).is_empty());
+}
+
+#[test]
+fn type_uses_session_cwd_and_only_reports_executable_files() {
+    use std::os::unix::fs::symlink;
+
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("bin")).unwrap();
+    fs::create_dir(directory.path().join("bin/directory")).unwrap();
+    fs::write(directory.path().join("bin/data"), "data").unwrap();
+    let executable = directory.path().join("bin/-probe");
+    fs::write(&executable, "#!/bin/sh\nexit 9\n").unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    symlink("-probe", directory.path().join("bin/link")).unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (export PATH missing:bin)
+        (type -p -- -probe)
+        (type -p ./bin/-probe bin/link)
+        (if (type -t data directory absent "") (exit 9))
+        (cd bin)
+        (export PATH "")
+        (type -p -- -probe)
+        (export PATH :missing:.)
+        (type -ap -- -probe)
+        "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "bin/-probe\n./bin/-probe\nbin/link\n./-probe\n./-probe\n./-probe\n"
+    );
+    assert!(stderr(&output).is_empty());
+}
+
+#[test]
+fn type_processes_all_names_and_propagates_status_and_usage_errors() {
+    let output = run("(type no-such-parsh-command type another-missing-command) (exit 9)");
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "type is a shell builtin\n");
+    assert!(stderr(&output).contains("type: no-such-parsh-command: not found"));
+    assert!(stderr(&output).contains("type: another-missing-command: not found"));
+    let output = run(r#"
+        (if (type -t no-such-parsh-command) (exit 9))
+        (if (type -P cd) (exit 9))
+        (if (type -p cd) (type -t type) (exit 9))
+    "#);
+    success(&output);
+    assert_eq!(stdout(&output), "builtin\n");
+    assert!(stderr(&output).is_empty());
+    let output = run("(type -z type) (exit 9)");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("type: -z: invalid option"));
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn type_output_supports_capture_and_stdout_and_stderr_redirection() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (printf "<%s>\n" (type -t type))
+        (|> output (type type))
+        (|>> output (type -t cd))
+        (printf "<%s>\n" (|> explicit (type -t type)))
+        (if (|2> errors (type no-such-parsh-command)) (exit 9))
+    "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(stdout(&output), "<builtin>\n<>\n");
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        fs::read_to_string(directory.path().join("output")).unwrap(),
+        "type is a shell builtin\nbuiltin\n"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.path().join("explicit")).unwrap(),
+        "builtin\n"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.path().join("errors")).unwrap(),
+        "type: no-such-parsh-command: not found\n"
+    );
+    let output = run("(| (type type) (cat))");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("pipeline stages must be external commands"));
 }
 
 #[test]

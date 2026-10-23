@@ -128,6 +128,9 @@ impl ExecutionHost for BrowserHost {
     fn close(&mut self, handle: u32) {
         let _: Result<bool, _> = self.call("close", &handle);
     }
+    fn write(&mut self, handle: u32, bytes: &[u8]) -> Result<(), HostError> {
+        self.call::<bool>("write", &(handle, bytes)).map(|_| ())
+    }
     fn chdir(&mut self, cwd: &str, path: &str) -> Result<String, HostError> {
         self.call("chdir", &(cwd, path))
     }

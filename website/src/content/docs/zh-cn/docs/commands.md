@@ -12,6 +12,30 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 命令名也可以来自文本变量，例如 `($EDITOR file.txt)`；
 变量值作为一个完整的程序名使用，不会隐式拆分出参数。
 
+使用 `type` 查询命令的解析结果，不会执行被查询的命令：
+
+```parsh
+(type type cd echo)
+(defn greet (name) (echo hello $name))
+(type greet)
+(type -a echo)
+(let kind (type -t greet))
+(if (type -t optional-tool) (optional-tool))
+```
+
+`type` 接受多个名称，也支持列表参数，并提供类似 Bash 的选项：
+
+- `-a`：显示所有匹配，包括按 PATH 顺序找到的所有可执行文件路径。
+- `-t`：对每个匹配输出 `builtin`、`function` 或 `file`。
+- `-p`：输出外部命令路径；内建命令和函数不输出内容。
+- `-P`：强制搜索 PATH，即使存在同名内建命令或函数。
+- `-f`：跳过函数查找。
+
+选项可以组合，`--` 表示选项结束。不带参数时静默成功。
+找不到名称时状态为 `1`，非法选项的状态为 `2`。
+输出支持捕获和重定向。浏览器终端按宿主提供的命令名称识别外部命令，
+`-p` 和 `-P` 返回这些名称。
+
 ```parsh
 (echo (pwd))
 (| (find . -name "*.rs") (sort))

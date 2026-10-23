@@ -159,6 +159,10 @@ fn syntax_only_completion_uses_available_builtins_and_current_functions() {
     type_text(&mut repl, "cd");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "cd");
+    repl.input(Key::ClearInput);
+    type_text(&mut repl, "ty");
+    repl.input(Key::Tab);
+    assert_eq!(repl.session.input.body, "type ");
 }
 
 #[test]

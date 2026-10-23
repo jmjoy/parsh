@@ -27,8 +27,11 @@ use crate::{job::JobControl, process};
 #[cfg(feature = "native")]
 use std::{
     fs::{self, File, OpenOptions},
+    io::Write,
     path::{Path, PathBuf},
 };
+
+mod type_command;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -189,8 +192,8 @@ pub struct Shell {
 
 const BUILTINS: &[&str] = &[
     "do", "let", "set", "get", "if", "for", "while", "break", "continue", "defn", "list", "str",
-    "eq", "not", "glob", "cd", "export", "exit", "+", "-", "*", "/", "=", "!=", "<", "<=", ">",
-    ">=", "|", "|>", "|1>", "|>>", "|1>>", "<|", "|2>", "|2>>",
+    "eq", "not", "glob", "cd", "export", "exit", "type", "+", "-", "*", "/", "=", "!=", "<", "<=",
+    ">", ">=", "|", "|>", "|1>", "|>>", "|1>>", "<|", "|2>", "|2>>",
 ];
 
 fn builtin(name: &str) -> bool {
@@ -303,12 +306,7 @@ impl Shell {
         } else {
             #[cfg(feature = "native")]
             if !prefix.contains('/') {
-                // Match the default command search path when PATH is unset.
-                let path = self
-                    .environment
-                    .get(&OsString::from("PATH"))
-                    .cloned()
-                    .unwrap_or_else(|| "/bin:/usr/bin".into());
+                let path = self.search_path();
                 for directory in std::env::split_paths(&path) {
                     let directory = self.cwd.join(directory);
                     let Ok(entries) = fs::read_dir(directory) else {
@@ -827,6 +825,7 @@ impl Shell {
                 Self::arity(expr, args, 1, 1)?;
                 Ok(Value::Bool(!self.condition(&args[0], env, io)?))
             }
+            "type" => self.type_command(expr, args, env, mode, io),
             "glob" => {
                 if self.host.is_some() {
                     return self.host_glob(expr, args, env, io);
@@ -1195,22 +1194,80 @@ impl Shell {
                 return Err(Self::unavailable_command(expr, &stages[0][0]));
             }
         };
+        Self::command_status(
+            expr,
+            &stages
+                .iter()
+                .map(|s| s[0].as_str())
+                .collect::<Vec<_>>()
+                .join(" | "),
+            code,
+            mode,
+        )
+    }
+
+    fn command_status(expr: &Expr, name: &str, code: i32, mode: Mode) -> Result<Value, Error> {
         if code != 0 && mode != Mode::Condition {
             return Err(Error {
                 code,
                 offset: expr.offset,
                 exit: false,
-                message: format!(
-                    "{} exited with status {code}",
-                    stages
-                        .iter()
-                        .map(|s| s[0].as_str())
-                        .collect::<Vec<_>>()
-                        .join(" | ")
-                ),
+                message: format!("{name} exited with status {code}"),
             });
         }
         Ok(Value::Status(code))
+    }
+
+    /// Write builtin output through the same destinations as external commands.
+    fn write_output(
+        &mut self,
+        expr: &Expr,
+        io: &Io,
+        stream: Stream,
+        bytes: Vec<u8>,
+    ) -> Result<(), Error> {
+        self.output_bytes = self.output_bytes.saturating_add(bytes.len());
+        if self.output_bytes > MAX_OUTPUT_BYTES {
+            return Err(Error::new(expr, "command output exceeds 8 MiB"));
+        }
+        let host_file = match stream {
+            Stream::Stdout => &io.host_output,
+            Stream::Stderr => &io.host_error,
+        };
+        if let Some(file) = host_file {
+            return file
+                .host
+                .borrow_mut()
+                .write(file.handle, &bytes)
+                .map_err(|error| Self::host_error(expr, error));
+        }
+        if stream == Stream::Stdout
+            && let Output::Capture(buffer) = &io.output
+        {
+            buffer.lock().unwrap().extend(bytes);
+            return Ok(());
+        }
+        if self.host.is_some() || self.syntax_only {
+            self.output.push(OutputChunk { stream, bytes });
+            return Ok(());
+        }
+        #[cfg(feature = "native")]
+        {
+            let result = match stream {
+                Stream::Stdout => match &io.output {
+                    Output::Inherit => std::io::stdout().lock().write_all(&bytes),
+                    Output::File(file) => (&**file).write_all(&bytes),
+                    Output::Capture(_) => unreachable!("captured above"),
+                },
+                Stream::Stderr => match &io.error {
+                    Some(file) => (&**file).write_all(&bytes),
+                    None => std::io::stderr().lock().write_all(&bytes),
+                },
+            };
+            result.map_err(|error| Error::new(expr, format!("write: {error}")))
+        }
+        #[cfg(not(feature = "native"))]
+        unreachable!("non-native output requires a host or syntax session")
     }
 
     fn unavailable_command(expr: &Expr, name: &str) -> Error {
@@ -1268,6 +1325,15 @@ impl Shell {
     #[cfg(feature = "native")]
     fn path(&self, path: &str) -> PathBuf {
         self.cwd.join(path)
+    }
+
+    #[cfg(feature = "native")]
+    fn search_path(&self) -> OsString {
+        // Match process execution's default when PATH is unset.
+        self.environment
+            .get(&OsString::from("PATH"))
+            .cloned()
+            .unwrap_or_else(|| "/bin:/usr/bin".into())
     }
 }
 
