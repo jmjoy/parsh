@@ -88,6 +88,30 @@ fn success(output: &Output) {
 }
 
 #[test]
+fn maps_capture_commands_and_expand_only_explicit_key_and_value_lists() {
+    let output = run(r#"
+        (let m (map (printf name) (printf 'parsh\n\n') count (+ 2)))
+        (mset m empty (printf ''))
+        (printf "<%s>\n" (mget m name) (mget m count) (mget m empty))
+        (printf "key=%s\n" (mkeys m))
+        (mset m name updated)
+        (mdel m empty)
+        (printf "value=%s\n" (mvals m))
+        "#);
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "<parsh>\n<2>\n<>\nkey=name\nkey=count\nkey=empty\nvalue=updated\nvalue=2\n"
+    );
+    for argument in ["$m", "(list $m)"] {
+        let output = run(&format!("(let m (map)) (printf %s {argument})"));
+        assert_eq!(output.status.code(), Some(2));
+        assert!(stderr(&output).contains("expected a scalar value, got a map"));
+        assert!(stdout(&output).is_empty());
+    }
+}
+
+#[test]
 fn type_reports_builtins_functions_and_external_commands_without_running_them() {
     let directory = tempfile::tempdir().unwrap();
     let executable = directory.path().join("type-probe");

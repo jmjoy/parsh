@@ -71,8 +71,8 @@ and returns the original value, using the same lookup rules. Use
 `"$(get name)_suffix"` to delimit a variable name. `$(name)` calls the zero-argument
 function or command `name`; interpolation accepts all existing expressions,
 including nested calls and captured command output. Parts evaluate once from
-left to right and convert scalars as `str` does; nil becomes empty text and lists
-are rejected. The result stays one argument, and inserted values are not parsed
+left to right and convert scalars as `str` does; nil becomes empty text, while
+lists and maps are rejected. The result stays one argument, and inserted values are not parsed
 again. Use `\$` or single quotes when passing a literal `$` to another program.
 Single quotes now delimit strings; use double quotes for words with apostrophes.
 
@@ -91,6 +91,42 @@ values never undergo implicit globbing, word splitting, or tilde expansion.
 
 `cd` accepts a path, or defaults to `$HOME`; it updates `$PWD` and `$OLDPWD`.
 Relative commands, glob patterns, and redirections use the current directory.
+
+## Maps
+
+`map` takes alternating text keys and values. `(map)` creates an empty map.
+Keys and values evaluate once from left to right; duplicate keys are errors,
+reported before evaluating the duplicate key's value. Values may contain lists
+and nested maps.
+
+```lisp
+(let config (map name parsh version (+ 1)))
+(mset config name new-name)
+(mget config name)
+(mget config missing fallback)
+(mkeys config)
+(mdel config version)
+```
+
+All `m` commands take a bare variable name as their first argument, as in
+`(mget config name)`. They access the nearest lexical binding, which must hold a map.
+
+| Command | Result |
+| --- | --- |
+| `(mget config key)` | Stored value; a missing key is an error |
+| `(mget config key default)` | Evaluate `default` only if the key is missing |
+| `(mset config key value)` | Insert or replace the value; return nil |
+| `(mdel config key)` | Delete the key; return nil; a missing key is an error |
+| `(mhas config key)` | Boolean indicating whether the key exists |
+| `(mkeys config)` | List of keys in insertion order |
+| `(mvals config)` | List of values in the same order |
+| `(mlen config)` | Integer entry count |
+
+Replacing a value keeps its position; new or reinserted keys go at the end.
+Maps display as `(map "name" "parsh")`. `eq` compares their contents regardless
+of insertion order. Assignment and function arguments copy maps, including
+nested values: changing one variable does not change its copies. Maps cannot
+be converted implicitly to text, command arguments, or environment values.
 
 ## Arithmetic and comparisons
 
@@ -132,7 +168,7 @@ argument means negation or reciprocal. Division always returns a float.
 
 Numeric text is trimmed and parsed completely as signed decimal integers,
 decimal fractions, or scientific notation. Leading zeroes are decimal; integer
-text must fit in `i64`. Booleans, nil, and lists are not numeric operands.
+text must fit in `i64`. Booleans, nil, lists, and maps are not numeric operands.
 Integer addition, subtraction, and multiplication are exact and check for
 overflow. Each operation involving a float uses `f64`, which can lose integer
 precision and has ordinary floating-point rounding: `(+ 0.1 0.2)` returns
@@ -269,7 +305,7 @@ and `set` can update an outer binding.
 
 `(continue)` skips the rest of the current iteration. `(break)` ends the nearest
 loop; `(break value)` evaluates `value` once and returns it from the loop,
-including numbers, lists, booleans, or `nil`. Without an explicit break value,
+including numbers, lists, maps, booleans, or `nil`. Without an explicit break value,
 a loop returns its last complete iteration's result, or `nil` if none completed.
 Skipped or interrupted iterations do not replace that result. The example prints
 `iteration 1` and `iteration 3`, and returns `("stopped" 4)`.
@@ -282,7 +318,7 @@ failure in a `while` body stops execution, including when the loop is used as a 
 Function names and parameter declarations use bare names. Read parameter and
 local variable values with `$name`. Functions capture their defining lexical
 scope and return the last expression's value. Argument expressions are evaluated
-before parameters are bound. Functions can return numbers, lists, and booleans as well as
+before parameters are bound. Functions can return numbers, lists, maps, and booleans as well as
 command output.
 When called as a value, stdout is captured throughout the function body: if the
 last expression produces a command status, captured stdout is returned as text;

@@ -2031,3 +2031,6 @@ mod completion_tests;
 
 #[cfg(test)]
 mod loop_tests;
+
+#[cfg(test)]
+mod map_tests;

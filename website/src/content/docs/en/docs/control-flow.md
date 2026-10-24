@@ -42,7 +42,7 @@ and `set` can update an outer binding.
 
 `(continue)` skips the rest of the current iteration. `(break)` ends the nearest
 loop; `(break value)` evaluates `value` once and returns it from the loop,
-including numbers, lists, booleans, or `nil`. Without an explicit break value,
+including numbers, lists, maps, booleans, or `nil`. Without an explicit break value,
 a loop returns its last complete iteration's result, or `nil` if none completed.
 Skipped or interrupted iterations do not replace that result. The example prints
 `iteration 1` and `iteration 3`, and returns `("stopped" 4)`.
@@ -55,7 +55,7 @@ failure in a `while` body stops execution, including when the loop is used as a 
 Function names and parameter declarations use bare names. Read parameter and
 local variable values with `$name`. Functions capture their defining lexical
 scope and return the last expression's value. Argument expressions are evaluated
-before parameters are bound. Functions can return numbers, lists, and booleans as well as
+before parameters are bound. Functions can return numbers, lists, maps, and booleans as well as
 command output.
 When called as a value, stdout is captured throughout the function body: if the
 last expression produces a command status, captured stdout is returned as text;

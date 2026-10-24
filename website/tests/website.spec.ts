@@ -75,6 +75,32 @@ test("WASM loads from the project subpath and executes real expressions", async 
   );
 });
 
+test("maps preserve insertion order, value types, and lazy defaults in the browser", async ({ page }) => {
+  await playground(page);
+  await execute(page, `
+    (let config (map name parsh count (+ 1) nested (map enabled (eq a a))))
+    (let copy $config)
+    (mset config name updated)
+    (mdel config count)
+    (mset config count (+ 2))
+    (list (mkeys config) (mget config count) (mlen config)
+          (mhas config missing) (mget copy name))
+    (mget config nested (exit 9))
+    (mget config missing (do (mset config fallback added) (mget config fallback)))
+    (mvals config)
+  `);
+  await expect(terminal(page)).toContainText('(("name" "nested" "count") 2 3 false "parsh")');
+  await expect(terminal(page)).toContainText('(map "enabled" true)');
+  await expect(terminal(page)).toContainText('"added"');
+  await expect(terminal(page)).toContainText('("updated" (map "enabled" true) 2 "added")');
+
+  await execute(page, '(map duplicate first duplicate (exit 9))');
+  await expect(terminal(page)).toContainText('duplicate map key "duplicate"');
+  await execute(page, '(str "recovered:" (mget config name))');
+  await expect(terminal(page)).toContainText('"recovered:updated"');
+  await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
+});
+
 test("Enter submission, forced multiline editing, and complete history work in the browser", async ({ page }) => {
   await playground(page);
   await expect(terminal(page)).toContainText("$ ()");

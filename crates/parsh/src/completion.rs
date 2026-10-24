@@ -51,7 +51,20 @@ impl Frame {
             || (self.items == 1
                 && matches!(
                     self.head.as_deref(),
-                    Some("let" | "set" | "export" | "for" | "defn")
+                    Some(
+                        "let"
+                            | "set"
+                            | "export"
+                            | "for"
+                            | "defn"
+                            | "mget"
+                            | "mset"
+                            | "mdel"
+                            | "mhas"
+                            | "mkeys"
+                            | "mvals"
+                            | "mlen"
+                    )
                 ))
     }
 

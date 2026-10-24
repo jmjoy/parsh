@@ -11,6 +11,7 @@ use std::{
 };
 
 pub use crate::number::Number;
+use indexmap::IndexMap;
 
 use crate::{
     completion::Candidate,
@@ -31,6 +32,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod map;
 mod type_command;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,6 +41,7 @@ pub enum Value {
     Number(Number),
     Bool(bool),
     List(Vec<Value>),
+    Map(IndexMap<String, Value>),
     Nil,
     Status(i32),
 }
@@ -51,6 +54,7 @@ impl Value {
             Self::Bool(boolean) => Ok(boolean.to_string()),
             Self::Nil => Ok(String::new()),
             Self::List(_) => Err("expected a scalar value, got a list".into()),
+            Self::Map(_) => Err("expected a scalar value, got a map".into()),
             Self::Status(_) => Err("a command status cannot be used as text".into()),
         }
     }
@@ -68,6 +72,14 @@ impl Value {
                     .collect::<Vec<_>>()
                     .join(" ")
             ),
+            Self::Map(values) => {
+                let mut parts = vec!["map".into()];
+                for (key, value) in values {
+                    parts.push(Self::Text(key.clone()).display());
+                    parts.push(value.display());
+                }
+                format!("({})", parts.join(" "))
+            }
             Self::Nil => "nil".into(),
             Self::Status(code) => format!("status {code}"),
         }
@@ -191,9 +203,10 @@ pub struct Shell {
 }
 
 const BUILTINS: &[&str] = &[
-    "do", "let", "set", "get", "if", "for", "while", "break", "continue", "defn", "list", "str",
-    "eq", "not", "glob", "cd", "export", "exit", "type", "+", "-", "*", "/", "=", "!=", "<", "<=",
-    ">", ">=", "|", "|>", "|1>", "|>>", "|1>>", "<|", "|2>", "|2>>",
+    "do", "let", "set", "get", "if", "for", "while", "break", "continue", "defn", "list", "map",
+    "mget", "mset", "mdel", "mhas", "mkeys", "mvals", "mlen", "str", "eq", "not", "glob", "cd",
+    "export", "exit", "type", "+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">=", "|", "|>",
+    "|1>", "|>>", "|1>>", "<|", "|2>", "|2>>",
 ];
 
 fn builtin(name: &str) -> bool {
@@ -792,6 +805,10 @@ impl Shell {
                 .map(|arg| self.value(arg, env, io))
                 .collect::<Result<Vec<_>, _>>()
                 .map(Value::List),
+            "map" => self.construct_map(expr, args, env, io),
+            "mget" | "mset" | "mdel" | "mhas" | "mkeys" | "mvals" | "mlen" => {
+                self.map_command(expr, &name, args, env, io)
+            }
             "str" => {
                 let mut result = String::new();
                 for arg in args {

@@ -12,6 +12,10 @@ are started directly, without passing the expression through another shell.
 The command name may also come from a text variable, as in `($EDITOR file.txt)`;
 its value is one program name, without implicit splitting into flags.
 
+`map` constructs a map. Its built-in operations are `mget`, `mset`, `mdel`, `mhas`,
+`mkeys`, `mvals`, and `mlen`; all take a bare map variable name first.
+See [maps](/parsh/en/docs/variables/#maps) for signatures and examples.
+
 Use `type` to inspect command lookup without executing the command:
 
 ```parsh
