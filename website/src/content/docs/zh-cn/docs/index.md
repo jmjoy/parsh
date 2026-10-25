@@ -22,8 +22,19 @@ description: "一个围绕 S 表达式构建的 Linux Shell。"
 - [在线体验语言](/parsh/zh-cn/playground/)，无需安装。
 - [了解语法](/parsh/zh-cn/docs/syntax/)，逐步学习函数与命令组合。
 
+## 对 AI 友好
+
+Shell 脚本常常把逻辑交给 `awk`、`sed` 或内联的解释器，每多一层就多一套引号规则要处理。parsh 把逻辑留在脚本里：算术、列表与映射、函数和循环像通用脚本语言一样可用，[外部命令](/parsh/zh-cn/docs/commands/)、管道与重定向则共用同一套语法。值不会被隐式拆词，也不会被悄悄做通配符展开，脚本写的是什么，执行的就是什么。
+
+```parsh
+(let count (+ (| (find . -name "*.rs") (wc -l)) 0))
+(echo "rust files: $count; doubled: $(* $count 2)")
+```
+
+生成和检查都只需要记住一套语法、一套规则，这正是 parsh 脚本对 AI 友好的地方。后续计划支持引入库，届时脚本可以像 Python 模块那样复用现成的代码。
+
 ## 当前范围
 
-parsh 目前是早期实现，版本为 0.1.0。原生版本支持 Linux 前台任务，包括交互程序与管道。交互式 Tab 支持命令、路径和变量补全。后台任务、宏和持久化配置属于后续工作。浏览器终端提供语言核心、29 条 coreutils 命令、临时文件和命令组合。
+parsh 目前是早期实现，版本为 0.1.0。原生版本支持 Linux 前台任务，包括交互程序与管道。交互式 Tab 支持命令、路径和变量补全。后台任务、宏、引入库和持久化配置属于后续工作。浏览器终端提供语言核心、29 条 coreutils 命令、临时文件和命令组合。
 
 使用[木兰宽松许可证，第 2 版](https://github.com/jmjoy/parsh/blob/master/LICENSE)。

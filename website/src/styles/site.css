@@ -480,6 +480,41 @@ select:focus-visible {
   color: var(--muted);
   margin-top: 8px;
 }
+.agent-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 60px;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 32px 34px;
+  margin-top: 36px;
+}
+.agent-band .eyebrow {
+  margin: 0 0 14px;
+}
+.agent-band h3 {
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.18;
+  letter-spacing: -1.1px;
+  margin: 0 0 12px;
+}
+.agent-band .agent-copy p:last-child {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--muted);
+  max-width: 540px;
+  margin: 0;
+}
+.agent-band pre {
+  font: 11px/1.9 var(--mono);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  padding: 18px 16px;
+  margin: 0;
+  overflow-x: auto;
+}
 .start-panel {
   background: #b23c25;
   color: #fff7ec;
@@ -704,6 +739,24 @@ select:focus-visible {
   .feature-card pre {
     font-size: 12px;
     margin-top: 20px;
+  }
+  .agent-band {
+    grid-template-columns: 1fr;
+    row-gap: 18px;
+    padding: 24px 20px;
+  }
+  .agent-band .eyebrow {
+    margin: 0 0 12px;
+  }
+  .agent-band h3 {
+    font-size: 24px;
+    letter-spacing: -0.6px;
+  }
+  .agent-band .agent-copy p:last-child {
+    font-size: 14px;
+  }
+  .agent-band pre {
+    font-size: 9px;
   }
   .start-panel {
     padding: 35px 28px;

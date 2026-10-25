@@ -11,6 +11,24 @@ Ctrl+J inserts a newline.
 
 This is an early implementation, version `0.1.0`.
 
+## AI-friendly by design
+
+Shell scripts usually push their logic into `awk`, `sed`, or an inline interpreter,
+and each layer brings its own quoting rules. parsh keeps it all in the script:
+arithmetic, lists and maps, functions, and loops behave as in a general-purpose
+language, while external commands, pipelines, and redirections share the same
+syntax. Values are never split or globbed implicitly, so a script means exactly
+what it says — the property that makes generated scripts easy to read, review,
+and repair.
+
+```parsh
+(let count (+ (| (find . -name "*.rs") (wc -l)) 0))
+(echo "rust files: $count; doubled: $(* $count 2)")
+```
+
+Library imports are planned, so scripts will be able to reuse packaged code the
+way Python modules do.
+
 ## Run
 
 ```console

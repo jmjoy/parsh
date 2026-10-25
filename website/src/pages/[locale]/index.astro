@@ -49,6 +49,15 @@ const features = zh ? [
     <section class="features-section" aria-labelledby="features-title">
       <div class="section-heading"><p class="eyebrow">{zh ? '小巧的语言，熟悉的工具。' : 'SMALL LANGUAGE. FAMILIAR TOOLS.'}</p><h2 id="features-title">{zh ? <>少一点猜测。<br />多一点结构。</> : <>Less guesswork.<br />More structure.</>}</h2><p>{zh ? 'parsh 意为 parenthesis shell。命令调用就是表达式，命令行交互与脚本编写共用同一种语言。' : 'parsh stands for parenthesis shell. Command calls are expressions, and interactive use and scripts share one language.'}</p></div>
       <div class="feature-grid">{features.map((feature) => <article class="feature-card"><span class="feature-number">/{feature.number}</span><h3>{feature.title}</h3><p>{feature.text}</p><pre><code>{feature.code}</code></pre>{feature.number === '03' && <span class="native-label">{zh ? 'Linux 原生环境' : 'NATIVE LINUX'}</span>}</article>)}</div>
+      <aside class="agent-band" aria-labelledby="agent-title">
+        <div class="agent-copy">
+          <p class="eyebrow">{zh ? '写给人，也写给 AI。' : 'FOR PEOPLE AND FOR AGENTS.'}</p>
+          <h3 id="agent-title">{zh ? '逻辑和命令，一套语法。' : 'Logic and commands, one grammar.'}</h3>
+          <p>{zh ? '算术、数据与控制流留在脚本里，程序、管道与重定向同样是表达式。少一层需要猜的引号，生成的脚本读起来就是它执行的样子。' : 'Arithmetic, data, and control flow stay in the script; programs, pipes, and redirections are expressions too. With fewer quoting layers to guess, generated scripts read the way they run.'}</p>
+        </div>
+        <pre><code>(let count (+ (| (ls) (wc -l)) 0))
+(echo "entries: $count; doubled: $(* $count 2)")</code></pre>
+      </aside>
     </section>
     <section class="start-panel" aria-labelledby="start-title"><div><p class="eyebrow">{zh ? '从括号开始。' : 'START WITH A PARENTHESIS.'}</p><h2 id="start-title">{zh ? <>从一个 <span>(</span> 开始。</> : <>Start with <span>(</span></>}</h2><p>{zh ? '几行表达式，认识这门语言。无需安装，也无需离开浏览器。' : 'A few expressions are all it takes to get a feel for the language. No installation. Just your browser.'}</p></div><a class="button button-dark" href={url(locale, 'playground/')}>{zh ? '打开体验终端' : 'Open the playground'}<span aria-hidden="true">↗</span></a></section>
   </main>
