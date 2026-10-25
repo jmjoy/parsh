@@ -5,6 +5,12 @@ import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const output = resolve(root, "website/public/wasm");
+// wasm-pack downloads the wasm-bindgen binary into its own cache. Never point that
+// cache at `target/`: Swatinem/rust-cache removes loose files from non-profile
+// directories there before saving, which strips the binary and leaves behind an empty
+// `target/wasm-pack-cache/wasm-bindgen-*` directory. wasm-pack treats an existing
+// directory as a finished install, so every later run then fails with
+// "wasm-bindgen binary does not exist".
 const result = spawnSync(
   "wasm-pack",
   [
@@ -22,7 +28,6 @@ const result = spawnSync(
   {
     cwd: root,
     stdio: "inherit",
-    env: { ...process.env, WASM_PACK_CACHE: process.env.WASM_PACK_CACHE ?? resolve(root, "target/wasm-pack-cache") },
   },
 );
 if (result.error) {
