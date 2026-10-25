@@ -10,6 +10,9 @@ description: "变量绑定、环境变量、列表、映射与显式展开。"
 读取变量值时使用 `$name`；绑定和赋值目标使用裸名字，包括函数参数、循环绑定和环境变量设置。
 变量名以字母或 `_` 开头，后续可包含字母、数字和 `_`。绑定目标不接受引号字符串或表达式。
 
+所有普通数据采用值语义。读取变量、赋值和函数传参都会复制值，包括列表、映射及其嵌套内容。
+集合更新返回新值，使用 `set` 显式赋回才会更新已有变量。
+
 ```parsh
 (let name "a friend")
 (echo hello $name)
@@ -59,37 +62,50 @@ description: "变量绑定、环境变量、列表、映射与显式展开。"
 
 ```parsh
 (let config (map name parsh version (+ 1) nested (map enabled (eq a a))))
-(mset config name new-name)
-(mget config name)
-(mget config missing fallback)
-(mkeys config)
-(mdel config version)
+(let updated (mset $config name new-name))
+(mget $config name)
+(mget $updated name)
+(mget $config missing fallback)
+(mkeys $config)
+(set config (mdel $updated version))
 ```
 
-所有 `m` 命令的首参都是裸变量名：直接写 `config`，不加 `$` 或引号。
-它们访问最近的同名词法绑定；名称未定义或绑定值不是映射时会报错。
+所有 `m` 命令的首参都是映射值，可以是 `$config`、映射字面量或返回映射的表达式。
+裸词 `config` 表示文本，会报类型错误。上例中 `updated` 包含新名字，
+`config` 保持原值，直到最后的 `set` 才更新。
 
 | 命令 | 结果 |
 | --- | --- |
-| `(mget config key)` | 返回原始类型的值；缺键时报错 |
-| `(mget config key default)` | 仅在缺键时求值并返回 `default` |
-| `(mset config key value)` | 新增或覆盖值，返回 nil |
-| `(mdel config key)` | 删除键，返回 nil；缺键时报错 |
-| `(mhas config key)` | 返回键是否存在的布尔值 |
-| `(mkeys config)` | 按插入顺序返回文本键列表 |
-| `(mvals config)` | 按相同顺序返回值列表 |
-| `(mlen config)` | 返回整数条目数 |
+| `(mget $config key)` | 返回原始类型的值；缺键时报错 |
+| `(mget $config key default)` | 仅在缺键时求值并返回 `default` |
+| `(mset $config key value)` | 返回新增或覆盖该值后的新映射 |
+| `(mdel $config key)` | 返回删除该键后的新映射；缺键时报错 |
+| `(mhas $config key)` | 返回键是否存在的布尔值 |
+| `(mkeys $config)` | 按插入顺序返回文本键列表 |
+| `(mvals $config)` | 按相同顺序返回值列表 |
+| `(mlen $config)` | 返回整数条目数 |
 
 已存在且值为 nil 的键仍然存在，不使用默认值。
-默认值不会处理名称未定义或绑定类型错误。
-操作先检查参数个数和裸变量名，再从左到右求值键、值表达式，最后访问当前绑定；
-这些表达式对同一映射所做的更新会保留。
+默认值不会处理变量未定义或首参类型错误。
+操作先检查参数个数，再从左到右各求值一次。首参必须产生映射，才会继续求值键和值表达式。
+操作使用这份独立的映射值；后续表达式即使修改来源变量，也不会改变已经取得的映射。
+键类型错误时，不再求值对应的值表达式。
+
+映射操作可以直接组合，无需先绑定中间结果：
+
+```parsh
+(mset {name parsh} version v1)
+(mget (mset $config name other) name)
+(mset (mset $config name other) version v2)
+```
 
 更新已有键保留原位置，新键追加到末尾。删除不改变其余键的相对顺序，重新插入追加到末尾。
 映射按插入顺序显示为 `(map "name" "parsh")`；`eq` 比较内容时忽略该顺序。
 
-赋值和函数传参会复制映射及其嵌套值。例如 `(let copy $config)` 之后，
-`(mset config name changed)` 不影响 `copy`。函数可以修改捕获的外层绑定，
-同名形参则是独立绑定。`mget` 和 `mvals` 返回的值也各自独立。
+`mset` 和 `mdel` 返回新映射，输入值保持原值。例如 `(let copy $config)` 之后，
+`(set config (mset $config name changed))` 只更新 `config`，`copy` 及其嵌套数据保持原值。
+函数可以用 `set` 更新捕获的外层绑定，同名形参则是独立绑定。
+函数返回更新后的映射时，调用者显式赋回才会更新自己的变量。
+`mget` 和 `mvals` 返回的值也各自独立。
 映射不能隐式转为文本：`str`、字符串插值、外部命令参数和环境变量值都不接受映射。
 需要列表用于循环或命令参数时，显式调用 `mkeys` 或 `mvals`。

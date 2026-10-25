@@ -91,12 +91,12 @@ fn success(output: &Output) {
 fn maps_capture_commands_and_expand_only_explicit_key_and_value_lists() {
     let output = run(r#"
         (let m (map (printf name) (printf 'parsh\n\n') count (+ 2)))
-        (mset m empty (printf ''))
-        (printf "<%s>\n" (mget m name) (mget m count) (mget m empty))
-        (printf "key=%s\n" (mkeys m))
-        (mset m name updated)
-        (mdel m empty)
-        (printf "value=%s\n" (mvals m))
+        (set m (mset $m empty (printf '')))
+        (printf "<%s>\n" (mget $m name) (mget $m count) (mget $m empty))
+        (printf "key=%s\n" (mkeys $m))
+        (set m (mset $m name updated))
+        (set m (mdel $m empty))
+        (printf "value=%s\n" (mvals $m))
         "#);
     success(&output);
     assert_eq!(
@@ -116,7 +116,7 @@ fn collection_sugar_captures_commands_and_expands_list_arguments() {
     let output = run(r#"
         []{}
         (let config {(printf name) (printf 'parsh\n\n') items [(printf 'a b') second]})
-        (printf "<%s>\n" (mget config name) (mget config items))
+        (printf "<%s>\n" (mget $config name) (mget $config items))
         (if (eq [one {key [two]}] (list one (map key (list two))))
             (echo equivalent)
             (exit 9))

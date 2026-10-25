@@ -23,7 +23,7 @@ export default {
       ],
     },
     {
-      match: "(\\()(let|set|for|export|mget|mset|mdel|mhas|mkeys|mvals|mlen)\\s+([^\\s()\\[\\]{}\"'$]+)",
+      match: "(\\()(let|set|for|export)\\s+([^\\s()\\[\\]{}\"'$]+)",
       captures: {
         1: { name: "punctuation.section.parens.parsh" },
         2: { name: "keyword.control.parsh" },

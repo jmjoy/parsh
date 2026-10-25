@@ -80,23 +80,29 @@ test("maps preserve insertion order, value types, and lazy defaults in the brows
   await execute(page, `
     (let config (map name parsh count (+ 1) nested (map enabled (eq a a))))
     (let copy $config)
-    (mset config name updated)
-    (mdel config count)
-    (mset config count (+ 2))
-    (list (mkeys config) (mget config count) (mlen config)
-          (mhas config missing) (mget copy name))
-    (mget config nested (exit 9))
-    (mget config missing (do (mset config fallback added) (mget config fallback)))
-    (mvals config)
+    (let updated (mset $config name changed-copy))
+    (let deleted (mdel $config count))
+    (list (mget $config name) (mget $updated name) (mhas $config count) (mhas $deleted count))
+    (set config (mset $config name updated))
+    (set config (mdel $config count))
+    (set config (mset $config count (+ 2)))
+    (list (mkeys $config) (mget $config count) (mlen $config)
+          (mhas $config missing) (mget $copy name))
+    (mget $config nested (exit 9))
+    (mget $config missing (do (set config (mset $config fallback added)) (mget $config fallback)))
+    (mvals $config)
+    (mget (mset {name literal} name composed) name)
   `);
+  await expect(terminal(page)).toContainText('("parsh" "changed-copy" true false)');
   await expect(terminal(page)).toContainText('(("name" "nested" "count") 2 3 false "parsh")');
   await expect(terminal(page)).toContainText('(map "enabled" true)');
   await expect(terminal(page)).toContainText('"added"');
   await expect(terminal(page)).toContainText('("updated" (map "enabled" true) 2 "added")');
+  await expect(terminal(page)).toContainText('"composed"');
 
   await execute(page, '(map duplicate first duplicate (exit 9))');
   await expect(terminal(page)).toContainText('duplicate map key "duplicate"');
-  await execute(page, '(str "recovered:" (mget config name))');
+  await execute(page, '(str "recovered:" (mget $config name))');
   await expect(terminal(page)).toContainText('"recovered:updated"');
   await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
 });
@@ -106,7 +112,7 @@ test("collection shorthand supports nested values, Enter submission, and history
   await execute(page, `
     []{}
     (let config {name parsh items [one "two words"] nested {enabled (eq a a)}})
-    [(mget config items) (mget config nested)]
+    [(mget $config items) (mget $config nested)]
     (eq [one {key [two]}] (list one (map key (list two))))
   `);
   await expect(terminal(page)).toContainText('(("one" "two words") (map "enabled" true))');

@@ -1,33 +1,6 @@
-use super::{Env, Error, EvalResult, Number, Scope, Shell, Value};
+use super::{Env, Error, EvalResult, Number, Shell, Value};
 use crate::{reader::Expr, streams::Io};
 use indexmap::IndexMap;
-
-impl Scope {
-    /// The callback must not evaluate expressions while the binding is borrowed.
-    fn with_map<T>(
-        env: &Env,
-        target: &Expr,
-        name: &str,
-        operation: impl FnOnce(&mut IndexMap<String, Value>) -> Result<T, Error>,
-    ) -> Result<T, Error> {
-        let mut scope = env.borrow_mut();
-        match scope.variables.get_mut(name) {
-            Some(Value::Map(values)) => operation(values),
-            Some(_) => Err(Error::new(
-                target,
-                format!("variable {name} must contain a map"),
-            )),
-            None => {
-                let parent = scope.parent.clone();
-                drop(scope);
-                match parent {
-                    Some(parent) => Self::with_map(&parent, target, name, operation),
-                    None => Err(Error::new(target, format!("undefined variable {name}"))),
-                }
-            }
-        }
-    }
-}
 
 impl Shell {
     fn map_key(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<String> {
@@ -77,13 +50,13 @@ impl Shell {
         };
         Self::arity(expr, args, min, max)?;
         let target = &args[0];
-        let name = Self::binding(target)?;
+        let Value::Map(mut values) = self.value(target, env, io)? else {
+            return Err(Error::new(target, "expected a map").into());
+        };
         match command {
             "mget" => {
                 let key = self.map_key(&args[1], env, io)?;
-                let value =
-                    Scope::with_map(env, target, name, |values| Ok(values.get(&key).cloned()))?;
-                if let Some(value) = value {
+                if let Some(value) = values.get(&key).cloned() {
                     Ok(value)
                 } else if let Some(default) = args.get(2) {
                     self.value(default, env, io)
@@ -94,38 +67,23 @@ impl Shell {
             "mset" => {
                 let key = self.map_key(&args[1], env, io)?;
                 let value = self.value(&args[2], env, io)?;
-                Scope::with_map(env, target, name, |values| {
-                    values.insert(key, value);
-                    Ok(Value::Nil)
-                })
-                .map_err(Into::into)
+                values.insert(key, value);
+                Ok(Value::Map(values))
             }
             "mdel" => {
                 let key = self.map_key(&args[1], env, io)?;
-                Scope::with_map(env, target, name, |values| {
-                    values.shift_remove(&key).ok_or_else(|| {
-                        Error::new(&args[1], format!("map key {key:?} not found"))
-                    })?;
-                    Ok(Value::Nil)
-                })
-                .map_err(Into::into)
+                values
+                    .shift_remove(&key)
+                    .ok_or_else(|| Error::new(&args[1], format!("map key {key:?} not found")))?;
+                Ok(Value::Map(values))
             }
             "mhas" => {
                 let key = self.map_key(&args[1], env, io)?;
-                Scope::with_map(env, target, name, |values| {
-                    Ok(Value::Bool(values.contains_key(&key)))
-                })
-                .map_err(Into::into)
+                Ok(Value::Bool(values.contains_key(&key)))
             }
-            "mkeys" | "mvals" | "mlen" => Scope::with_map(env, target, name, |values| {
-                Ok(match command {
-                    "mkeys" => Value::List(values.keys().cloned().map(Value::Text).collect()),
-                    "mvals" => Value::List(values.values().cloned().collect()),
-                    "mlen" => Value::Number(Number::Int(values.len() as i64)),
-                    _ => unreachable!("unknown map command"),
-                })
-            })
-            .map_err(Into::into),
+            "mkeys" => Ok(Value::List(values.into_keys().map(Value::Text).collect())),
+            "mvals" => Ok(Value::List(values.into_values().collect())),
+            "mlen" => Ok(Value::Number(Number::Int(values.len() as i64))),
             _ => unreachable!("unknown map command"),
         }
     }

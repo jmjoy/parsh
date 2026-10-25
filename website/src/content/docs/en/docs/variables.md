@@ -15,6 +15,10 @@ bindings, and environment settings. Names start with a letter or `_`, followed
 by letters, digits, or `_`. Binding targets must be bare names, not quoted strings
 or expressions.
 
+Values use copy semantics. Reading a variable, assigning a value, or passing a
+function argument copies it, including nested lists and maps. Collection updates
+return new values; use `set` to replace an existing binding.
+
 ```parsh
 (let name "a friend")
 (echo hello $name)
@@ -71,42 +75,56 @@ before evaluating that key's value.
 
 ```parsh
 (let config (map name parsh version (+ 1) nested (map enabled (eq a a))))
-(mset config name new-name)
-(mget config name)
-(mget config missing fallback)
-(mkeys config)
-(mdel config version)
+(let updated (mset $config name new-name))
+(mget $config name)
+(mget $updated name)
+(mget $config missing fallback)
+(mkeys $config)
+(set config (mdel $updated version))
 ```
 
-Every `m` command takes a bare variable name as its first argument: use `config`,
-without `$` or quotes. It accesses the nearest lexical binding. An undefined name
-or a binding containing a different type is an error.
+Every `m` command takes a map value as its first argument: `$config`, a map literal,
+or any expression returning a map. A bare word such as `config` is text and produces
+a type error. In the example, `updated` contains the new name while `config` keeps
+its old value until the final `set`.
 
 | Command | Result |
 | --- | --- |
-| `(mget config key)` | Original value; a missing key is an error |
-| `(mget config key default)` | Evaluate and return `default` only if the key is missing |
-| `(mset config key value)` | Insert or replace the value; return nil |
-| `(mdel config key)` | Delete the key; return nil; a missing key is an error |
-| `(mhas config key)` | Boolean indicating whether the key exists |
-| `(mkeys config)` | Text keys in insertion order, as a list |
-| `(mvals config)` | Values in the same order, as a list |
-| `(mlen config)` | Integer entry count |
+| `(mget $config key)` | Original value; a missing key is an error |
+| `(mget $config key default)` | Evaluate and return `default` only if the key is missing |
+| `(mset $config key value)` | New map with the value inserted or replaced |
+| `(mdel $config key)` | New map without the key; a missing key is an error |
+| `(mhas $config key)` | Boolean indicating whether the key exists |
+| `(mkeys $config)` | Text keys in insertion order, as a list |
+| `(mvals $config)` | Values in the same order, as a list |
+| `(mlen $config)` | Integer entry count |
 
 An existing key with a nil value is still present, so it does not use the default.
-The default does not handle undefined names or non-map bindings.
-After validating argument count and the bare name, key and value expressions
-evaluate once from left to right, then the command accesses the current binding.
-Changes made to the same map by these expressions are preserved.
+The default does not handle undefined variables or non-map arguments.
+After checking argument count, arguments evaluate once from left to right. The
+first argument must produce a map before the key and value expressions are
+evaluated. The operation uses that independent map value, even if later expressions
+change the source variable. Invalid keys stop evaluation before the value expression.
+
+Operations compose directly, without binding intermediate maps:
+
+```parsh
+(mset {name parsh} version v1)
+(mget (mset $config name other) name)
+(mset (mset $config name other) version v2)
+```
 
 Updating a key keeps its position. New keys append; deleting preserves the order
 of remaining keys, and reinserting appends. Maps display in insertion order as
 `(map "name" "parsh")`; `eq` compares contents regardless of that order.
 
-Assignment and function arguments copy maps, including nested values. For example,
-after `(let copy $config)`, `(mset config name changed)` does not change `copy`.
-Functions can update captured outer bindings, while a parameter with the same name
-is a separate binding. `mget` and `mvals` also return independent values.
+`mset` and `mdel` return new maps without modifying their inputs. For example,
+after `(let copy $config)`, `(set config (mset $config name changed))` updates only
+`config`; `copy` retains its previous value, including nested data.
+Functions can use `set` to update captured outer bindings, while a parameter with
+the same name is a separate binding. A function returning an updated map affects
+its caller's variable only when the caller explicitly assigns that result.
+`mget` and `mvals` also return independent values.
 Maps cannot implicitly become text: `str`, string interpolation, external command
 arguments, and environment values reject maps. Use `mkeys` or `mvals` explicitly
 when a list is needed for iteration or command arguments.

@@ -13,7 +13,8 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 变量值作为一个完整的程序名使用，不会隐式拆分出参数。
 
 `map` 用于构造映射；内置操作包括 `mget`、`mset`、`mdel`、`mhas`、`mkeys`、`mvals` 和 `mlen`，
-首参均为保存映射的裸变量名。命令签名与示例见[映射](/parsh/zh-cn/docs/variables/#映射)。
+首参均为映射值，例如 `$config` 或 `{name parsh}`。更新操作返回新映射，
+使用 `set` 显式赋回才会更新变量。命令签名与示例见[映射](/parsh/zh-cn/docs/variables/#映射)。
 
 使用 `type` 查询命令的解析结果，不会执行被查询的命令：
 

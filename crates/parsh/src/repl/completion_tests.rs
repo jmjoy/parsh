@@ -166,9 +166,10 @@ fn syntax_only_completion_uses_available_builtins_and_current_functions() {
 }
 
 #[test]
-fn map_commands_complete_without_evaluating_and_bare_targets_are_not_paths() {
+fn map_commands_complete_value_arguments_without_evaluating() {
     let host = TestHost::default();
     let mut repl = Repl::with_host(host.clone()).unwrap();
+    execute(&mut repl, "(let config {key value})");
     for (prefix, command) in [
         ("ma", "map"),
         ("mg", "mget"),
@@ -184,13 +185,13 @@ fn map_commands_complete_without_evaluating_and_bare_targets_are_not_paths() {
         repl.input(Key::Tab);
         assert_eq!(repl.session.input.body, format!("{command} "));
         if command != "map" {
-            type_text(&mut repl, "al");
+            type_text(&mut repl, "$con");
             repl.input(Key::Tab);
-            assert_eq!(repl.session.input.body, format!("{command} al"));
+            assert_eq!(repl.session.input.body, format!("{command} $config "));
         }
     }
     assert_eq!(host.runs.get(), 0);
-    assert!(repl.session.history.entries.is_empty());
+    assert_eq!(repl.session.history.entries, ["(let config {key value})"]);
 }
 
 #[test]

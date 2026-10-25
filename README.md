@@ -46,6 +46,10 @@ bindings, and environment settings. Names start with a letter or `_`, followed
 by letters, digits, or `_`. Binding targets must be bare names, not quoted strings
 or expressions.
 
+Values use copy semantics. Reading a variable, assigning a value, or passing a
+function argument copies it, including nested lists and maps. Collection updates
+return new values; use `set` to replace an existing binding.
+
 ```lisp
 (let name "a friend")
 (echo hello $name)
@@ -107,31 +111,42 @@ and nested maps.
 
 ```lisp
 (let config (map name parsh version (+ 1)))
-(mset config name new-name)
-(mget config name)
-(mget config missing fallback)
-(mkeys config)
-(mdel config version)
+(let updated (mset $config name new-name))
+(mget $config name)
+(mget $updated name)
+(mget $config missing fallback)
+(mkeys $config)
+(set config (mdel $updated version))
 ```
 
-All `m` commands take a bare variable name as their first argument, as in
-`(mget config name)`. They access the nearest lexical binding, which must hold a map.
+All `m` commands take a map value as their first argument: `$config`, a map
+literal, or any expression returning a map. A bare word such as `config` is text
+and produces a type error. In the example, `updated` contains the new name while
+`config` keeps its old value until the final `set`.
 
 | Command | Result |
 | --- | --- |
-| `(mget config key)` | Stored value; a missing key is an error |
-| `(mget config key default)` | Evaluate `default` only if the key is missing |
-| `(mset config key value)` | Insert or replace the value; return nil |
-| `(mdel config key)` | Delete the key; return nil; a missing key is an error |
-| `(mhas config key)` | Boolean indicating whether the key exists |
-| `(mkeys config)` | List of keys in insertion order |
-| `(mvals config)` | List of values in the same order |
-| `(mlen config)` | Integer entry count |
+| `(mget $config key)` | Stored value; a missing key is an error |
+| `(mget $config key default)` | Evaluate `default` only if the key is missing |
+| `(mset $config key value)` | New map with the value inserted or replaced |
+| `(mdel $config key)` | New map without the key; a missing key is an error |
+| `(mhas $config key)` | Boolean indicating whether the key exists |
+| `(mkeys $config)` | List of keys in insertion order |
+| `(mvals $config)` | List of values in the same order |
+| `(mlen $config)` | Integer entry count |
+
+Arguments evaluate once from left to right after checking argument count. The
+first argument must produce a map before later arguments are evaluated. Updates
+operate on that independent value, even if later arguments change the source
+variable. A stored nil value is present and does not trigger the `mget` default.
+
+Map operations compose directly, for example
+`(mget (mset {name parsh} name other) name)` returns `"other"`.
 
 Replacing a value keeps its position; new or reinserted keys go at the end.
 Maps display as `(map "name" "parsh")`. `eq` compares their contents regardless
-of insertion order. Assignment and function arguments copy maps, including
-nested values: changing one variable does not change its copies. Maps cannot
+of insertion order. `mset` and `mdel` return independent maps; their inputs and
+other copies retain their values. Maps cannot
 be converted implicitly to text, command arguments, or environment values.
 
 ## Arithmetic and comparisons
