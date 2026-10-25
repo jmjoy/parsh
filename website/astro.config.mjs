@@ -63,6 +63,11 @@ export default defineConfig({
               label: "Commands & composition",
               translations: { "zh-CN": "命令与组合" },
             },
+            {
+              slug: "docs/structs-and-macros",
+              label: "Structs & macros",
+              translations: { "zh-CN": "结构与宏" },
+            },
           ],
         },
         {

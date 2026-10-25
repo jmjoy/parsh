@@ -958,3 +958,41 @@ fn binary_capture_fails_but_binary_redirection_preserves_bytes() {
     success(&output);
     assert_eq!(fs::read(path).unwrap(), [0xff]);
 }
+
+#[test]
+fn structs_and_macros_run_in_scripts() {
+    let output = run(r#"
+        (defstruct Point x y)
+        (let point (Point 3 4))
+        (printf "x=%s y=%s\n" (Point.x $point) (Point.y $point))
+        (if (Point? $point) (echo is-point))
+        (defmacro unless (condition body)
+          `(if (not ,$condition) ,$body))
+        (unless (eq 1 2) (echo taken))
+        (defmacro begin (body) `(do ,@$body))
+        (begin ((echo one) (echo two)))
+        (type Point Point.x Point?)
+    "#);
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "x=3 y=4\nis-point\ntaken\none\ntwo\n\
+         Point is a struct\n\
+         Point.x is a struct accessor\n\
+         Point? is a struct predicate\n"
+    );
+    assert!(stderr(&output).is_empty());
+}
+
+#[test]
+fn struct_and_macro_failures_stop_scripts_with_language_status() {
+    let output = run("(defstruct Point x) (Point 1 2)");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("expected 1 arguments, got 2"));
+    let output = run("(defmacro bad () 1) (bad)");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("macro bad must return a quoted form"));
+    let output = run("(unquote (str x))");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("unquote is only valid inside a quasiquote"));
+}

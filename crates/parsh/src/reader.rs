@@ -23,6 +23,52 @@ pub struct Diagnostic {
     pub message: String,
 }
 
+impl Expr {
+    /// Render an expression back to source. Quoted forms are printed with it.
+    pub fn source(&self) -> String {
+        match &self.kind {
+            Kind::Word(text) => text.clone(),
+            Kind::Text(text) => format!("\"{}\"", escape_text(text)),
+            Kind::Variable(name) => format!("${name}"),
+            Kind::Interpolated(parts) => {
+                let mut rendered = String::from("\"");
+                for part in parts {
+                    match &part.kind {
+                        Kind::Variable(name) => rendered.push_str(&format!("${name}")),
+                        Kind::Text(text) => rendered.push_str(&escape_text(text)),
+                        // `$( ... )` parts are always lists, so the source already has parens.
+                        _ => rendered.push_str(&format!("${}", part.source())),
+                    }
+                }
+                rendered.push('"');
+                rendered
+            }
+            Kind::List(items) => {
+                let items: Vec<_> = items.iter().map(Expr::source).collect();
+                format!("({})", items.join(" "))
+            }
+            Kind::Comment => "(;)".into(),
+        }
+    }
+}
+
+/// Escape text for a double-quoted string the reader can read back.
+fn escape_text(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '$' => escaped.push_str("\\$"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            ch => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
 impl Diagnostic {
     pub fn render(&self, name: &str, source: &str) -> String {
         let (line, column) = position(source, self.offset);
@@ -97,11 +143,17 @@ impl Quote {
 pub struct Reader<'a> {
     source: &'a str,
     pub offset: usize,
+    /// Nonzero while reading a quasiquote template, where `,` starts an unquote.
+    quasiquote: usize,
 }
 
 impl<'a> Reader<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { source, offset: 0 }
+        Self {
+            source,
+            offset: 0,
+            quasiquote: 0,
+        }
     }
 
     pub fn read(&mut self) -> Read {
@@ -173,6 +225,7 @@ impl<'a> Reader<'a> {
                         offset,
                     });
                 }
+                let mut quasiquote = false;
                 loop {
                     self.space();
                     match self.peek() {
@@ -193,10 +246,22 @@ impl<'a> Reader<'a> {
                         _ => {
                             let item = self.expr(depth + 1)?;
                             if item.kind != Kind::Comment {
+                                // `(quasiquote template)` enables `,` just like a backquote.
+                                if !quasiquote
+                                    && items.is_empty()
+                                    && open == '('
+                                    && matches!(&item.kind, Kind::Word(head) if head == "quasiquote")
+                                {
+                                    quasiquote = true;
+                                    self.quasiquote += 1;
+                                }
                                 items.push(item);
                             }
                         }
                     }
+                }
+                if quasiquote {
+                    self.quasiquote -= 1;
                 }
                 if open == '('
                     && matches!(items.first().map(|e| &e.kind), Some(Kind::Word(s)) if s == ";")
@@ -206,6 +271,46 @@ impl<'a> Reader<'a> {
                     Kind::List(items)
                 }
             }
+            Some('`') => {
+                self.quasiquote += 1;
+                let inner = self.expr(depth + 1);
+                self.quasiquote -= 1;
+                Kind::List(vec![
+                    Expr {
+                        kind: Kind::Word("quasiquote".into()),
+                        offset,
+                    },
+                    inner?,
+                ])
+            }
+            Some(',') if self.quasiquote > 0 => {
+                let splicing = self.peek() == Some('@');
+                if splicing {
+                    self.bump();
+                }
+                if let Some(close @ (')' | ']' | '}')) = self.peek() {
+                    return Err(self.error(
+                        offset,
+                        &format!("expected an expression after ',', found '{close}'"),
+                        false,
+                    ));
+                }
+                let inner = self.expr(depth + 1)?;
+                Kind::List(vec![
+                    Expr {
+                        kind: Kind::Word(
+                            if splicing {
+                                "unquote-splicing"
+                            } else {
+                                "unquote"
+                            }
+                            .into(),
+                        ),
+                        offset,
+                    },
+                    inner,
+                ])
+            }
             Some('\'' | '"') => {
                 let quote = Quote::at(&self.source[offset..]);
                 self.offset = offset + quote.delimiter().len();
@@ -213,7 +318,10 @@ impl<'a> Reader<'a> {
             }
             Some(ch) => {
                 let mut text = String::from(ch);
-                while self.peek().is_some_and(word_character) {
+                while self
+                    .peek()
+                    .is_some_and(|ch| word_character(ch) && !(self.quasiquote > 0 && ch == ','))
+                {
                     text.push(self.bump().unwrap());
                 }
                 if let Some(name) = text.strip_prefix('$') {
@@ -696,5 +804,95 @@ $(str """inner "quoted" $名字""" '''$missing\n''')!""""#;
     #[test]
     fn diagnostics_count_unicode_columns() {
         assert_eq!(position("甲\n乙)", "甲\n乙".len()), (2, 2));
+    }
+
+    #[test]
+    fn quasiquote_sugar_reads_as_plain_calls() {
+        let source = "`(if (not ,condition) ,@body)";
+        let Read::Form(expr) = Reader::new(source).read() else {
+            panic!()
+        };
+        assert_eq!(expr.offset, 0);
+        assert_eq!(
+            expr.source(),
+            "(quasiquote (if (not (unquote condition)) (unquote-splicing body)))"
+        );
+        let Kind::List(items) = &expr.kind else {
+            panic!()
+        };
+        assert_eq!(items[0].kind, Kind::Word("quasiquote".into()));
+        assert_eq!(items[1].offset, 1);
+        assert!(matches!(
+            Reader::new("`x").read(),
+            Read::Form(Expr { kind: Kind::List(items), .. })
+                if items[1].kind == Kind::Word("x".into())
+        ));
+    }
+
+    #[test]
+    fn commas_outside_quasiquote_remain_word_characters() {
+        for source in ["(echo a,b)", "(echo ,@c)", "(echo ,)"] {
+            let Read::Form(expr) = Reader::new(source).read() else {
+                panic!()
+            };
+            assert_eq!(expr.source(), source);
+        }
+        let Read::Form(expr) = Reader::new("`(a,b)").read() else {
+            panic!()
+        };
+        assert_eq!(expr.source(), "(quasiquote (a (unquote b)))");
+    }
+
+    #[test]
+    fn unquote_requires_an_expression_after_the_comma() {
+        let source = "`(a ,)";
+        let Read::Error(diagnostic) = Reader::new(source).read() else {
+            panic!()
+        };
+        assert_eq!(diagnostic.offset, source.find(',').unwrap());
+        assert_eq!(
+            diagnostic.message,
+            "expected an expression after ',', found ')'"
+        );
+        assert!(matches!(Reader::new("`(a ,").read(), Read::Incomplete(_)));
+        assert!(matches!(Reader::new("`(a ,@").read(), Read::Incomplete(_)));
+    }
+
+    #[test]
+    fn explicit_quasiquote_also_enables_unquote_sugar() {
+        let Read::Form(expr) = Reader::new("(quasiquote (list 1 ,(+ 1 2)))").read() else {
+            panic!()
+        };
+        assert_eq!(expr.source(), "(quasiquote (list 1 (unquote (+ 1 2))))");
+        let Read::Form(expr) = Reader::new("(list a,b)").read() else {
+            panic!()
+        };
+        assert_eq!(expr.source(), "(list a,b)");
+    }
+
+    #[test]
+    fn complete_accepts_a_top_level_template() {
+        assert!(complete("`(a ,b ,@c)"));
+        assert!(!complete("`(a"));
+        assert!(!complete("`(a ,"));
+    }
+
+    #[test]
+    fn source_renders_expressions_that_the_reader_reads_back() {
+        for source in [
+            "(str \"hello $name $(+ 1 2)\")",
+            r#"(str "a\nb\t\"q\" \$x")"#,
+            "(str '''raw text''')",
+            "`(echo ,$name)",
+        ] {
+            let Read::Form(expr) = Reader::new(source).read() else {
+                panic!("{source}")
+            };
+            let rendered = expr.source();
+            let Read::Form(reparsed) = Reader::new(&rendered).read() else {
+                panic!("{rendered}")
+            };
+            assert_eq!(reparsed.source(), rendered, "{source} -> {rendered}");
+        }
     }
 }

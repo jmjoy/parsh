@@ -2048,4 +2048,10 @@ mod completion_tests;
 mod loop_tests;
 
 #[cfg(test)]
+mod macro_tests;
+
+#[cfg(test)]
 mod map_tests;
+
+#[cfg(test)]
+mod struct_tests;

@@ -1,0 +1,27 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/structs.parsh )
+
+(; defstruct defines a constructor, one accessor per field, and a predicate. )
+(defstruct Point x y)
+(let corner (Point 3 4))
+(printf "x=%s y=%s\n" (Point.x $corner) (Point.y $corner))
+(if (Point? $corner)
+    (echo "corner is a point"))
+
+(; Values print in field order and compare by name and fields. )
+(if (eq (Point 1 2) (Point 1 2))
+    (echo "structs compare by value"))
+
+(; Bindings copy values, so rebinding one name leaves the other untouched. )
+(let original (Point 1 2))
+(let copy $original)
+(set original (Point 9 9))
+(printf "copy still holds x=%s\n" (Point.x $copy))
+
+(; Structs nest like any other value. )
+(defstruct Segment start end)
+(let segment (Segment (Point 0 0) (Point 3 4)))
+(printf "end.x=%s\n" (Point.x (Segment.end $segment)))
+
+(; type reports struct members without running anything. )
+(type Point Point.x Point?)

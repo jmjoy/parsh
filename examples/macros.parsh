@@ -1,0 +1,27 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/macros.parsh )
+
+(; A macro receives its arguments as quoted forms and returns a form to run. )
+(defmacro unless (condition body)
+  `(if (not ,$condition) ,$body))
+(unless (eq 1 2) (echo "unless ran"))
+
+(defmacro when (condition body)
+  `(if ,$condition ,$body))
+(when (eq a a) (echo "when ran"))
+
+(; Unquote-splicing flattens a list form into the surrounding call. )
+(defmacro begin (body)
+  `(do ,@$body))
+(begin ((echo one) (echo two)))
+
+(; Expansion happens in the caller scope, so templates can refer to it. )
+(defmacro greet (who)
+  `(echo hello ,$who))
+(let who "parsh")
+(greet $who)
+
+(; Quotes are ordinary values: they print as source and compare by syntax. )
+(if (eq (quote (a b)) (quote (a b)))
+    (echo "forms compare by syntax"))
+(type unless)

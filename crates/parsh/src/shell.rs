@@ -35,15 +35,67 @@ use std::{
 mod map;
 mod type_command;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Value {
     Text(String),
     Number(Number),
     Bool(bool),
     List(Vec<Value>),
     Map(IndexMap<String, Value>),
+    /// Quoted source, produced by `quote` and `quasiquote`.
+    Form(Box<Expr>),
+    Struct {
+        name: String,
+        fields: IndexMap<String, Value>,
+    },
     Nil,
     Status(i32),
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Text(left), Self::Text(right)) => left == right,
+            (Self::Number(left), Self::Number(right)) => left == right,
+            (Self::Bool(left), Self::Bool(right)) => left == right,
+            (Self::List(left), Self::List(right)) => left == right,
+            (Self::Map(left), Self::Map(right)) => left == right,
+            // Forms compare as syntax; the reader offset of every node is irrelevant.
+            (Self::Form(left), Self::Form(right)) => expr_eq(left, right),
+            (
+                Self::Struct {
+                    name: left,
+                    fields: left_fields,
+                },
+                Self::Struct {
+                    name: right,
+                    fields: right_fields,
+                },
+            ) => left == right && left_fields == right_fields,
+            (Self::Nil, Self::Nil) => true,
+            (Self::Status(left), Self::Status(right)) => left == right,
+            _ => false,
+        }
+    }
+}
+
+/// Compare two expressions by syntax, ignoring the source offset of every node.
+fn expr_eq(left: &Expr, right: &Expr) -> bool {
+    match (&left.kind, &right.kind) {
+        (Kind::Word(left), Kind::Word(right))
+        | (Kind::Text(left), Kind::Text(right))
+        | (Kind::Variable(left), Kind::Variable(right)) => left == right,
+        (Kind::List(left), Kind::List(right))
+        | (Kind::Interpolated(left), Kind::Interpolated(right)) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(left, right)| expr_eq(left, right))
+        }
+        (Kind::Comment, Kind::Comment) => true,
+        _ => false,
+    }
 }
 
 impl Value {
@@ -55,6 +107,8 @@ impl Value {
             Self::Nil => Ok(String::new()),
             Self::List(_) => Err("expected a scalar value, got a list".into()),
             Self::Map(_) => Err("expected a scalar value, got a map".into()),
+            Self::Form(_) => Err("expected a scalar value, got a form".into()),
+            Self::Struct { .. } => Err("expected a scalar value, got a struct".into()),
             Self::Status(_) => Err("a command status cannot be used as text".into()),
         }
     }
@@ -78,6 +132,12 @@ impl Value {
                     parts.push(Self::Text(key.clone()).display());
                     parts.push(value.display());
                 }
+                format!("({})", parts.join(" "))
+            }
+            Self::Form(form) => form.source(),
+            Self::Struct { name, fields } => {
+                let mut parts = vec![name.clone()];
+                parts.extend(fields.values().map(Value::display));
                 format!("({})", parts.join(" "))
             }
             Self::Nil => "nil".into(),
@@ -178,6 +238,28 @@ struct Function {
     closure: Env,
 }
 
+/// Field names of a struct, in definition order.
+#[derive(Clone)]
+struct StructDef {
+    fields: Vec<String>,
+}
+
+/// One macro invocation, bundling the pieces the expansion needs.
+struct MacroCall<'a> {
+    expr: &'a Expr,
+    name: &'a str,
+    definition: &'a Function,
+    args: &'a [Expr],
+}
+
+/// How a command name resolves against a defined struct.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum StructKind {
+    Constructor,
+    Accessor,
+    Predicate,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
     Normal,
@@ -190,6 +272,8 @@ pub struct Shell {
     pub environment: HashMap<OsString, OsString>,
     root: Env,
     functions: HashMap<String, Function>,
+    macros: HashMap<String, Function>,
+    structs: HashMap<String, StructDef>,
     pub interrupted: Arc<AtomicBool>,
     #[cfg(feature = "native")]
     pub job: Option<JobControl>,
@@ -200,13 +284,64 @@ pub struct Shell {
     syntax_only: bool,
     depth: usize,
     loop_depth: usize,
+    macro_depth: usize,
 }
 
+/// Expansion is recursive; keep the depth small enough for the debug-build stack.
+const MACRO_EXPANSION_LIMIT: usize = 32;
+
 const BUILTINS: &[&str] = &[
-    "do", "let", "set", "get", "if", "for", "while", "break", "continue", "defn", "list", "map",
-    "mget", "mset", "mdel", "mhas", "mkeys", "mvals", "mlen", "str", "eq", "not", "glob", "cd",
-    "export", "exit", "type", "+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">=", "|", "|>",
-    "|1>", "|>>", "|1>>", "<|", "|2>", "|2>>",
+    "do",
+    "let",
+    "set",
+    "get",
+    "if",
+    "for",
+    "while",
+    "break",
+    "continue",
+    "defn",
+    "defmacro",
+    "defstruct",
+    "quote",
+    "quasiquote",
+    "unquote",
+    "unquote-splicing",
+    "list",
+    "map",
+    "mget",
+    "mset",
+    "mdel",
+    "mhas",
+    "mkeys",
+    "mvals",
+    "mlen",
+    "str",
+    "eq",
+    "not",
+    "glob",
+    "cd",
+    "export",
+    "exit",
+    "type",
+    "+",
+    "-",
+    "*",
+    "/",
+    "=",
+    "!=",
+    "<",
+    "<=",
+    ">",
+    ">=",
+    "|",
+    "|>",
+    "|1>",
+    "|>>",
+    "|1>>",
+    "<|",
+    "|2>",
+    "|2>>",
 ];
 
 fn builtin(name: &str) -> bool {
@@ -253,6 +388,8 @@ impl Shell {
             environment: HashMap::new(),
             root,
             functions: HashMap::new(),
+            macros: HashMap::new(),
+            structs: HashMap::new(),
             interrupted: Arc::new(AtomicBool::new(false)),
             #[cfg(feature = "native")]
             job: None,
@@ -263,6 +400,7 @@ impl Shell {
             syntax_only: true,
             depth: 0,
             loop_depth: 0,
+            macro_depth: 0,
         }
     }
 
@@ -301,9 +439,27 @@ impl Shell {
             .copied()
             .filter(|name| !self.syntax_only || !requires_host(name))
             .chain(self.functions.keys().map(String::as_str))
+            .chain(self.macros.keys().map(String::as_str))
             .filter(|name| name.starts_with(prefix))
             .map(Candidate::word)
             .collect();
+        let struct_candidates: Vec<_> = self
+            .structs
+            .iter()
+            .flat_map(|(name, definition)| {
+                std::iter::once(name.clone())
+                    .chain(
+                        definition
+                            .fields
+                            .iter()
+                            .map(move |field| format!("{name}.{field}")),
+                    )
+                    .chain(std::iter::once(format!("{name}?")))
+            })
+            .filter(|name| name.starts_with(prefix))
+            .map(Candidate::word)
+            .collect();
+        candidates.extend(struct_candidates);
         if self.syntax_only {
             return candidates;
         }
@@ -460,6 +616,7 @@ impl Shell {
     pub fn execute(&mut self, expr: &Expr) -> Result<Value, Error> {
         self.interrupted.store(false, Ordering::Relaxed);
         self.output_bytes = 0;
+        self.macro_depth = 0;
         self.eval(expr, &self.root.clone(), Mode::Normal, &Io::default())
             .map_err(|signal| signal.into_error(expr))
     }
@@ -772,24 +929,28 @@ impl Shell {
                 if builtin(function_name) || function_name == ";" || function_name.is_empty() {
                     return Err(Error::new(&args[0], "function name is reserved").into());
                 }
-                let Kind::List(parameters) = &args[1].kind else {
+                if self.structs.contains_key(function_name) {
                     return Err(Error::new(
-                        &args[1],
-                        "function parameters must be a list of bare variable names",
+                        &args[0],
+                        format!("{function_name} is already a struct"),
                     )
                     .into());
-                };
-                let mut names = Vec::new();
-                let mut seen = HashSet::new();
-                for parameter in parameters {
-                    let name = Self::binding(parameter)?;
-                    if !seen.insert(name) {
-                        return Err(
-                            Error::new(parameter, format!("duplicate parameter {name}")).into()
-                        );
-                    }
-                    names.push(name.into());
                 }
+                if self.macros.contains_key(function_name) {
+                    return Err(Error::new(
+                        &args[0],
+                        format!("{function_name} is already a macro"),
+                    )
+                    .into());
+                }
+                if self.struct_member_kind(function_name).is_some() {
+                    return Err(Error::new(
+                        &args[0],
+                        format!("{function_name} is a struct member"),
+                    )
+                    .into());
+                }
+                let names = Self::parameters(&args[1], "function")?;
                 self.functions.insert(
                     function_name.clone(),
                     Function {
@@ -799,6 +960,26 @@ impl Shell {
                     },
                 );
                 Ok(Value::Nil)
+            }
+            "defmacro" => {
+                self.defmacro(expr, args, env)?;
+                Ok(Value::Nil)
+            }
+            "defstruct" => {
+                self.defstruct(expr, args)?;
+                Ok(Value::Nil)
+            }
+            "quote" => {
+                Self::arity(expr, args, 1, 1)?;
+                Ok(Value::Form(Box::new(args[0].clone())))
+            }
+            "quasiquote" => {
+                Self::arity(expr, args, 1, 1)?;
+                self.quasiquote(&args[0], env, io)
+            }
+            "unquote" => Err(Error::new(expr, "unquote is only valid inside a quasiquote").into()),
+            "unquote-splicing" => {
+                Err(Error::new(expr, "unquote-splicing is only valid inside a quasiquote").into())
             }
             "list" => args
                 .iter()
@@ -1031,7 +1212,11 @@ impl Shell {
                             );
                         }
                     };
-                    if builtin(&command) || self.functions.contains_key(&command) {
+                    if builtin(&command)
+                        || self.functions.contains_key(&command)
+                        || self.macros.contains_key(&command)
+                        || self.struct_member_kind(&command).is_some()
+                    {
                         return Err(Error::new(
                             stage,
                             "v1 pipeline stages must be external commands",
@@ -1043,6 +1228,65 @@ impl Shell {
                 Ok(self.commands(expr, &stages, mode, io)?)
             }
             _ => {
+                if let Some(definition) = self.macros.get(&name).cloned() {
+                    let call = MacroCall {
+                        expr,
+                        name: &name,
+                        definition: &definition,
+                        args,
+                    };
+                    return self.expand_macro(&call, env, mode, io);
+                }
+                if let Some(fields) = self.structs.get(&name).map(|def| def.fields.clone()) {
+                    Self::arity(expr, args, fields.len(), fields.len())?;
+                    let mut values = IndexMap::new();
+                    for (field, arg) in fields.into_iter().zip(args) {
+                        let value = self.value(arg, env, io)?;
+                        values.insert(field, value);
+                    }
+                    return Ok(Value::Struct {
+                        name,
+                        fields: values,
+                    });
+                }
+                if let Some((struct_name, field)) = name.split_once('.')
+                    && self.structs.contains_key(struct_name)
+                {
+                    Self::arity(expr, args, 1, 1)?;
+                    let value = self.value(&args[0], env, io)?;
+                    let Value::Struct {
+                        name: value_name,
+                        fields,
+                    } = value
+                    else {
+                        return Err(Error::new(
+                            expr,
+                            format!("{name} expects a {struct_name} value"),
+                        )
+                        .into());
+                    };
+                    if value_name != struct_name {
+                        return Err(Error::new(
+                            expr,
+                            format!("{name} expects a {struct_name} value"),
+                        )
+                        .into());
+                    }
+                    let field_value = fields.get(field).cloned().ok_or_else(|| {
+                        Error::new(expr, format!("{struct_name} has no field {field}"))
+                    })?;
+                    return Ok(field_value);
+                }
+                if let Some(struct_name) = name.strip_suffix('?')
+                    && self.structs.contains_key(struct_name)
+                {
+                    Self::arity(expr, args, 1, 1)?;
+                    let value = self.value(&args[0], env, io)?;
+                    return Ok(Value::Bool(matches!(
+                        &value,
+                        Value::Struct { name, .. } if name == struct_name
+                    )));
+                }
                 if let Some(function) = self.functions.get(&name).cloned() {
                     Self::arity(
                         expr,
@@ -1077,6 +1321,291 @@ impl Shell {
                 }
             }
         }
+    }
+
+    /// Read a `(name ...)` parameter list of bare variable names.
+    fn parameters(expr: &Expr, label: &str) -> Result<Vec<String>, Error> {
+        let Kind::List(parameters) = &expr.kind else {
+            return Err(Error::new(
+                expr,
+                format!("{label} parameters must be a list of bare variable names"),
+            ));
+        };
+        let mut names = Vec::new();
+        let mut seen = HashSet::new();
+        for parameter in parameters {
+            let name = Self::binding(parameter)?;
+            if !seen.insert(name) {
+                return Err(Error::new(parameter, format!("duplicate parameter {name}")));
+            }
+            names.push(name.into());
+        }
+        Ok(names)
+    }
+
+    fn defmacro(&mut self, expr: &Expr, args: &[Expr], env: &Env) -> Result<(), Error> {
+        Self::arity(expr, args, 3, usize::MAX)?;
+        let Kind::Word(name) = &args[0].kind else {
+            return Err(Error::new(
+                &args[0],
+                "macro name must be a bare command name without '$'",
+            ));
+        };
+        if builtin(name) || name == ";" || name.is_empty() {
+            return Err(Error::new(&args[0], "macro name is reserved"));
+        }
+        if self.structs.contains_key(name) {
+            return Err(Error::new(&args[0], format!("{name} is already a struct")));
+        }
+        if self.functions.contains_key(name) {
+            return Err(Error::new(
+                &args[0],
+                format!("{name} is already a function"),
+            ));
+        }
+        if self.struct_member_kind(name).is_some() {
+            return Err(Error::new(&args[0], format!("{name} is a struct member")));
+        }
+        let parameters = Self::parameters(&args[1], "macro")?;
+        self.macros.insert(
+            name.clone(),
+            Function {
+                parameters,
+                body: args[2..].to_vec(),
+                closure: env.clone(),
+            },
+        );
+        Ok(())
+    }
+
+    fn defstruct(&mut self, expr: &Expr, args: &[Expr]) -> Result<(), Error> {
+        if args.len() < 2 {
+            return Err(Error::new(
+                expr,
+                "defstruct expects a name and at least one field",
+            ));
+        }
+        let Kind::Word(name) = &args[0].kind else {
+            return Err(Error::new(
+                &args[0],
+                "struct name must be a bare word without '$'",
+            ));
+        };
+        if name.is_empty()
+            || name == ";"
+            || builtin(name)
+            || name.chars().any(|ch| matches!(ch, '.' | '?' | '$'))
+        {
+            return Err(Error::new(&args[0], "struct name is reserved"));
+        }
+        if self.functions.contains_key(name) {
+            return Err(Error::new(
+                &args[0],
+                format!("{name} is already a function"),
+            ));
+        }
+        if self.macros.contains_key(name) {
+            return Err(Error::new(&args[0], format!("{name} is already a macro")));
+        }
+        let mut fields = Vec::new();
+        let mut seen = HashSet::new();
+        for item in &args[1..] {
+            let Kind::Word(field) = &item.kind else {
+                return Err(Error::new(
+                    item,
+                    "field names must be bare names without '$'",
+                ));
+            };
+            if !variable_name(field) {
+                return Err(Error::new(
+                    item,
+                    "invalid field name; start with a letter or '_', then use letters, digits, or '_'",
+                ));
+            }
+            if !seen.insert(field.clone()) {
+                return Err(Error::new(item, format!("duplicate field {field}")));
+            }
+            fields.push(field.clone());
+        }
+        self.structs.insert(name.clone(), StructDef { fields });
+        Ok(())
+    }
+
+    /// Resolve a command name into a struct constructor, accessor, or predicate.
+    fn struct_member_kind(&self, name: &str) -> Option<StructKind> {
+        if self.structs.contains_key(name) {
+            return Some(StructKind::Constructor);
+        }
+        if let Some((struct_name, field)) = name.split_once('.')
+            && self
+                .structs
+                .get(struct_name)
+                .is_some_and(|definition| definition.fields.iter().any(|name| name == field))
+        {
+            return Some(StructKind::Accessor);
+        }
+        let struct_name = name.strip_suffix('?')?;
+        self.structs
+            .contains_key(struct_name)
+            .then_some(StructKind::Predicate)
+    }
+
+    fn expand_macro(
+        &mut self,
+        call: &MacroCall<'_>,
+        env: &Env,
+        mode: Mode,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        let MacroCall {
+            expr,
+            name,
+            definition,
+            args,
+        } = *call;
+        Self::arity(
+            expr,
+            args,
+            definition.parameters.len(),
+            definition.parameters.len(),
+        )?;
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(Value::Form(Box::new(arg.clone())));
+        }
+        let local = Scope::child(&definition.closure);
+        local
+            .borrow_mut()
+            .variables
+            .extend(definition.parameters.iter().cloned().zip(values));
+        let caller_loop_depth = std::mem::take(&mut self.loop_depth);
+        let expansion = self.sequence(&definition.body, &local, Mode::Normal, io);
+        self.loop_depth = caller_loop_depth;
+        let expansion = expansion.map_err(|signal| Self::macro_signal(signal, expr, name))?;
+        let Value::Form(form) = expansion else {
+            return Err(Error::new(expr, format!("macro {name} must return a quoted form")).into());
+        };
+        if self.macro_depth >= MACRO_EXPANSION_LIMIT {
+            return Err(Error::new(
+                expr,
+                format!("macro expansion exceeds {MACRO_EXPANSION_LIMIT} levels"),
+            )
+            .into());
+        }
+        self.macro_depth += 1;
+        let result = self.eval(&form, env, mode, io);
+        self.macro_depth -= 1;
+        result.map_err(|signal| Self::macro_signal(signal, expr, name))
+    }
+
+    fn macro_signal(signal: Signal, expr: &Expr, name: &str) -> Signal {
+        let mut error = signal.into_error(expr);
+        // Macro bodies can originate in a different interactive input, but nested
+        // expansions of the same error must not pile up prefixes.
+        if !error.exit && !error.message.starts_with("in macro ") {
+            error.message = format!("in macro {name}: {}", error.message);
+            error.offset = expr.offset;
+        }
+        error.into()
+    }
+
+    fn quasiquote(&mut self, template: &Expr, env: &Env, io: &Io) -> EvalResult<Value> {
+        Ok(Value::Form(Box::new(self.template(template, env, io)?)))
+    }
+
+    /// Fill a quasiquote template with the evaluated unquote expressions.
+    fn template(&mut self, template: &Expr, env: &Env, io: &Io) -> EvalResult<Expr> {
+        let Kind::List(items) = &template.kind else {
+            return Ok(template.clone());
+        };
+        if let Some(Kind::Word(head)) = items.first().map(|item| &item.kind) {
+            match head.as_str() {
+                "quasiquote" => return Ok(template.clone()),
+                "unquote" => {
+                    if items.len() != 2 {
+                        return Err(
+                            Error::new(template, "unquote expects exactly one expression").into(),
+                        );
+                    }
+                    let value = self.value(&items[1], env, io)?;
+                    return Ok(Self::form_node(value, &items[1])?);
+                }
+                "unquote-splicing" => {
+                    return Err(Error::new(
+                        template,
+                        "unquote-splicing is only valid inside a list template",
+                    )
+                    .into());
+                }
+                _ => {}
+            }
+        }
+        let mut expanded = Vec::with_capacity(items.len());
+        for item in items {
+            if let Kind::List(inner) = &item.kind
+                && matches!(
+                    inner.first().map(|expr| &expr.kind),
+                    Some(Kind::Word(head)) if head == "unquote-splicing"
+                )
+            {
+                if inner.len() != 2 {
+                    return Err(Error::new(
+                        item,
+                        "unquote-splicing expects exactly one expression",
+                    )
+                    .into());
+                }
+                expanded.extend(self.splice(&inner[1], env, io)?);
+            } else {
+                expanded.push(self.template(item, env, io)?);
+            }
+        }
+        Ok(Expr {
+            kind: Kind::List(expanded),
+            offset: template.offset,
+        })
+    }
+
+    fn splice(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<Vec<Expr>> {
+        let message = "unquote-splicing expects a list form or a list of quoted forms";
+        match self.value(expr, env, io)? {
+            Value::Form(form) => match form.kind {
+                Kind::List(items) => Ok(items),
+                _ => Err(Error::new(expr, message).into()),
+            },
+            Value::List(values) => {
+                let mut items = Vec::with_capacity(values.len());
+                for value in values {
+                    let Value::Form(form) = value else {
+                        return Err(Error::new(expr, message).into());
+                    };
+                    items.push(*form);
+                }
+                Ok(items)
+            }
+            _ => Err(Error::new(expr, message).into()),
+        }
+    }
+
+    /// Turn an unquoted value into the node that is spliced into the template.
+    fn form_node(value: Value, expr: &Expr) -> Result<Expr, Error> {
+        let kind = match value {
+            Value::Form(form) => return Ok(*form),
+            Value::Text(text) => Kind::Text(text),
+            Value::Number(number) => Kind::Word(number.to_string()),
+            Value::Bool(boolean) => Kind::Word(boolean.to_string()),
+            Value::Nil => Kind::Word("nil".into()),
+            _ => {
+                return Err(Error::new(
+                    expr,
+                    "unquote expects a quoted form or a scalar value",
+                ));
+            }
+        };
+        Ok(Expr {
+            kind,
+            offset: expr.offset,
+        })
     }
 
     fn argv(

@@ -59,6 +59,8 @@ impl Options {
 
 enum CommandType {
     Builtin,
+    Macro,
+    Struct(StructKind),
     Function,
     #[cfg(feature = "native")]
     File(Vec<u8>),
@@ -69,13 +71,21 @@ impl CommandType {
     fn output(&self, name: &str, format: Format) -> Vec<u8> {
         let text = match (format, self) {
             (Format::Kind, Self::Builtin) => "builtin\n".into(),
+            (Format::Kind, Self::Macro) => "macro\n".into(),
+            (Format::Kind, Self::Struct(_)) => "struct\n".into(),
             (Format::Kind, Self::Function) => "function\n".into(),
             (Format::Kind, Self::Host) => "file\n".into(),
             #[cfg(feature = "native")]
             (Format::Kind, Self::File(_)) => "file\n".into(),
-            (Format::Path, Self::Builtin | Self::Function) => return Vec::new(),
+            (Format::Path, Self::Builtin | Self::Macro | Self::Struct(_) | Self::Function) => {
+                return Vec::new();
+            }
             (Format::Path, Self::Host) => format!("{name}\n"),
             (Format::Description, Self::Builtin) => format!("{name} is a shell builtin\n"),
+            (Format::Description, Self::Macro) => format!("{name} is a macro\n"),
+            (Format::Description, Self::Struct(kind)) => {
+                format!("{name} is a struct{}\n", kind.role())
+            }
             (Format::Description, Self::Function) => format!("{name} is a function\n"),
             (Format::Description, Self::Host) => format!("{name} is an external command\n"),
             #[cfg(feature = "native")]
@@ -91,6 +101,17 @@ impl CommandType {
             }
         };
         text.into_bytes()
+    }
+}
+
+impl StructKind {
+    /// Suffix for `type` descriptions, empty for the constructor.
+    fn role(self) -> &'static str {
+        match self {
+            Self::Constructor => "",
+            Self::Accessor => " accessor",
+            Self::Predicate => " predicate",
+        }
     }
 }
 
@@ -112,8 +133,14 @@ impl Shell {
             if !options.force_path {
                 if builtin(name) {
                     matches.push(CommandType::Builtin);
-                } else if !options.skip_functions && self.functions.contains_key(name) {
-                    matches.push(CommandType::Function);
+                } else if !options.skip_functions {
+                    if self.macros.contains_key(name) {
+                        matches.push(CommandType::Macro);
+                    } else if let Some(kind) = self.struct_member_kind(name) {
+                        matches.push(CommandType::Struct(kind));
+                    } else if self.functions.contains_key(name) {
+                        matches.push(CommandType::Function);
+                    }
                 }
             }
             if options.all || matches.is_empty() {

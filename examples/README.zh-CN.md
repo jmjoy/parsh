@@ -8,6 +8,8 @@
 cargo run -- examples/hello.parsh world
 cargo run -- examples/while.parsh
 cargo run -- examples/files.parsh
+cargo run -- examples/structs.parsh
+cargo run -- examples/macros.parsh
 ```
 
 将 `parsh` 加入 PATH 后，也可以直接运行，例如 `./examples/while.parsh`。
@@ -23,6 +25,8 @@ cargo run -- examples/files.parsh
 | [while.parsh](while.parsh) | 条件循环、`continue`、带返回值的 `break` 和最后一轮的返回值 |
 | [pipelines.parsh](pipelines.parsh) | 流式管道、输出捕获和命令输出参与运算 |
 | [files.parsh](files.parsh) | 工作目录、glob、文件重定向、命令失败处理和清理 |
+| [structs.parsh](structs.parsh) | 结构体定义、构造、访问器、判定、嵌套和值相等 |
+| [macros.parsh](macros.parsh) | 引用模板、宏展开、unquote 摊平和调用方作用域 |
 
 示例使用标准 Linux coreutils 命令。`files.parsh` 通过 `mktemp -d` 创建临时目录，
 将演示文件写入其中，并在成功结束时删除该目录。

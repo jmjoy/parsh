@@ -8,6 +8,8 @@ Run the scripts from the repository root with native parsh:
 cargo run -- examples/hello.parsh world
 cargo run -- examples/while.parsh
 cargo run -- examples/files.parsh
+cargo run -- examples/structs.parsh
+cargo run -- examples/macros.parsh
 ```
 
 Once `parsh` is on PATH, scripts can also run directly, for example
@@ -24,6 +26,8 @@ results explicitly.
 | [while.parsh](while.parsh) | Conditional loops, `continue`, a `break` value, and the last iteration's return value |
 | [pipelines.parsh](pipelines.parsh) | Streaming pipelines, captured output, and arithmetic on command output |
 | [files.parsh](files.parsh) | Working directories, globbing, file redirection, handled command failures, and cleanup |
+| [structs.parsh](structs.parsh) | Struct definitions, constructors, accessors, predicates, nesting, and value equality |
+| [macros.parsh](macros.parsh) | Quote templates, macro expansion, unquote splicing, and caller scope |
 
 The examples use standard Linux coreutils commands. `files.parsh` creates a
 temporary directory with `mktemp -d`, writes its example files there, and removes

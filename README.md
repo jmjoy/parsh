@@ -237,7 +237,8 @@ text; there are no line comments. A quoted `";"` is not a comment marker.
 
 ## Commands and composition
 
-Command lookup checks built-ins, named functions, then PATH. External programs
+Command lookup checks built-ins, macros, struct constructors and members, named
+functions, then PATH. External programs
 are started directly, without passing the expression through another shell.
 The command name may also come from a text variable, as in `($EDITOR file.txt)`;
 its value is one program name, without implicit splitting into flags.
@@ -256,10 +257,10 @@ Use `type` to inspect command lookup without executing the command:
 `type` accepts multiple names, including list arguments, and supports these Bash-style options:
 
 - `-a`: show every match, including all executable paths in PATH order.
-- `-t`: print `builtin`, `function`, or `file` for each match.
-- `-p`: print the external command path, or nothing for a built-in or function.
+- `-t`: print `builtin`, `macro`, `struct`, `function`, or `file` for each match.
+- `-p`: print the external command path, or nothing for a built-in, macro, struct, or function.
 - `-P`: search PATH even when a built-in or function has the same name.
-- `-f`: skip function lookup.
+- `-f`: skip function, macro, and struct lookup.
 
 Options can be combined; `--` ends option parsing. No arguments succeeds silently.
 An unknown name gives status `1`; an invalid option gives status `2`.
@@ -370,6 +371,64 @@ errors still fail. A pipeline reports its rightmost nonzero stage status, even
 if the last stage succeeds (including upstream SIGPIPE). Every stage is reaped.
 `exit` accepts a code from 0 to 255 and exits immediately, including from a
 function or nested expression. Its default is 0.
+
+## Structs
+
+`defstruct` defines a struct type and its fields. It creates a constructor, one
+accessor per field, and a predicate:
+
+```lisp
+(defstruct Point x y)
+(let point (Point 1 2))
+(echo (Point.x $point) (Point.y $point))
+(if (Point? $point) (echo a point))
+```
+
+Structs print in field order, for example `(Point 3 4)` or `(Point "3" "4")`
+when the fields are text. They compare by name and fields, and copy like every
+other value. Accessors read the field from the value itself, so
+redefining a struct keeps existing values readable. `type` reports the
+constructor, accessors, and predicate without running them:
+
+```lisp
+(type Point)
+(type Point.x)
+(type -t Point)
+```
+
+`defstruct` creates one name per member: `Point` constructs, `Point.x` reads a
+field, and `Point?` tests the type. Structs are immutable; build a new value to
+change a field.
+
+## Macros
+
+`defmacro` defines a command whose arguments arrive as quoted forms. A backquote
+starts a template; `,` inserts one evaluated expression, and `,@` splices a list
+form into the surrounding call:
+
+```lisp
+(defmacro unless (condition body)
+  `(if (not ,$condition) ,$body))
+
+(unless (test -f config.txt)
+  (echo "configuration missing"))
+```
+
+The macro body runs once per call and must return a quoted form; the shell then
+evaluates that form in the caller scope, so `$name` inside the returned template
+reads the caller variable. Quoting is an ordinary value: forms print as source,
+and `eq` compares them by syntax.
+
+```lisp
+(quote (a b))
+(eq (quote (a b)) (quote (a   b)))
+(defmacro begin (body) `(do ,@$body))
+(begin ((echo one) (echo two)))
+```
+
+Macro parameters follow the same fixed-arity rules as `defn`, and macros cannot
+appear in pipeline stages. A nested quasiquote is copied literally. Definitions
+are global, even when they appear inside a function.
 
 ## Interactive editing and paste
 

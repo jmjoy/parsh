@@ -587,6 +587,22 @@ test("Chinese terminal and narrow layouts remain usable", async ({ page }) => {
   ).toBe(true);
 });
 
+test("structs and macros evaluate in the playground", async ({ page }) => {
+  await playground(page);
+  await execute(page, "(defstruct Point x y)");
+  await execute(page, "(let point (Point 3 4))");
+  await execute(page, "(Point.x $point)");
+  await expect(terminal(page)).toContainText('"3"');
+  await execute(
+    page,
+    "(defmacro unless (condition body) `(if (not ,$condition) ,$body))",
+  );
+  await execute(page, "(unless (eq 1 2) (str taken))");
+  await expect(terminal(page)).toContainText('"taken"');
+  await execute(page, "(type Point.x)");
+  await expect(terminal(page)).toContainText("Point.x is a struct accessor");
+});
+
 
 test("missing pages provide working links to both locale homepages", async ({ page }) => {
   const response = await page.goto("/parsh/missing-page/");

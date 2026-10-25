@@ -7,7 +7,8 @@ description: "Native commands, pipelines, output capture, and file redirection."
 This page covers command composition in parsh. The browser playground supports a coreutils subset, temporary files, and buffered pipelines; see its [capabilities](/parsh/en/docs/playground/). Other Linux programs require native parsh.
 :::
 
-Command lookup checks built-ins, named functions, then PATH. External programs
+Command lookup checks built-ins, macros, struct constructors and members, named
+functions, then PATH. External programs
 are started directly, without passing the expression through another shell.
 The command name may also come from a text variable, as in `($EDITOR file.txt)`;
 its value is one program name, without implicit splitting into flags.
@@ -31,10 +32,10 @@ Use `type` to inspect command lookup without executing the command:
 `type` accepts multiple names, including list arguments, and supports these Bash-style options:
 
 - `-a`: show every match, including all executable paths in PATH order.
-- `-t`: print `builtin`, `function`, or `file` for each match.
-- `-p`: print the external command path, or nothing for a built-in or function.
+- `-t`: print `builtin`, `macro`, `struct`, `function`, or `file` for each match.
+- `-p`: print the external command path, or nothing for a built-in, macro, struct, or function.
 - `-P`: search PATH even when a built-in or function has the same name.
-- `-f`: skip function lookup.
+- `-f`: skip function, macro, and struct lookup.
 
 Options can be combined; `--` ends option parsing. No arguments succeeds silently.
 An unknown name gives status `1`; an invalid option gives status `2`.

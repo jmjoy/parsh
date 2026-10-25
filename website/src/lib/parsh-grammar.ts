@@ -7,7 +7,7 @@ export default {
     { include: "#comment" },
     { include: "#string" },
     {
-      begin: "(\\()(defn)\\s+([^\\s()\\[\\]{}\"'$]+)\\s+(\\()",
+      begin: "(\\()(defn|defmacro)\\s+([^\\s()\\[\\]{}\"'$]+)\\s+(\\()",
       beginCaptures: {
         1: { name: "punctuation.section.parens.parsh" },
         2: { name: "keyword.control.parsh" },
@@ -34,7 +34,7 @@ export default {
     {
       name: "keyword.control.parsh",
       match:
-        "(?<=\\()(?:do|let|set|get|if|for|while|break|continue|defn|list|map|mget|mset|mdel|mhas|mkeys|mvals|mlen|str|eq|not|glob|cd|export|exit|type)(?=[\\s()\\[\\]{}\"'])",
+        "(?<=\\()(?:do|let|set|get|if|for|while|break|continue|defn|defmacro|defstruct|quote|quasiquote|unquote-splicing|unquote|list|map|mget|mset|mdel|mhas|mkeys|mvals|mlen|str|eq|not|glob|cd|export|exit|type)(?=[\\s()\\[\\]{}\"'])",
     },
     {
       name: "keyword.operator.parsh",
@@ -42,6 +42,7 @@ export default {
     },
     { name: "entity.name.function.parsh", match: "(?<=\\()[^\\s()\\[\\]{}\"'$]+" },
     { name: "punctuation.section.parens.parsh", match: "[()\\[\\]{}]" },
+    { name: "punctuation.section.parsh", match: "`" },
   ],
   repository: {
     string: {
