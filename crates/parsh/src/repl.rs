@@ -2,13 +2,15 @@
 use crate::{
     completion::Completion,
     host::{ExecutionHost, HostError, Stream},
-    reader::{Diagnostic, Expr, Kind, Read, Reader},
+    reader::{Diagnostic, Expr, Kind, Read, Reader, closing_delimiter},
     shell::{Shell, Value},
 };
 use std::{io, ops::Range, rc::Rc};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+#[cfg(test)]
+mod collection_tests;
 mod editing;
 #[cfg(test)]
 mod editing_tests;
@@ -23,7 +25,7 @@ pub(crate) struct Input {
 
 enum Submission {
     Complete(Vec<(Expr, Range<usize>)>),
-    Incomplete,
+    Incomplete(char),
     Invalid(Diagnostic),
 }
 
@@ -39,7 +41,7 @@ fn submission(source: &str) -> Submission {
             Read::Form(expr) => {
                 return Submission::Invalid(Diagnostic {
                     offset: expr.offset,
-                    message: "top-level expressions must be parenthesized calls".into(),
+                    message: "top-level expressions must be calls or collection expressions".into(),
                 });
             }
             Read::End => {
@@ -48,7 +50,14 @@ fn submission(source: &str) -> Submission {
                 }
                 return Submission::Complete(forms);
             }
-            Read::Incomplete(_) => return Submission::Incomplete,
+            Read::Incomplete(diagnostic) => {
+                let close = source[diagnostic.offset..]
+                    .chars()
+                    .next()
+                    .and_then(closing_delimiter)
+                    .unwrap_or(')');
+                return Submission::Incomplete(close);
+            }
             Read::ExtraClose(diagnostic) | Read::Error(diagnostic) => {
                 return Submission::Invalid(diagnostic);
             }
@@ -77,7 +86,7 @@ impl Input {
     }
 
     fn insert(&mut self, ch: char) {
-        if ch == '(' && self.body.trim().is_empty() {
+        if closing_delimiter(ch).is_some() && self.body.trim().is_empty() {
             self.explicit = true;
         }
         self.body.insert(self.cursor, ch);
@@ -301,9 +310,9 @@ pub(crate) fn view_layout(
     if !input.explicit && input.body.trim().is_empty() {
         dimmed.push((0, '('));
     }
-    if matches!(submission(&text), Submission::Incomplete) {
-        dimmed.push((text.len(), ')'));
-        text.push(')');
+    if let Submission::Incomplete(close) = submission(&text) {
+        dimmed.push((text.len(), close));
+        text.push(close);
     }
     let mut rendered = Input {
         body: format!("{prefix}{text}"),
@@ -425,8 +434,8 @@ impl Session {
         }
         let mut source = self.input.source();
         let mut parsed = submission(&source);
-        if matches!(parsed, Submission::Incomplete) {
-            let candidate = format!("{source})");
+        if let Submission::Incomplete(close) = parsed {
+            let candidate = format!("{source}{close}");
             if let Submission::Complete(forms) = submission(&candidate) {
                 source = candidate;
                 parsed = Submission::Complete(forms);
@@ -434,7 +443,7 @@ impl Session {
         }
         let forms = match parsed {
             Submission::Complete(forms) => forms,
-            Submission::Incomplete => {
+            Submission::Incomplete(_) => {
                 self.input.insert('\n');
                 return Ok(None);
             }
@@ -505,7 +514,13 @@ impl Session {
             return;
         }
         let before = self.input.clone();
-        if self.input.body.trim().is_empty() && normalized.trim_start().starts_with('(') {
+        if self.input.body.trim().is_empty()
+            && normalized
+                .trim_start()
+                .chars()
+                .next()
+                .is_some_and(|ch| closing_delimiter(ch).is_some())
+        {
             self.input.explicit = true;
         }
         self.input.body.insert_str(self.input.cursor, &normalized);

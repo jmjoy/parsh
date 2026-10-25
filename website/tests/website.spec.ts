@@ -101,6 +101,36 @@ test("maps preserve insertion order, value types, and lazy defaults in the brows
   await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
 });
 
+test("collection shorthand supports nested values, Enter submission, and history in the browser", async ({ page }) => {
+  await playground(page);
+  await execute(page, `
+    []{}
+    (let config {name parsh items [one "two words"] nested {enabled (eq a a)}})
+    [(mget config items) (mget config nested)]
+    (eq [one {key [two]}] (list one (map key (list two))))
+  `);
+  await expect(terminal(page)).toContainText('(("one" "two words") (map "enabled" true))');
+  await expect(terminal(page)).toContainText("true");
+
+  await page.keyboard.type("[first");
+  await expect(terminal(page)).toContainText("$ [first]");
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('("first")');
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type(" second");
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('("first" "second")');
+
+  await page.keyboard.type("{key value");
+  await expect(terminal(page)).toContainText("$ {key value}");
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('(map "key" "value")');
+  await execute(page, "{duplicate first duplicate (exit 9)}");
+  await expect(terminal(page)).toContainText('duplicate map key "duplicate"');
+  await execute(page, "[recovered]");
+  await expect(terminal(page)).toContainText('("recovered")');
+});
+
 test("Enter submission, forced multiline editing, and complete history work in the browser", async ({ page }) => {
   await playground(page);
   await expect(terminal(page)).toContainText("$ ()");

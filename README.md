@@ -89,6 +89,12 @@ argument, including spaces and embedded newlines. `list` constructs lists;
 returns an empty list when nothing matches. Ordinary words, strings, and variable
 values never undergo implicit globbing, word splitting, or tilde expansion.
 
+`[a b]` is shorthand for `(list a b)`, and `[]` creates an empty list.
+`{name parsh}` is shorthand for `(map name parsh)`, and `{}` creates an empty map.
+The forms can nest: `[one {items [two three]}]`. Elements are separated by whitespace;
+maps use alternating keys and values. Quote text and glob patterns containing
+`[]` or `{}`, for example `(glob 'file[12].txt')`.
+
 `cd` accepts a path, or defaults to `$HOME`; it updates `$PWD` and `$OLDPWD`.
 Relative commands, glob patterns, and redirections use the current directory.
 

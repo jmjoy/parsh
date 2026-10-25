@@ -30,6 +30,58 @@ fn context_tracks_lists_comments_and_declarations() {
             "su",
         ),
         ("(str $HO", Kind::Variable, "$HO"),
+        (
+            "[",
+            Kind::Path {
+                directories_only: false,
+            },
+            "",
+        ),
+        (
+            "{",
+            Kind::Path {
+                directories_only: false,
+            },
+            "",
+        ),
+        (
+            "[st",
+            Kind::Path {
+                directories_only: false,
+            },
+            "st",
+        ),
+        (
+            "{st",
+            Kind::Path {
+                directories_only: false,
+            },
+            "st",
+        ),
+        (
+            "[; st",
+            Kind::Path {
+                directories_only: false,
+            },
+            "st",
+        ),
+        (
+            "{key [a] st",
+            Kind::Path {
+                directories_only: false,
+            },
+            "st",
+        ),
+        ("[a] {key $HO", Kind::Variable, "$HO"),
+        ("[a (st", Kind::Command, "st"),
+        ("{key [a]} (st", Kind::Command, "st"),
+        (
+            "(str \"$(eq [a] [a",
+            Kind::Path {
+                directories_only: false,
+            },
+            "a",
+        ),
         ("(str \"$HO", Kind::Variable, "$HO"),
         ("(str \"\"\"$HO", Kind::Variable, "$HO"),
         ("(str \"\"\"$", Kind::Variable, "$"),
@@ -72,6 +124,10 @@ fn context_tracks_lists_comments_and_declarations() {
         "(str \"bad\\q",
         "(str \"unfinished\\",
         "(str x) ",
+        "[a] ",
+        "{key value] (st",
+        "[a) (st",
+        "(; [a (st",
     ] {
         assert!(Context::parse(source, source.len()).is_none(), "{source}");
     }
@@ -169,6 +225,8 @@ fn every_cursor_boundary_in_unfinished_source_is_safe() {
         "(str \"你好 👩‍💻 e\u{301}\" tail)",
         "(do (; \"quotes\\\"\" (nested)) (str $name))",
         "(str \"unterminated\\",
+        "[a {key [\"你好\" (str $name)]} (; ignored) tail]",
+        "[{key [a)}]",
         r#"(str "prefix $名字 $(str "inner $HOME" '(a b)) suffix" tail)"#,
         r#"(str 'raw\n $HOME $(str "inner")' tail)"#,
         r#"(str """你好 "quotes" "" $名字 $(str '''inner''')""" tail)"#,
@@ -199,6 +257,8 @@ fn completed_literals_round_trip_through_the_reader() {
     for text in [
         "a file",
         "a(b)",
+        "a[b]",
+        "a{b}",
         "a\"b",
         "a'b",
         "$literal",

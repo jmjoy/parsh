@@ -93,7 +93,7 @@ impl Quote {
     }
 }
 
-/// An incremental reader. An unexpected top-level ')' is always consumed.
+/// An incremental reader. An unexpected top-level closing delimiter is always consumed.
 pub struct Reader<'a> {
     source: &'a str,
     pub offset: usize,
@@ -109,12 +109,12 @@ impl<'a> Reader<'a> {
         if self.offset == self.source.len() {
             return Read::End;
         }
-        if self.peek() == Some(')') {
+        if let Some(close @ (')' | ']' | '}')) = self.peek() {
             let offset = self.offset;
             self.bump();
             return Read::ExtraClose(Diagnostic {
                 offset,
-                message: "unexpected ')'".into(),
+                message: format!("unexpected '{close}'"),
             });
         }
         match self.expr(0) {
@@ -164,15 +164,31 @@ impl<'a> Reader<'a> {
         }
         let offset = self.offset;
         let kind = match self.bump() {
-            Some('(') => {
+            Some(open @ ('(' | '[' | '{')) => {
+                let close = closing_delimiter(open).unwrap();
                 let mut items = Vec::new();
+                if let Some(constructor) = collection_constructor(open) {
+                    items.push(Expr {
+                        kind: Kind::Word(constructor.into()),
+                        offset,
+                    });
+                }
                 loop {
                     self.space();
                     match self.peek() {
-                        None => return Err(self.error(offset, "unclosed '('", true)),
-                        Some(')') => {
+                        None => {
+                            return Err(self.error(offset, &format!("unclosed '{open}'"), true));
+                        }
+                        Some(ch) if ch == close => {
                             self.bump();
                             break;
+                        }
+                        Some(ch @ (')' | ']' | '}')) => {
+                            return Err(self.error(
+                                self.offset,
+                                &format!("unexpected '{ch}', expected '{close}'"),
+                                false,
+                            ));
                         }
                         _ => {
                             let item = self.expr(depth + 1)?;
@@ -182,7 +198,9 @@ impl<'a> Reader<'a> {
                         }
                     }
                 }
-                if matches!(items.first().map(|e| &e.kind), Some(Kind::Word(s)) if s == ";") {
+                if open == '('
+                    && matches!(items.first().map(|e| &e.kind), Some(Kind::Word(s)) if s == ";")
+                {
                     Kind::Comment
                 } else {
                     Kind::List(items)
@@ -290,7 +308,24 @@ impl<'a> Reader<'a> {
 
 /// Bare words have the same boundaries in the reader and completion scanner.
 pub(crate) fn word_character(ch: char) -> bool {
-    !ch.is_whitespace() && !matches!(ch, '(' | ')' | '"' | '\'')
+    !ch.is_whitespace() && !matches!(ch, '(' | ')' | '[' | ']' | '{' | '}' | '"' | '\'')
+}
+
+pub(crate) fn closing_delimiter(open: char) -> Option<char> {
+    match open {
+        '(' => Some(')'),
+        '[' => Some(']'),
+        '{' => Some('}'),
+        _ => None,
+    }
+}
+
+pub(crate) fn collection_constructor(open: char) -> Option<&'static str> {
+    match open {
+        '[' => Some("list"),
+        '{' => Some("map"),
+        _ => None,
+    }
 }
 
 pub(crate) fn variable_start(ch: char) -> bool {
@@ -316,7 +351,7 @@ pub(crate) fn string_escape(ch: char) -> Option<char> {
     }
 }
 
-/// True only when the source contains one complete list or comment and no tail.
+/// True only when the source contains one complete call, collection or comment and no tail.
 pub fn complete(source: &str) -> bool {
     let mut reader = Reader::new(source);
     matches!(
@@ -331,6 +366,123 @@ pub fn complete(source: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn collection_sugar_preserves_offsets_and_delimits_adjacent_expressions() {
+        let source = " [甲{key $value}(+ 1 2)(; ignored)][]{}tail";
+        let mut reader = Reader::new(source);
+        let Read::Form(expr) = reader.read() else {
+            panic!()
+        };
+        assert_eq!(expr.offset, 1);
+        let Kind::List(items) = expr.kind else {
+            panic!()
+        };
+        assert_eq!(items.len(), 4);
+        assert_eq!(
+            items[0],
+            Expr {
+                kind: Kind::Word("list".into()),
+                offset: 1
+            }
+        );
+        assert_eq!(items[1].kind, Kind::Word("甲".into()));
+        assert_eq!(items[1].offset, source.find('甲').unwrap());
+        let Kind::List(map) = &items[2].kind else {
+            panic!()
+        };
+        assert_eq!(map[0].kind, Kind::Word("map".into()));
+        assert_eq!(map[0].offset, source.find('{').unwrap());
+        assert_eq!(map[1].offset, source.find("key").unwrap());
+        assert_eq!(map[2].kind, Kind::Variable("value".into()));
+        assert_eq!(map[2].offset, source.find('$').unwrap());
+        assert_eq!(items[3].offset, source.find("(+").unwrap());
+        for constructor in ["list", "map"] {
+            let Read::Form(Expr {
+                kind: Kind::List(items),
+                ..
+            }) = reader.read()
+            else {
+                panic!()
+            };
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].kind, Kind::Word(constructor.into()));
+        }
+        assert!(
+            matches!(reader.read(), Read::Form(Expr { kind: Kind::Word(word), .. }) if word == "tail")
+        );
+        assert_eq!(reader.read(), Read::End);
+        assert!(complete("[{key [(+ 1 2)]}]"));
+        assert!(!complete("[]{}"));
+    }
+
+    #[test]
+    fn collection_delimiters_inside_strings_are_literal() {
+        for delimiter in ["'", "\"", "'''", "\"\"\""] {
+            let source = format!("[{delimiter}[{{)}}]{delimiter}]");
+            let Read::Form(Expr {
+                kind: Kind::List(items),
+                ..
+            }) = Reader::new(&source).read()
+            else {
+                panic!("{source}")
+            };
+            assert_eq!(items[1].kind, Kind::Text("[{)}]".into()));
+        }
+    }
+
+    #[test]
+    fn collection_delimiters_report_unclosed_mismatched_and_extra_closers() {
+        for (open, close) in [('(', ')'), ('[', ']'), ('{', '}')] {
+            let source = format!("{open}甲");
+            assert_eq!(
+                Reader::new(&source).read(),
+                Read::Incomplete(Diagnostic {
+                    offset: 0,
+                    message: format!("unclosed '{open}'")
+                })
+            );
+            for wrong in [')', ']', '}'].into_iter().filter(|&ch| ch != close) {
+                let source = format!("{open}甲{wrong}");
+                assert_eq!(
+                    Reader::new(&source).read(),
+                    Read::Error(Diagnostic {
+                        offset: source.find(wrong).unwrap(),
+                        message: format!("unexpected '{wrong}', expected '{close}'"),
+                    })
+                );
+            }
+        }
+        assert!(matches!(Reader::new("(; [a)").read(), Read::Error(_)));
+        let mut reader = Reader::new("]})[]");
+        for (offset, close) in [']', '}', ')'].into_iter().enumerate() {
+            assert_eq!(
+                reader.read(),
+                Read::ExtraClose(Diagnostic {
+                    offset,
+                    message: format!("unexpected '{close}'"),
+                })
+            );
+        }
+        assert!(matches!(reader.read(), Read::Form(_)));
+        assert_eq!(reader.read(), Read::End);
+    }
+
+    #[test]
+    fn collections_share_the_reader_depth_limit() {
+        for (open, close) in [("[", "]"), ("{", "}")] {
+            assert!(complete(&format!(
+                "{}{}",
+                open.repeat(256),
+                close.repeat(256)
+            )));
+            let source = format!("{}{}", open.repeat(257), close.repeat(257));
+            assert!(
+                matches!(Reader::new(&source).read(), Read::Error(diagnostic)
+                if diagnostic.message.contains("nesting exceeds 256"))
+            );
+        }
+    }
 
     #[test]
     fn comments_are_structural_and_discarded() {

@@ -90,7 +90,12 @@ impl Editing {
         let start = yank.range.start;
         // This is an edit, not typed input: a yanked ')' must never submit.
         if yank.empty {
-            input.explicit = yank.explicit || text.trim_start().starts_with('(');
+            input.explicit = yank.explicit
+                || text
+                    .trim_start()
+                    .chars()
+                    .next()
+                    .is_some_and(|ch| closing_delimiter(ch).is_some());
         }
         input.body.replace_range(yank.range, text);
         input.cursor = start + text.len();

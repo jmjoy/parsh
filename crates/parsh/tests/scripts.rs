@@ -112,6 +112,21 @@ fn maps_capture_commands_and_expand_only_explicit_key_and_value_lists() {
 }
 
 #[test]
+fn collection_sugar_captures_commands_and_expands_list_arguments() {
+    let output = run(r#"
+        []{}
+        (let config {(printf name) (printf 'parsh\n\n') items [(printf 'a b') second]})
+        (printf "<%s>\n" (mget config name) (mget config items))
+        (if (eq [one {key [two]}] (list one (map key (list two))))
+            (echo equivalent)
+            (exit 9))
+    "#);
+    success(&output);
+    assert_eq!(stdout(&output), "<parsh>\n<a b>\n<second>\nequivalent\n");
+    assert!(stderr(&output).is_empty());
+}
+
+#[test]
 fn type_reports_builtins_functions_and_external_commands_without_running_them() {
     let directory = tempfile::tempdir().unwrap();
     let executable = directory.path().join("type-probe");
@@ -776,6 +791,16 @@ fn extra_closers_recover_and_are_reported_even_after_runtime_failure() {
     assert_eq!(stderr(&output).matches("unexpected ')'").count(), 2);
     assert!(stderr(&output).contains("-c:1:9:"));
     assert!(stderr(&output).contains("-c:1:10:"));
+    let output = run("[a]]} (echo recovered)");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout(&output), "recovered\n");
+    assert!(stderr(&output).contains("-c:1:4: unexpected ']'"));
+    assert!(stderr(&output).contains("-c:1:5: unexpected '}'"));
+    let output = run("(false)]} (echo bad)");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert!(stderr(&output).contains("unexpected ']'"));
+    assert!(stderr(&output).contains("unexpected '}'"));
     let output = run("(false))) (echo bad)");
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
@@ -862,7 +887,9 @@ fn cli_passes_all_arguments_after_source_or_script_unchanged() {
     assert!(output.stdout.is_empty());
     let output = invoke(&["-c", "--help"], "");
     assert_eq!(output.status.code(), Some(2));
-    assert!(stderr(&output).contains("top-level expressions must be parenthesized"));
+    assert!(
+        stderr(&output).contains("top-level expressions must be calls or collection expressions")
+    );
 }
 
 #[test]
@@ -886,6 +913,10 @@ fn malformed_input_and_recursion_have_bounded_failures() {
     for source in [
         "(echo \"unclosed)",
         "(; unclosed",
+        "[a",
+        "{key value",
+        "[a}",
+        "{key value)",
         "(echo $missing)",
         "(defn f () (f)) (f)",
     ] {

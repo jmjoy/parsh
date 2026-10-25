@@ -325,6 +325,37 @@ fn paths_respect_working_directory_hidden_files_and_directory_only_cd() {
 }
 
 #[test]
+fn collection_arguments_complete_paths_and_quote_delimiters_without_running() {
+    for (source, completed, close, expected) in [
+        ("[squ", "[\"square[1]\" ", "]", r#"("square[1]")"#),
+        (
+            "{key cu",
+            "{key \"curly{1}\" ",
+            "}",
+            r#"(map "key" "curly{1}")"#,
+        ),
+        ("[; squ", "[; \"square[1]\" ", "]", r#"(";" "square[1]")"#),
+    ] {
+        let host = TestHost::default();
+        host.paths.borrow_mut().extend([
+            "/home/playground/square[1]".into(),
+            "/home/playground/curly{1}".into(),
+        ]);
+        let mut repl = Repl::with_host(host.clone()).unwrap();
+        repl.paste(source);
+        repl.input(Key::Tab);
+        assert_eq!(repl.session.input.body, completed);
+        assert_eq!(host.runs.get(), 0);
+        repl.paste(close);
+        assert!(
+            repl.input(Key::Enter)
+                .contains(&Event::Value(expected.into()))
+        );
+        assert_eq!(host.runs.get(), 0);
+    }
+}
+
+#[test]
 fn paths_with_quotes_whitespace_and_dollar_signs_remain_literal_values() {
     let host = TestHost::default();
     let mut repl = Repl::with_host(host.clone()).unwrap();

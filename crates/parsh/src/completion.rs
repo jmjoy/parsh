@@ -126,7 +126,7 @@ impl Context {
             found: false,
             context: None,
         };
-        scanner.scan(0, false, false);
+        scanner.scan(0, None, false);
         scanner.context
     }
 }
@@ -152,19 +152,25 @@ impl Scanner<'_> {
     }
 
     fn list(&mut self, depth: usize, count_parent: bool) {
+        let open = self.peek().unwrap();
+        let close = reader::closing_delimiter(open).unwrap();
         let parameters = count_parent
             && self.frames.last().is_some_and(|parent| {
                 parent.parameters || (parent.head.as_deref() == Some("defn") && parent.items == 2)
             });
-        self.frames.push(Frame {
+        let mut frame = Frame {
             parameters,
             ..Frame::default()
-        });
+        };
+        if let Some(constructor) = reader::collection_constructor(open) {
+            frame.word(constructor.into(), false);
+        }
+        self.frames.push(frame);
         self.offset += 1;
-        self.scan(depth + 1, true, count_parent);
+        self.scan(depth + 1, Some(close), count_parent);
     }
 
-    fn scan(&mut self, depth: usize, nested: bool, count_parent: bool) {
+    fn scan(&mut self, depth: usize, close: Option<char>, count_parent: bool) {
         if depth >= 256 {
             self.found = true;
             return;
@@ -173,15 +179,17 @@ impl Scanner<'_> {
             if self.found {
                 return;
             }
-            if self.offset == self.cursor && (ch.is_whitespace() || matches!(ch, '(' | ')')) {
+            if self.offset == self.cursor
+                && (ch.is_whitespace() || matches!(ch, '(' | ')' | '[' | ']' | '{' | '}'))
+            {
                 self.context(self.cursor..self.cursor, String::new(), Quote::None, false);
                 return;
             }
             match ch {
                 ch if ch.is_whitespace() => self.offset += ch.len_utf8(),
-                '(' => self.list(depth, true),
-                ')' => {
-                    if !nested {
+                '(' | '[' | '{' => self.list(depth, true),
+                ')' | ']' | '}' => {
+                    if close != Some(ch) {
                         self.found = true;
                         return;
                     }

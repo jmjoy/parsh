@@ -7,7 +7,7 @@ export default {
     { include: "#comment" },
     { include: "#string" },
     {
-      begin: "(\\()(defn)\\s+([^\\s()\"'$]+)\\s+(\\()",
+      begin: "(\\()(defn)\\s+([^\\s()\\[\\]{}\"'$]+)\\s+(\\()",
       beginCaptures: {
         1: { name: "punctuation.section.parens.parsh" },
         2: { name: "keyword.control.parsh" },
@@ -19,29 +19,29 @@ export default {
       patterns: [
         { include: "#comment" },
         { include: "#string" },
-        { name: "variable.parameter.parsh", match: "[^\\s()\"']+" },
+        { name: "variable.parameter.parsh", match: "[^\\s()\\[\\]{}\"']+" },
       ],
     },
     {
-      match: "(\\()(let|set|for|export|mget|mset|mdel|mhas|mkeys|mvals|mlen)\\s+([^\\s()\"'$]+)",
+      match: "(\\()(let|set|for|export|mget|mset|mdel|mhas|mkeys|mvals|mlen)\\s+([^\\s()\\[\\]{}\"'$]+)",
       captures: {
         1: { name: "punctuation.section.parens.parsh" },
         2: { name: "keyword.control.parsh" },
         3: { name: "variable.other.parsh" },
       },
     },
-    { name: "variable.other.parsh", match: "\\$[^\\s()\"']+" },
+    { name: "variable.other.parsh", match: "\\$[^\\s()\\[\\]{}\"']+" },
     {
       name: "keyword.control.parsh",
       match:
-        "(?<=\\()(?:do|let|set|get|if|for|while|break|continue|defn|list|map|mget|mset|mdel|mhas|mkeys|mvals|mlen|str|eq|not|glob|cd|export|exit|type)(?=[\\s)])",
+        "(?<=\\()(?:do|let|set|get|if|for|while|break|continue|defn|list|map|mget|mset|mdel|mhas|mkeys|mvals|mlen|str|eq|not|glob|cd|export|exit|type)(?=[\\s()\\[\\]{}\"'])",
     },
     {
       name: "keyword.operator.parsh",
-      match: "(?<=\\()(?:[+*/=-]|!=|[<>]=?|\\|[12]?>?>?|<\\|)(?=[\\s)])",
+      match: "(?<=\\()(?:[+*/=-]|!=|[<>]=?|\\|[12]?>?>?|<\\|)(?=[\\s()\\[\\]{}\"'])",
     },
-    { name: "entity.name.function.parsh", match: "(?<=\\()[^\\s()\"'$]+" },
-    { name: "punctuation.section.parens.parsh", match: "[()]" },
+    { name: "entity.name.function.parsh", match: "(?<=\\()[^\\s()\\[\\]{}\"'$]+" },
+    { name: "punctuation.section.parens.parsh", match: "[()\\[\\]{}]" },
   ],
   repository: {
     string: {
@@ -110,7 +110,7 @@ export default {
     },
     comment: {
       name: "comment.block.parsh",
-      begin: "\\(\\s*;(?=[\\s()\"']|$)",
+      begin: "\\(\\s*;(?=[\\s()\\[\\]{}\"']|$)",
       end: "\\)",
       patterns: [{ include: "#string" }, { include: "#comment-body" }],
     },

@@ -32,6 +32,33 @@ The interactive results are `true`, `true`, and `("a" "b c" true)`. Text is disp
 Maps have text keys and preserve insertion order. See [maps](/parsh/en/docs/variables/#maps)
 for construction, lookup, and update commands.
 
+## Collection shorthand
+
+`[...]` is shorthand for `(list ...)`, and `{...}` is shorthand for `(map ...)`:
+
+```parsh
+[]
+[one "two words" (eq a a)]
+{}
+{name parsh items [one two] nested {enabled (eq a a)}}
+(let items [a (; ignored) b])
+```
+
+Elements are separated by whitespace. Maps take alternating keys and values,
+with the same text-key and duplicate-key rules as `map`. Elements, keys, and values
+evaluate once from left to right. Collections can nest and appear anywhere a call can.
+Interactive results keep their existing format: `("one" "two words" true)` and `(map ...)`.
+
+All three delimiter pairs, `()`, `[]`, and `{}`, must match, including inside
+structured comments. Only `(; ...)` introduces a comment; `[; a]` contains two text values.
+Outside strings, brackets and braces delimit expressions even without whitespace.
+Quote literal text and glob patterns containing them, for example `(glob 'file[12].txt')`.
+Brackets and braces inside strings are ordinary text, and `${name}` remains literal text.
+
+At the prompt, type or paste a collection directly. Enter can supply one final
+matching `]` or `}` when that completes the entire input; unfinished nested structures
+continue on a new line. The gray closing delimiter is only a display hint until submission.
+
 ## Strings and interpolation
 
 ```parsh

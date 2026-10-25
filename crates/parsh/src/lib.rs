@@ -15,7 +15,7 @@ mod streams;
 use reader::{Diagnostic, Kind, Read, Reader};
 use shell::Shell;
 
-/// Execute incrementally, recovering extra ')' one character at a time.
+/// Execute incrementally, recovering extra closing delimiters one character at a time.
 /// A runtime failure disables further evaluation, but the reader keeps diagnosing.
 pub fn run_source(shell: &mut Shell, name: &str, source: &str) -> i32 {
     let mut reader = Reader::new(source);
@@ -33,7 +33,9 @@ pub fn run_source(shell: &mut Shell, name: &str, source: &str) -> i32 {
                         "{}",
                         Diagnostic {
                             offset: expr.offset,
-                            message: "top-level expressions must be parenthesized calls".into()
+                            message:
+                                "top-level expressions must be calls or collection expressions"
+                                    .into()
                         }
                         .render(name, source)
                     );
