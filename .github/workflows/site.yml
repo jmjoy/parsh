@@ -60,8 +60,22 @@ jobs:
         run: |
           pnpm check
           pnpm build
-      - name: Install test browser
-        run: pnpm --filter parsh-website exec playwright install --with-deps chromium
+      # Runner images already ship Chrome and Chromium, and playwright.config.ts
+      # feeds PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH into launchOptions.executablePath,
+      # so CI never downloads a browser: no CDN hop, no ~273 MB cache entry.
+      # Trade-off: the browser version tracks the image (rebuilt weekly) instead of
+      # the Playwright release. If the image ever drops both, fall back to
+      # `playwright install --only-shell chromium` here.
+      - name: Use preinstalled browser
+        run: |
+          browser=$(command -v google-chrome || command -v chromium || true)
+          if [ -z "$browser" ]; then
+            echo "no preinstalled Chrome/Chromium, installing Playwright headless shell"
+            pnpm --filter parsh-website exec playwright install --only-shell chromium
+          else
+            echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$browser" >> "$GITHUB_ENV"
+            "$browser" --version
+          fi
       - name: Test production website
         run: pnpm test
       - name: Upload browser diagnostics
