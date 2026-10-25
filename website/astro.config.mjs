@@ -59,6 +59,11 @@ export default defineConfig({
               translations: { "zh-CN": "变量与作用域" },
             },
             {
+              slug: "docs/stdlib",
+              label: "Standard library",
+              translations: { "zh-CN": "基础库" },
+            },
+            {
               slug: "docs/control-flow",
               label: "Functions & control flow",
               translations: { "zh-CN": "函数与控制流" },

@@ -2048,6 +2048,9 @@ mod completion_tests;
 mod loop_tests;
 
 #[cfg(test)]
+mod language_tests;
+
+#[cfg(test)]
 mod macro_tests;
 
 #[cfg(test)]

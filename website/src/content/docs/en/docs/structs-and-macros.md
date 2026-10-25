@@ -93,9 +93,23 @@ compares them by syntax, and the interactive prompt prints them as source.
 Unquote accepts a quoted form or a scalar value. Splicing accepts a quoted list
 form or a list of quoted forms.
 
+## Optional and rest macro parameters
+
+```parsh
+(defmacro when (condition &rest body)
+  `(if ,$condition (do ,@$body)))
+(when (eq a a) (str first) (str last))
+```
+
+Explicit macro arguments remain unevaluated forms. `&rest` collects a list of
+forms; omitted `&optional` defaults run during macro execution and can read
+preceding parameters. Bare optional parameters default to nil. Return in a macro
+body returns its expansion; return, break, and continue in expanded code act on
+the caller's function or loop.
+
 ## Limits
 
-- Macro parameters use the same fixed arity as `defn`; there is no rest argument.
+- Macro parameters support `&optional` and `&rest` like functions; arguments remain unevaluated forms.
 - Macros and structs are defined globally, even inside a function body.
 - There is no hygiene: templates insert forms verbatim into the caller scope.
 - Macros and struct members cannot be used as pipeline stages.

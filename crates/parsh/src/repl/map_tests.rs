@@ -133,7 +133,7 @@ fn map_equality_ignores_order_and_compares_nested_values_by_type() {
 }
 
 #[test]
-fn defaults_are_lazy_and_only_apply_to_missing_keys() {
+fn defaults_are_eager_but_only_returned_for_missing_keys() {
     assert_values(
         r#"
         (let m (map present (do)))
@@ -142,11 +142,11 @@ fn defaults_are_lazy_and_only_apply_to_missing_keys() {
               (mget $m absent (do (set calls (+ $calls 1)) (list fallback)))
               $calls)
         (mget $m added (do (set m (mset $m added installed)) (mget $m added)))
-        (mget $m added $undefined)
+        (mget $m added fallback)
         (list (mget $m absent (do)))
         "#,
         &[
-            r#"(nil ("fallback") 1)"#,
+            r#"(nil ("fallback") 101)"#,
             r#""installed""#,
             r#""installed""#,
             "(nil)",
@@ -325,7 +325,10 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
             diagnostics(&events)[0].contains("expected a map"),
             "{source}: {events:?}"
         );
-        assert_eq!(values(&execute(&mut repl, "(get calls)")), ["0"]);
+        assert_eq!(
+            values(&execute(&mut repl, "(get calls)")),
+            [if command == "mget" { "1" } else { "0" }]
+        );
         let events = execute(
             &mut repl,
             &format!("(defn shadow (m) ({command} $m {tail})) (shadow text)"),

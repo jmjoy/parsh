@@ -996,3 +996,76 @@ fn struct_and_macro_failures_stop_scripts_with_language_status() {
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("unquote is only valid inside a quasiquote"));
 }
+
+#[test]
+fn logical_functions_handle_command_status_and_preserve_fail_fast_bodies() {
+    let output = run(r#"
+        (if (and (true) (not (false))) (printf and-ok))
+        (if (or (false) (true)) (printf or-ok))
+        (let invert (function not))
+        (if ($invert (false)) (printf ref-ok))
+        (defn optional (&optional (x (false))) $x)
+        (if (and (false) (optional)) (printf unreachable))
+        (if (or (true) (optional)) (printf skipped))
+    "#);
+    success(&output);
+    assert_eq!(stdout(&output), "and-okor-okref-okskipped");
+    let output = run("(defn fail () (false) (true)) (if (or (fail) (true)) (echo wrong))");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).is_empty());
+}
+
+#[test]
+fn function_values_capture_command_output_and_return_across_redirections() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (defn captured ()
+          (printf ignored)
+          (return (printf returned))
+          (exit 9))
+        (printf "<%s>\n" (captured) ((function captured))
+                (apply (function captured) []))
+        (defn redirected () (|> output.txt (return (list one two))) (exit 9))
+        (printf "<%s>\n" (redirected))
+        (apply (function cd) [.])
+        (printf "<%s>\n" (apply (function glob) ['*.txt']))
+        (printf "<%s>\n" (apply (function type) [-t fn lget round]))
+        (printf "<%s>\n" (sjoin (slines (printf ' a\nb\n')) ','))
+    "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "<returned>\n<returned>\n<returned>\n<one>\n<two>\n<output.txt>\n<builtin\nbuiltin\nbuiltin>\n< a,b>\n"
+    );
+    assert!(
+        fs::read(directory.path().join("output.txt"))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn eager_defaults_fail_even_when_the_requested_entry_exists() {
+    for source in [
+        "(mget {key value} key (sh -c 'exit 7')) (echo wrong)",
+        "(lget [value] 0 (sh -c 'exit 7')) (echo wrong)",
+        "((function mget) {key value} key (sh -c 'exit 7')) (echo wrong)",
+        "(apply (function lget) [[value] 0 (sh -c 'exit 7')]) (echo wrong)",
+    ] {
+        let output = run(source);
+        assert_eq!(
+            output.status.code(),
+            Some(7),
+            "{source}: {}",
+            stderr(&output)
+        );
+        assert!(stdout(&output).is_empty());
+    }
+}

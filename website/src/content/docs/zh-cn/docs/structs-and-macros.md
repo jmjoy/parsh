@@ -84,9 +84,21 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 
 unquote 接受被引用的表单或标量值；splicing 接受被引用的列表表单，或者由被引用表单组成的列表。
 
+## 可选与剩余宏参数
+
+```parsh
+(defmacro when (condition &rest body)
+  `(if ,$condition (do ,@$body)))
+(when (eq a a) (str first) (str last))
+```
+
+宏的显式实参保持为 Form，不会提前求值。`&rest` 收集 Form 列表，`&optional` 的缺省表达式
+在宏执行时求值，可引用此前参数；裸可选参数缺省为 nil。宏体中的 return 提前返回展开表单，
+展开代码中的 return、break、continue 则作用于调用方的函数或循环。
+
 ## 限制
 
-- 宏参数与 `defn` 一样是固定个数，没有剩余参数。
+- 宏参数支持与函数相同的 `&optional` 和 `&rest`；实参保留为未求值的 Form。
 - 宏和结构体是全局定义，即使写在函数体内也一样。
 - 没有卫生性（hygiene）：模板会把表单原样插入调用方作用域。
 - 宏和结构体成员不能作为管道阶段。

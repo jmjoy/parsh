@@ -139,9 +139,9 @@ fn single_command_completes_without_running_or_changing_status_and_history() {
 #[test]
 fn syntax_only_completion_uses_available_builtins_and_current_functions() {
     let mut repl = Repl::new();
-    type_text(&mut repl, "st");
+    type_text(&mut repl, "sli");
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, "str ");
+    assert_eq!(repl.session.input.body, "slines ");
     repl.input(Key::ClearInput);
     execute(&mut repl, "(defn tab-function () (str result))");
     type_text(&mut repl, "tab-f");
@@ -160,9 +160,9 @@ fn syntax_only_completion_uses_available_builtins_and_current_functions() {
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "cd");
     repl.input(Key::ClearInput);
-    type_text(&mut repl, "ty");
+    type_text(&mut repl, "typeo");
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, "type ");
+    assert_eq!(repl.session.input.body, "typeof ");
 }
 
 #[test]
@@ -171,7 +171,6 @@ fn map_commands_complete_value_arguments_without_evaluating() {
     let mut repl = Repl::with_host(host.clone()).unwrap();
     execute(&mut repl, "(let config {key value})");
     for (prefix, command) in [
-        ("ma", "map"),
         ("mg", "mget"),
         ("ms", "mset"),
         ("md", "mdel"),
@@ -192,6 +191,34 @@ fn map_commands_complete_value_arguments_without_evaluating() {
     }
     assert_eq!(host.runs.get(), 0);
     assert_eq!(repl.session.history.entries, ["(let config {key value})"]);
+}
+
+#[test]
+fn new_functions_and_parameter_declarations_complete_without_execution() {
+    let mut repl = Repl::new();
+    execute(&mut repl, "(defn custom-fn () (str result))");
+    for (source, completed) in [
+        ("lapp", "lappend "),
+        ("strim (spli", "strim (spli"),
+        ("function custom-f", "function custom-fn "),
+        ("function mge", "function mget "),
+        ("function defma", "function defma"),
+        ("fn (x &op", "fn (x &optional "),
+        ("defmacro m (x &re", "defmacro m (x &rest "),
+        ("fn (&optional (x (sli", "fn (&optional (x (slines "),
+        ("defn f (&optional (x (sli", "defn f (&optional (x (slines "),
+    ] {
+        repl.input(Key::ClearInput);
+        type_text(&mut repl, source);
+        repl.input(Key::Tab);
+        assert_eq!(repl.session.input.body, completed, "{source}");
+    }
+    repl.input(Key::ClearInput);
+    type_text(&mut repl, "ma");
+    repl.input(Key::Tab);
+    assert_eq!(repl.session.input.body, "ma");
+    let events = repl.input(Key::Tab);
+    assert_eq!(listings(&events)[0], &["map", "map?", "max"]);
 }
 
 #[test]
@@ -423,9 +450,9 @@ fn triple_quoted_completion_preserves_embedded_variables_and_calls() {
         r#"str """prefix "$TAB_NAME"#.len()
     );
     repl.input(Key::ClearInput);
-    type_text(&mut repl, r#"str """$(st"#);
+    type_text(&mut repl, r#"str """$(stri"#);
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, r#"str """$(str "#);
+    assert_eq!(repl.session.input.body, r#"str """$(strim "#);
     type_text(&mut repl, r#"'''inner''')!""""#);
     assert!(
         repl.input(Key::Enter)
@@ -458,9 +485,9 @@ fn quoted_variable_and_expression_completion_preserve_the_surrounding_text() {
     );
     assert_eq!(repl.session.input.cursor, r#"str "prefix $TAB_NAME"#.len());
     repl.input(Key::ClearInput);
-    type_text(&mut repl, r#"str "$(st"#);
+    type_text(&mut repl, r#"str "$(stri"#);
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, r#"str "$(str "#);
+    assert_eq!(repl.session.input.body, r#"str "$(strim "#);
     type_text(&mut repl, r#""inner")!""#);
     assert!(
         repl.input(Key::Enter)
@@ -598,9 +625,9 @@ fn host_lookup_failures_are_quiet_and_do_not_fall_back_to_native_capabilities() 
         assert_eq!(repl.session.input.body, text);
     }
     repl.input(Key::ClearInput);
-    type_text(&mut repl, "st");
+    type_text(&mut repl, "sli");
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, "str ");
+    assert_eq!(repl.session.input.body, "slines ");
 }
 
 #[test]

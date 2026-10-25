@@ -75,6 +75,9 @@ Collection updates return new values instead of mutating old ones:
 (set config (mset $config mode slow))
 ```
 
+Copies of a function retain its identity and captured environment; ordinary
+data updates still return new values.
+
 Functions capture their defining scope, and loops create a fresh scope per
 iteration. This removes a class of questions about where a value was changed,
 and it lets structs and macros compose without aliasing surprises.
@@ -99,7 +102,7 @@ grammar and no quoting layers, so the script reads the way it runs. See
 ## Bounded and documented
 
 The language says what it does not do yet. Pipeline stages accept external
-commands only; macros have fixed arity and no hygiene; nested quasiquotes are
+commands only; macros have no hygiene; nested quasiquotes are
 copied literally; background jobs and library imports are future work. Exit
 codes and diagnostic positions are stable enough to depend on: language errors
 use `2`, a missing program `127`, permission denied `126`. See

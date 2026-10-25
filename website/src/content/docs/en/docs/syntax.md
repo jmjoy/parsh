@@ -189,3 +189,5 @@ A list whose first word is `;` is discarded by the reader, wherever it occurs.
 Comment contents still follow the string and balanced-parenthesis rules, but
 are never evaluated or checked for defined names. Elsewhere, `;` is ordinary
 text; there are no line comments. A quoted `";"` is not a comment marker.
+
+See the [standard library](/parsh/en/docs/stdlib/) for list, text, type, and numeric helpers.

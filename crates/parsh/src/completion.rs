@@ -24,6 +24,8 @@ impl Candidate {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
     Command,
+    Function,
+    ParameterMarker,
     Path { directories_only: bool },
     Variable,
 }
@@ -43,19 +45,25 @@ struct Frame {
     items: usize,
     comment: bool,
     parameters: bool,
+    optional_section: bool,
+    optional_pair: bool,
 }
 
 impl Frame {
     fn declaration(&self) -> bool {
         self.parameters
+            || (self.optional_pair && self.items == 0)
             || (self.items == 1
                 && matches!(
                     self.head.as_deref(),
-                    Some("let" | "set" | "export" | "for" | "defn")
+                    Some("let" | "set" | "export" | "for" | "defn" | "defmacro" | "defstruct")
                 ))
     }
 
     fn word(&mut self, text: String, quoted: bool) {
+        if self.parameters && !quoted && text == "&optional" {
+            self.optional_section = true;
+        }
         if self.items == 0 {
             self.comment = !quoted && text == ";";
             self.head = Some(text);
@@ -73,13 +81,19 @@ impl Context {
         closed: bool,
     ) -> Option<Self> {
         let frame = frames.last()?;
-        if frames.iter().any(|frame| frame.comment) || frame.declaration() {
+        if frames.iter().any(|frame| frame.comment) {
             return None;
         }
-        let kind = if quote == Quote::None && prefix.starts_with('$') {
+        let kind = if frame.parameters && quote == Quote::None && prefix.starts_with('&') {
+            Kind::ParameterMarker
+        } else if frame.declaration() {
+            return None;
+        } else if quote == Quote::None && prefix.starts_with('$') {
             Kind::Variable
         } else if frame.items == 0 {
             Kind::Command
+        } else if frame.head.as_deref() == Some("function") && frame.items == 1 {
+            Kind::Function
         } else {
             Kind::Path {
                 directories_only: frame.head.as_deref() == Some("cd") && frame.items == 1,
@@ -143,10 +157,19 @@ impl Scanner<'_> {
         let close = reader::closing_delimiter(open).unwrap();
         let parameters = count_parent
             && self.frames.last().is_some_and(|parent| {
-                parent.parameters || (parent.head.as_deref() == Some("defn") && parent.items == 2)
+                (parent.parameters && !parent.optional_section)
+                    || (matches!(parent.head.as_deref(), Some("defn" | "defmacro"))
+                        && parent.items == 2)
+                    || (parent.head.as_deref() == Some("fn") && parent.items == 1)
             });
+        let optional_pair = count_parent
+            && self
+                .frames
+                .last()
+                .is_some_and(|parent| parent.parameters && parent.optional_section);
         let mut frame = Frame {
             parameters,
+            optional_pair,
             ..Frame::default()
         };
         if let Some(constructor) = reader::collection_constructor(open) {
@@ -369,6 +392,11 @@ impl Completion {
         let context = Context::parse(source, cursor)?;
         let mut candidates = match context.kind {
             Kind::Command => shell.completion_commands(&context.prefix),
+            Kind::Function => shell.completion_functions(&context.prefix),
+            Kind::ParameterMarker => ["&optional", "&rest"]
+                .into_iter()
+                .map(Candidate::word)
+                .collect(),
             Kind::Path { directories_only } => {
                 shell.completion_paths(&context.prefix, directories_only, false)
             }

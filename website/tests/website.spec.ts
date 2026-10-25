@@ -75,7 +75,7 @@ test("WASM loads from the project subpath and executes real expressions", async 
   );
 });
 
-test("maps preserve insertion order, value types, and lazy defaults in the browser", async ({ page }) => {
+test("maps preserve insertion order, value types, and eager defaults in the browser", async ({ page }) => {
   await playground(page);
   await execute(page, `
     (let config (map name parsh count (+ 1) nested (map enabled (eq a a))))
@@ -88,7 +88,9 @@ test("maps preserve insertion order, value types, and lazy defaults in the brows
     (set config (mset $config count (+ 2)))
     (list (mkeys $config) (mget $config count) (mlen $config)
           (mhas $config missing) (mget $copy name))
-    (mget $config nested (exit 9))
+    (let defaults (+))
+    (mget $config nested (do (set defaults (+ $defaults 1)) fallback))
+    (list $defaults)
     (mget $config missing (do (set config (mset $config fallback added)) (mget $config fallback)))
     (mvals $config)
     (mget (mset {name literal} name composed) name)
@@ -96,6 +98,7 @@ test("maps preserve insertion order, value types, and lazy defaults in the brows
   await expect(terminal(page)).toContainText('("parsh" "changed-copy" true false)');
   await expect(terminal(page)).toContainText('(("name" "nested" "count") 2 3 false "parsh")');
   await expect(terminal(page)).toContainText('(map "enabled" true)');
+  await expect(terminal(page)).toContainText('(1)');
   await expect(terminal(page)).toContainText('"added"');
   await expect(terminal(page)).toContainText('("updated" (map "enabled" true) 2 "added")');
   await expect(terminal(page)).toContainText('"composed"');
@@ -105,6 +108,35 @@ test("maps preserve insertion order, value types, and lazy defaults in the brows
   await execute(page, '(str "recovered:" (mget $config name))');
   await expect(terminal(page)).toContainText('"recovered:updated"');
   await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
+});
+
+test("function values, optional and rest parameters, and the standard library share WASM semantics", async ({ page }) => {
+  await playground(page);
+  await execute(page, `
+    (defn counter (n)
+      (fn (&optional (step 1) &rest extra)
+        (set n (+ $n $step))
+        (for amount $extra (set n (+ $n $amount)))
+        (return $n)))
+    (let next (counter 10))
+    (list ($next) ($next 2 3) (apply $next []))
+    (let original (ssplit "a,b" ","))
+    (list $original (lappend $original [c d]) (sjoin $original "/"))
+    (list (slen "中文") (sslice "中文abc" 1 3) (quot -7 3) (rem -7 3) (round -2.5))
+    (defmacro when (condition &rest body) \`(if ,$condition (do ,@$body)))
+    (defn find (items) (for item $items (when (eq $item b) (return $item))) (str missing))
+    (find [a b c])
+    (list (apply (function max) [2 3 1]) (function? $next) (typeof (+ 1)))
+  `);
+  await expect(terminal(page)).toContainText("(11 16 17)");
+  await expect(terminal(page)).toContainText('(("a" "b") ("a" "b" ("c" "d")) "a/b")');
+  await expect(terminal(page)).toContainText('(2 "文a" -2 -1 -3)');
+  await expect(terminal(page)).toContainText('"b"');
+  await expect(terminal(page)).toContainText('(3 true "int")');
+  await execute(page, '(mget {key value} key $undefined)');
+  await expect(terminal(page)).toContainText('undefined variable $undefined');
+  await execute(page, '(str recovered-functions)');
+  await expect(terminal(page)).toContainText('"recovered-functions"');
 });
 
 test("collection shorthand supports nested values, Enter submission, and history in the browser", async ({ page }) => {
@@ -338,9 +370,9 @@ test("triple quoted completion preserves delimiters, variables, and raw dollar f
   await page.keyboard.type('"""');
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"value=retained"');
-  await page.keyboard.type('str """$(st');
+  await page.keyboard.type('str """$(stri');
   await page.keyboard.press("Tab");
-  await expect(terminal(page)).toContainText('str """$(str ');
+  await expect(terminal(page)).toContainText('str """$(strim ');
   await page.keyboard.type("'''inner''')!\"\"\"");
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"inner!"');
@@ -361,9 +393,9 @@ test("quoted completion handles interpolation and literal dollar filenames", asy
   await page.keyboard.type('"');
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"value=retained"');
-  await page.keyboard.type('str "$(st');
+  await page.keyboard.type('str "$(stri');
   await page.keyboard.press("Tab");
-  await expect(terminal(page)).toContainText('str "$(str ');
+  await expect(terminal(page)).toContainText('str "$(strim ');
   await page.keyboard.type('"inner")!"');
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"inner!"');

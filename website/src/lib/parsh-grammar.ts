@@ -17,10 +17,19 @@ export default {
       end: "\\)",
       endCaptures: { 0: { name: "punctuation.section.parens.parsh" } },
       patterns: [
-        { include: "#comment" },
-        { include: "#string" },
-        { name: "variable.parameter.parsh", match: "[^\\s()\\[\\]{}\"']+" },
+        { include: "#parameters" },
       ],
+    },
+    {
+      begin: "(\\()(fn)\\s+(\\()",
+      beginCaptures: {
+        1: { name: "punctuation.section.parens.parsh" },
+        2: { name: "keyword.control.parsh" },
+        3: { name: "punctuation.section.parens.parsh" },
+      },
+      end: "\\)",
+      endCaptures: { 0: { name: "punctuation.section.parens.parsh" } },
+      patterns: [{ include: "#parameters" }],
     },
     {
       match: "(\\()(let|set|for|export)\\s+([^\\s()\\[\\]{}\"'$]+)",
@@ -34,7 +43,7 @@ export default {
     {
       name: "keyword.control.parsh",
       match:
-        "(?<=\\()(?:do|let|set|get|if|for|while|break|continue|defn|defmacro|defstruct|quote|quasiquote|unquote-splicing|unquote|list|map|mget|mset|mdel|mhas|mkeys|mvals|mlen|str|eq|not|glob|cd|export|exit|type)(?=[\\s()\\[\\]{}\"'])",
+        "(?<=\\()(?:unquote-splicing|quasiquote|defstruct|scontains|function\\?|continue|function|defmacro|sreplace|unquote|lappend|lconcat|number\\?|struct\\?|status\\?|return|export|lfirst|lslice|sslice|ssplit|slines|typeof|float\\?|empty\\?|while|break|quote|mkeys|mvals|lrest|sjoin|strim|text\\?|bool\\?|list\\?|form\\?|floor|round|apply|defn|glob|exit|type|list|mget|mset|mdel|mhas|mlen|llen|lget|slen|sget|int\\?|map\\?|nil\\?|quot|ceil|let|set|and|for|get|map|str|not|rem|abs|min|max|do|if|or|fn|cd|eq)(?=[\\s()\\[\\]{}\"'])",
     },
     {
       name: "keyword.operator.parsh",
@@ -45,6 +54,24 @@ export default {
     { name: "punctuation.section.parsh", match: "`" },
   ],
   repository: {
+    parameters: {
+      patterns: [
+        { include: "#comment" },
+        { include: "#string" },
+        { name: "keyword.control.parsh", match: "&(?:optional|rest)(?=[\\s()])" },
+        {
+          begin: "(\\()([^\\s()\\[\\]{}\"'$]+)",
+          beginCaptures: {
+            1: { name: "punctuation.section.parens.parsh" },
+            2: { name: "variable.parameter.parsh" },
+          },
+          end: "\\)",
+          endCaptures: { 0: { name: "punctuation.section.parens.parsh" } },
+          patterns: [{ include: "$self" }],
+        },
+        { name: "variable.parameter.parsh", match: "[^\\s()\\[\\]{}\"']+" },
+      ],
+    },
     string: {
       patterns: [
         { include: "#triple-single-string" },

@@ -145,7 +145,7 @@ and produces a type error. In the example, `updated` contains the new name while
 | Command | Result |
 | --- | --- |
 | `(mget $config key)` | Stored value; a missing key is an error |
-| `(mget $config key default)` | Evaluate `default` only if the key is missing |
+| `(mget $config key default)` | Always evaluate `default`; return it if the key is missing |
 | `(mset $config key value)` | New map with the value inserted or replaced |
 | `(mdel $config key)` | New map without the key; a missing key is an error |
 | `(mhas $config key)` | Boolean indicating whether the key exists |
@@ -153,10 +153,12 @@ and produces a type error. In the example, `updated` contains the new name while
 | `(mvals $config)` | List of values in the same order |
 | `(mlen $config)` | Integer entry count |
 
-Arguments evaluate once from left to right after checking argument count. The
-first argument must produce a map before later arguments are evaluated. Updates
-operate on that independent value, even if later arguments change the source
-variable. A stored nil value is present and does not trigger the `mget` default.
+Arguments evaluate once from left to right after checking argument count.
+`mget` evaluates all explicit arguments before checking the map and choosing a
+result. Other map operations require a map before evaluating later arguments.
+Updates operate on that independent value, even if later arguments change the
+source variable. A stored nil value is present and returns nil; an explicit
+default is still evaluated.
 
 Map operations compose directly, for example
 `(mget (mset {name parsh} name other) name)` returns `"other"`.
@@ -217,6 +219,29 @@ Numbers display without quotes; floats retain a decimal point or exponent,
 such as `4.0`. `str`, command arguments, and environment values use that same
 format. Files and `-c` scripts require an explicit command such as `echo` to
 print results.
+
+## Standard library
+
+`and/or` short-circuit from left to right, accept booleans or command statuses,
+and return booleans. `(and)` is true; `(or)` is false. List operations use an `l`
+prefix and text operations an `s` prefix; updates return new values:
+
+```lisp
+(let items (ssplit "a,b,c" ","))
+(lappend $items [d e])
+(lconcat $items [d e])
+(lget $items -1)
+(sjoin (lslice $items 1) " / ")
+(list (quot -7 3) (rem -7 3) (round 2.5) (round -2.5))
+(list (typeof 123) (typeof (+ 123)) (number? (+ 123)) (empty? []))
+```
+
+Text counts Rust `chars()`. Indexing and slicing support negative indices;
+slice bounds are clamped. Explicit defaults in `mget/lget/lfirst/sget` are always
+evaluated as ordinary arguments, including side effects and errors on a hit.
+Defaults declared with `&optional` run only for omitted arguments.
+See the [standard library reference](website/src/content/docs/en/docs/stdlib.md)
+and the runnable [stdlib.parsh](examples/stdlib.parsh) example.
 
 ## Structured comments
 
@@ -372,6 +397,49 @@ if the last stage succeeds (including upstream SIGPIPE). Every stage is reaped.
 `exit` accepts a code from 0 to 255 and exits immediately, including from a
 function or nested expression. Its default is 0.
 
+## Function values and parameters
+
+`fn` creates an anonymous function; `function` explicitly obtains a named user
+function or ordinary builtin as a value. Functions can be stored in collections,
+passed, returned, and called through expressions:
+
+```lisp
+(let inc (fn (x) (+ $x 1)))
+($inc 2)
+((fn (x) (* $x 2)) 3)
+(let add (function +))
+(apply $add 1 [2 3])
+
+(defn sum (first &optional (second 0) &rest more)
+  (let result (+ $first $second))
+  (for n $more (set result (+ $result $n)))
+  (return $result))
+(sum 1 2 3 4)
+```
+
+Parameters appear in this order: required, `&optional`, then `&rest name`.
+An optional bare name defaults to nil. A `(name default)` expression runs only
+when that argument is omitted, once per call, and can read preceding parameters
+and captured bindings. Optional parameters consume positional arguments first;
+remaining arguments form the rest list. A list argument remains one value.
+`apply` expands its final list into arguments, optionally preceded by fixed
+arguments. Values are never parsed or evaluated again.
+
+Ordinary data retains value semantics; copies of a function retain its identity
+and captured environment. `eq` compares function identity. A reference retains
+the definition it obtained, even after that name is redefined. Closures retain
+the defining lexical scope and observe updates made by outer `set` calls.
+Functions display as `<function name>` and cannot implicitly become text,
+external arguments, or environment values. `function` rejects macros, external
+commands, and special forms such as `if`, `and`, and `let`. Ordinary builtins
+include `get`, `not`, numeric and collection operations, `glob`, `cd`, and `type`.
+
+`(return)` returns nil early; `(return expr)` evaluates once and exits the current
+function through loops, nested expressions, and redirections. It does not exit
+the caller. Using return outside a function is an error. Returned command
+expressions use the usual value-position output capture rules. A macro body can
+also return its expansion early; return in expanded code belongs to the caller.
+
 ## Structs
 
 `defstruct` defines a struct type and its fields. It creates a constructor, one
@@ -426,8 +494,8 @@ and `eq` compares them by syntax.
 (begin ((echo one) (echo two)))
 ```
 
-Macro parameters follow the same fixed-arity rules as `defn`, and macros cannot
-appear in pipeline stages. A nested quasiquote is copied literally. Definitions
+Macro parameters support `&optional` and `&rest` like `defn`. Rest arguments are
+lists of unevaluated forms and can be spliced with `,@`. Macros cannot appear in pipeline stages. A nested quasiquote is copied literally. Definitions
 are global, even when they appear inside a function.
 
 ## Interactive editing and paste

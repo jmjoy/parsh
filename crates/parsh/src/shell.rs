@@ -1,9 +1,8 @@
 use std::{
     cell::RefCell,
-    cmp,
     collections::{HashMap, HashSet},
     ffi::OsString,
-    rc::Rc,
+    rc::{Rc, Weak},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -32,8 +31,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod builtins;
+mod functions;
 mod map;
 mod type_command;
+
+use builtins::{Arguments, VALUE_BUILTINS};
+pub use functions::FunctionValue;
+use functions::Parameters;
 
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -44,6 +49,7 @@ pub enum Value {
     Map(IndexMap<String, Value>),
     /// Quoted source, produced by `quote` and `quasiquote`.
     Form(Box<Expr>),
+    Function(FunctionValue),
     Struct {
         name: String,
         fields: IndexMap<String, Value>,
@@ -62,6 +68,7 @@ impl PartialEq for Value {
             (Self::Map(left), Self::Map(right)) => left == right,
             // Forms compare as syntax; the reader offset of every node is irrelevant.
             (Self::Form(left), Self::Form(right)) => expr_eq(left, right),
+            (Self::Function(left), Self::Function(right)) => left == right,
             (
                 Self::Struct {
                     name: left,
@@ -108,6 +115,7 @@ impl Value {
             Self::List(_) => Err("expected a scalar value, got a list".into()),
             Self::Map(_) => Err("expected a scalar value, got a map".into()),
             Self::Form(_) => Err("expected a scalar value, got a form".into()),
+            Self::Function(_) => Err("expected a scalar value, got a function".into()),
             Self::Struct { .. } => Err("expected a scalar value, got a struct".into()),
             Self::Status(_) => Err("a command status cannot be used as text".into()),
         }
@@ -135,6 +143,7 @@ impl Value {
                 format!("({})", parts.join(" "))
             }
             Self::Form(form) => form.source(),
+            Self::Function(function) => function.display(),
             Self::Struct { name, fields } => {
                 let mut parts = vec![name.clone()];
                 parts.extend(fields.values().map(Value::display));
@@ -171,6 +180,7 @@ enum Signal {
     Error(Error),
     Break(Option<Value>),
     Continue,
+    Return(Value),
 }
 
 impl From<Error> for Signal {
@@ -185,6 +195,7 @@ impl Signal {
             Self::Error(error) => error,
             Self::Break(_) => Error::new(expr, "break used outside a loop body"),
             Self::Continue => Error::new(expr, "continue used outside a loop body"),
+            Self::Return(_) => Error::new(expr, "return used outside a function or macro body"),
         }
     }
 }
@@ -233,7 +244,7 @@ impl Scope {
 
 #[derive(Clone)]
 struct Function {
-    parameters: Vec<String>,
+    parameters: Parameters,
     body: Vec<Expr>,
     closure: Env,
 }
@@ -271,7 +282,7 @@ pub struct Shell {
     pub cwd: PathBuf,
     pub environment: HashMap<OsString, OsString>,
     root: Env,
-    functions: HashMap<String, Function>,
+    functions: HashMap<String, FunctionValue>,
     macros: HashMap<String, Function>,
     structs: HashMap<String, StructDef>,
     pub interrupted: Arc<AtomicBool>,
@@ -285,6 +296,9 @@ pub struct Shell {
     depth: usize,
     loop_depth: usize,
     macro_depth: usize,
+    return_depth: usize,
+    // Keep weak references so dropping/resetting a session can break closure cycles.
+    scopes: Vec<Weak<RefCell<Scope>>>,
 }
 
 /// Expansion is recursive; keep the depth small enough for the debug-build stack.
@@ -294,46 +308,28 @@ const BUILTINS: &[&str] = &[
     "do",
     "let",
     "set",
-    "get",
     "if",
+    "and",
+    "or",
     "for",
     "while",
     "break",
     "continue",
+    "return",
     "defn",
+    "fn",
+    "function",
     "defmacro",
     "defstruct",
     "quote",
     "quasiquote",
     "unquote",
     "unquote-splicing",
-    "list",
-    "map",
-    "mget",
-    "mset",
-    "mdel",
-    "mhas",
-    "mkeys",
-    "mvals",
-    "mlen",
-    "str",
-    "eq",
-    "not",
     "glob",
     "cd",
     "export",
     "exit",
     "type",
-    "+",
-    "-",
-    "*",
-    "/",
-    "=",
-    "!=",
-    "<",
-    "<=",
-    ">",
-    ">=",
     "|",
     "|>",
     "|1>",
@@ -345,7 +341,7 @@ const BUILTINS: &[&str] = &[
 ];
 
 fn builtin(name: &str) -> bool {
-    BUILTINS.contains(&name)
+    BUILTINS.contains(&name) || VALUE_BUILTINS.contains(&name)
 }
 
 fn requires_host(name: &str) -> bool {
@@ -386,6 +382,7 @@ impl Shell {
             #[cfg(feature = "native")]
             cwd: PathBuf::new(),
             environment: HashMap::new(),
+            scopes: vec![Rc::downgrade(&root)],
             root,
             functions: HashMap::new(),
             macros: HashMap::new(),
@@ -401,6 +398,7 @@ impl Shell {
             depth: 0,
             loop_depth: 0,
             macro_depth: 0,
+            return_depth: 0,
         }
     }
 
@@ -436,6 +434,7 @@ impl Shell {
     pub(crate) fn completion_commands(&mut self, prefix: &str) -> Vec<Candidate> {
         let mut candidates: Vec<_> = BUILTINS
             .iter()
+            .chain(VALUE_BUILTINS)
             .copied()
             .filter(|name| !self.syntax_only || !requires_host(name))
             .chain(self.functions.keys().map(String::as_str))
@@ -506,6 +505,18 @@ impl Shell {
             .chain(self.environment.keys().filter_map(|name| name.to_str()))
             .filter(|name| variable_name(name))
             .map(|name| format!("${name}"))
+            .filter(|name| name.starts_with(prefix))
+            .map(Candidate::word)
+            .collect()
+    }
+
+    pub(crate) fn completion_functions(&self, prefix: &str) -> Vec<Candidate> {
+        VALUE_BUILTINS
+            .iter()
+            .copied()
+            .chain(["glob", "cd", "type"])
+            .filter(|name| !self.syntax_only || !requires_host(name))
+            .chain(self.functions.keys().map(String::as_str))
             .filter(|name| name.starts_with(prefix))
             .map(Candidate::word)
             .collect()
@@ -674,52 +685,6 @@ impl Shell {
             .ok_or_else(|| Error::new(expr, format!("undefined variable ${name}")))
     }
 
-    fn number(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<Number> {
-        match self.value(expr, env, io)? {
-            Value::Number(number) => Ok(number),
-            Value::Text(text) => {
-                Ok(Number::parse(&text).map_err(|message| Error::new(expr, message))?)
-            }
-            _ => Err(Error::new(expr, "expected a number or numeric text").into()),
-        }
-    }
-
-    fn arithmetic(
-        &mut self,
-        expr: &Expr,
-        operator: &str,
-        args: &[Expr],
-        env: &Env,
-        io: &Io,
-    ) -> EvalResult<Value> {
-        Self::arity(
-            expr,
-            args,
-            usize::from(matches!(operator, "-" | "/")),
-            usize::MAX,
-        )?;
-        let Some(first) = args.first() else {
-            return Ok(Value::Number(Number::Int(i64::from(operator == "*"))));
-        };
-        let mut result = self.number(first, env, io)?;
-        if args.len() == 1 {
-            result = match operator {
-                "-" => result.negate(),
-                "/" => Number::Float(1.0).calculate("/", result),
-                _ => Ok(result),
-            }
-            .map_err(|message| Error::new(first, format!("{operator}: {message}")))?;
-        } else {
-            for arg in &args[1..] {
-                let other = self.number(arg, env, io)?;
-                result = result
-                    .calculate(operator, other)
-                    .map_err(|message| Error::new(arg, format!("{operator}: {message}")))?;
-            }
-        }
-        Ok(Value::Number(result))
-    }
-
     fn condition(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<bool> {
         match self.eval(expr, env, Mode::Condition, io)? {
             Value::Bool(value) => Ok(value),
@@ -796,19 +761,39 @@ impl Shell {
         let Some(head) = items.first() else {
             return Err(Error::new(expr, "empty command").into());
         };
+        let args = &items[1..];
         let name = match &head.kind {
             Kind::Text(name) | Kind::Word(name) => name.clone(),
-            Kind::Variable(_) | Kind::Interpolated(_) => self.scalar(head, env, io)?,
-            _ => {
-                return Err(Error::new(
-                    head,
-                    "command name must be text; user functions are named commands",
-                )
-                .into());
-            }
+            _ => match self.value(head, env, io)? {
+                Value::Function(function) => {
+                    return self.call_function(
+                        expr,
+                        &function,
+                        Arguments::Expressions(args),
+                        env,
+                        mode,
+                        io,
+                    );
+                }
+                value => value.text().map_err(|message| Error::new(head, message))?,
+            },
         };
-        let args = &items[1..];
-        if self.syntax_only && requires_host(&name) {
+        self.eval_named(expr, &name, args, env, mode, io)
+    }
+
+    fn eval_named(
+        &mut self,
+        expr: &Expr,
+        name: &str,
+        args: &[Expr],
+        env: &Env,
+        mode: Mode,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        if VALUE_BUILTINS.contains(&name) {
+            return self.call_builtin(expr, name, Arguments::Expressions(args), env, mode, io);
+        }
+        if self.syntax_only && requires_host(name) {
             return Err(Error::new(
                 expr,
                 format!(
@@ -816,15 +801,8 @@ impl Shell {
                 ),
             ).into());
         }
-        match name.as_str() {
+        match name {
             "do" => self.sequence(args, env, mode, io),
-            "get" => {
-                Self::arity(expr, args, 1, 1)?;
-                let Value::Text(name) = self.value(&args[0], env, io)? else {
-                    return Err(Error::new(&args[0], "get expects a text variable name").into());
-                };
-                Ok(self.variable(&args[0], &name, env)?)
-            }
             "let" | "set" => {
                 Self::arity(expr, args, 2, 2)?;
                 let variable = Self::binding(&args[0])?;
@@ -857,12 +835,55 @@ impl Shell {
                     Ok(Value::Nil)
                 }
             }
+            "and" | "or" => {
+                for arg in args {
+                    let result = self.condition(arg, env, io)?;
+                    if result == (name == "or") {
+                        return Ok(Value::Bool(result));
+                    }
+                }
+                Ok(Value::Bool(name == "and"))
+            }
+            "return" => {
+                Self::arity(expr, args, 0, 1)?;
+                if self.return_depth == 0 {
+                    return Err(
+                        Error::new(expr, "return used outside a function or macro body").into(),
+                    );
+                }
+                let value = if let Some(arg) = args.first() {
+                    self.value(arg, env, io)?
+                } else {
+                    Value::Nil
+                };
+                Err(Signal::Return(value))
+            }
+            "fn" => {
+                Self::arity(expr, args, 2, usize::MAX)?;
+                Ok(Value::Function(FunctionValue::user(
+                    "anonymous",
+                    Function {
+                        parameters: Parameters::parse(&args[0], "function")?,
+                        body: args[1..].to_vec(),
+                        closure: env.clone(),
+                    },
+                )))
+            }
+            "function" => {
+                Self::arity(expr, args, 1, 1)?;
+                let Value::Text(name) = self.value(&args[0], env, io)? else {
+                    return Err(
+                        Error::new(&args[0], "function expects a text function name").into(),
+                    );
+                };
+                Ok(Value::Function(self.function_value(&args[0], &name)?))
+            }
             "while" => {
                 Self::arity(expr, args, 2, usize::MAX)?;
                 let mut result = Value::Nil;
                 while self.condition(&args[0], env, io)? {
                     self.check(expr)?;
-                    let local = Scope::child(env);
+                    let local = self.child_scope(env);
                     match self.loop_body(&args[1..], &local, Mode::Normal, io) {
                         Ok(value) => result = value,
                         Err(Signal::Break(value)) => return Ok(value.unwrap_or(result)),
@@ -897,7 +918,7 @@ impl Shell {
                 let mut result = Value::Nil;
                 for (index, value) in values.into_iter().enumerate() {
                     self.check(expr)?;
-                    let local = Scope::child(env);
+                    let local = self.child_scope(env);
                     local.borrow_mut().variables.insert(variable.into(), value);
                     match self.loop_body(
                         &args[2..],
@@ -950,14 +971,17 @@ impl Shell {
                     )
                     .into());
                 }
-                let names = Self::parameters(&args[1], "function")?;
+                let names = Parameters::parse(&args[1], "function")?;
                 self.functions.insert(
                     function_name.clone(),
-                    Function {
-                        parameters: names,
-                        body: args[2..].to_vec(),
-                        closure: env.clone(),
-                    },
+                    FunctionValue::user(
+                        function_name,
+                        Function {
+                            parameters: names,
+                            body: args[2..].to_vec(),
+                            closure: env.clone(),
+                        },
+                    ),
                 );
                 Ok(Value::Nil)
             }
@@ -980,48 +1004,6 @@ impl Shell {
             "unquote" => Err(Error::new(expr, "unquote is only valid inside a quasiquote").into()),
             "unquote-splicing" => {
                 Err(Error::new(expr, "unquote-splicing is only valid inside a quasiquote").into())
-            }
-            "list" => args
-                .iter()
-                .map(|arg| self.value(arg, env, io))
-                .collect::<Result<Vec<_>, _>>()
-                .map(Value::List),
-            "map" => self.construct_map(expr, args, env, io),
-            "mget" | "mset" | "mdel" | "mhas" | "mkeys" | "mvals" | "mlen" => {
-                self.map_command(expr, &name, args, env, io)
-            }
-            "str" => {
-                let mut result = String::new();
-                for arg in args {
-                    result.push_str(&self.scalar(arg, env, io)?);
-                }
-                Ok(Value::Text(result))
-            }
-            "+" | "-" | "*" | "/" => self.arithmetic(expr, &name, args, env, io),
-            "=" | "!=" | "<" | "<=" | ">" | ">=" => {
-                Self::arity(expr, args, 2, 2)?;
-                let left = self.number(&args[0], env, io)?;
-                let right = self.number(&args[1], env, io)?;
-                let result = match name.as_str() {
-                    "=" => left.equals(right),
-                    "!=" => !left.equals(right),
-                    "<" => left.compare(right).is_some_and(cmp::Ordering::is_lt),
-                    "<=" => left.compare(right).is_some_and(cmp::Ordering::is_le),
-                    ">" => left.compare(right).is_some_and(cmp::Ordering::is_gt),
-                    ">=" => left.compare(right).is_some_and(cmp::Ordering::is_ge),
-                    _ => unreachable!("unknown comparison operator"),
-                };
-                Ok(Value::Bool(result))
-            }
-            "eq" => {
-                Self::arity(expr, args, 2, 2)?;
-                Ok(Value::Bool(
-                    self.value(&args[0], env, io)? == self.value(&args[1], env, io)?,
-                ))
-            }
-            "not" => {
-                Self::arity(expr, args, 1, 1)?;
-                Ok(Value::Bool(!self.condition(&args[0], env, io)?))
             }
             "type" => self.type_command(expr, args, env, mode, io),
             "glob" => {
@@ -1141,7 +1123,7 @@ impl Shell {
                 if self.host.is_some() {
                     Self::arity(expr, args, 2, 2)?;
                     let destination = self.scalar(&args[0], env, io)?;
-                    let file_mode = match name.as_str() {
+                    let file_mode = match name {
                         "<|" => FileMode::Read,
                         "|>>" | "|1>>" | "|2>>" => FileMode::Append,
                         _ => FileMode::Write,
@@ -1153,7 +1135,7 @@ impl Shell {
                         .map_err(|e| Self::host_error(&args[0], e))?;
                     let file = Some(Rc::new(HostFile { handle, host }));
                     let mut redirected = io.clone();
-                    match name.as_str() {
+                    match name {
                         "<|" => redirected.host_input = file,
                         "|2>" | "|2>>" => redirected.host_error = file,
                         _ => redirected.host_output = file,
@@ -1165,7 +1147,7 @@ impl Shell {
                     Self::arity(expr, args, 2, 2)?;
                     let destination = self.scalar(&args[0], env, io)?;
                     let path = self.path(&destination);
-                    let append = matches!(name.as_str(), "|>>" | "|1>>" | "|2>>");
+                    let append = matches!(name, "|>>" | "|1>>" | "|2>>");
                     let file = if name == "<|" {
                         File::open(path)
                     } else {
@@ -1179,7 +1161,7 @@ impl Shell {
                     .map_err(|e| Error::new(&args[0], format!("{name}: {e}")))?;
                     let file = Arc::new(file);
                     let mut redirected = io.clone();
-                    match name.as_str() {
+                    match name {
                         "<|" => redirected.input = Some(file),
                         "|2>" | "|2>>" => redirected.error = Some(file),
                         _ => redirected.output = Output::File(file),
@@ -1228,16 +1210,16 @@ impl Shell {
                 Ok(self.commands(expr, &stages, mode, io)?)
             }
             _ => {
-                if let Some(definition) = self.macros.get(&name).cloned() {
+                if let Some(definition) = self.macros.get(name).cloned() {
                     let call = MacroCall {
                         expr,
-                        name: &name,
+                        name,
                         definition: &definition,
                         args,
                     };
                     return self.expand_macro(&call, env, mode, io);
                 }
-                if let Some(fields) = self.structs.get(&name).map(|def| def.fields.clone()) {
+                if let Some(fields) = self.structs.get(name).map(|def| def.fields.clone()) {
                     Self::arity(expr, args, fields.len(), fields.len())?;
                     let mut values = IndexMap::new();
                     for (field, arg) in fields.into_iter().zip(args) {
@@ -1245,7 +1227,7 @@ impl Shell {
                         values.insert(field, value);
                     }
                     return Ok(Value::Struct {
-                        name,
+                        name: name.into(),
                         fields: values,
                     });
                 }
@@ -1287,60 +1269,14 @@ impl Shell {
                         Value::Struct { name, .. } if name == struct_name
                     )));
                 }
-                if let Some(function) = self.functions.get(&name).cloned() {
-                    Self::arity(
-                        expr,
-                        args,
-                        function.parameters.len(),
-                        function.parameters.len(),
-                    )?;
-                    let mut values = Vec::new();
-                    for arg in args {
-                        values.push(self.value(arg, env, io)?);
-                    }
-                    let local = Scope::child(&function.closure);
-                    local
-                        .borrow_mut()
-                        .variables
-                        .extend(function.parameters.into_iter().zip(values));
-                    let caller_loop_depth = std::mem::take(&mut self.loop_depth);
-                    let result = self.sequence(&function.body, &local, mode, io);
-                    self.loop_depth = caller_loop_depth;
-                    result.map_err(|signal| {
-                        let mut error = signal.into_error(expr);
-                        // Function bodies can originate in a different interactive input.
-                        if !error.exit {
-                            error.message = format!("in {name}: {}", error.message);
-                            error.offset = expr.offset;
-                        }
-                        error.into()
-                    })
+                if let Some(function) = self.functions.get(name).cloned() {
+                    self.call_function(expr, &function, Arguments::Expressions(args), env, mode, io)
                 } else {
-                    let argv = self.argv(&name, args, env, io)?;
+                    let argv = self.argv(name, args, env, io)?;
                     Ok(self.commands(expr, &[argv], mode, io)?)
                 }
             }
         }
-    }
-
-    /// Read a `(name ...)` parameter list of bare variable names.
-    fn parameters(expr: &Expr, label: &str) -> Result<Vec<String>, Error> {
-        let Kind::List(parameters) = &expr.kind else {
-            return Err(Error::new(
-                expr,
-                format!("{label} parameters must be a list of bare variable names"),
-            ));
-        };
-        let mut names = Vec::new();
-        let mut seen = HashSet::new();
-        for parameter in parameters {
-            let name = Self::binding(parameter)?;
-            if !seen.insert(name) {
-                return Err(Error::new(parameter, format!("duplicate parameter {name}")));
-            }
-            names.push(name.into());
-        }
-        Ok(names)
     }
 
     fn defmacro(&mut self, expr: &Expr, args: &[Expr], env: &Env) -> Result<(), Error> {
@@ -1366,7 +1302,7 @@ impl Shell {
         if self.struct_member_kind(name).is_some() {
             return Err(Error::new(&args[0], format!("{name} is a struct member")));
         }
-        let parameters = Self::parameters(&args[1], "macro")?;
+        let parameters = Parameters::parse(&args[1], "macro")?;
         self.macros.insert(
             name.clone(),
             Function {
@@ -1463,25 +1399,19 @@ impl Shell {
             definition,
             args,
         } = *call;
-        Self::arity(
+        definition.parameters.check_arity(expr, args.len())?;
+        let values = args
+            .iter()
+            .map(|arg| Value::Form(Box::new(arg.clone())))
+            .collect();
+        let expansion = self.function_body(
             expr,
-            args,
-            definition.parameters.len(),
-            definition.parameters.len(),
+            &format!("macro {name}"),
+            definition,
+            values,
+            Mode::Normal,
+            io,
         )?;
-        let mut values = Vec::with_capacity(args.len());
-        for arg in args {
-            values.push(Value::Form(Box::new(arg.clone())));
-        }
-        let local = Scope::child(&definition.closure);
-        local
-            .borrow_mut()
-            .variables
-            .extend(definition.parameters.iter().cloned().zip(values));
-        let caller_loop_depth = std::mem::take(&mut self.loop_depth);
-        let expansion = self.sequence(&definition.body, &local, Mode::Normal, io);
-        self.loop_depth = caller_loop_depth;
-        let expansion = expansion.map_err(|signal| Self::macro_signal(signal, expr, name))?;
         let Value::Form(form) = expansion else {
             return Err(Error::new(expr, format!("macro {name} must return a quoted form")).into());
         };
@@ -1499,7 +1429,9 @@ impl Shell {
     }
 
     fn macro_signal(signal: Signal, expr: &Expr, name: &str) -> Signal {
-        let mut error = signal.into_error(expr);
+        let Signal::Error(mut error) = signal else {
+            return signal;
+        };
         // Macro bodies can originate in a different interactive input, but nested
         // expansions of the same error must not pile up prefixes.
         if !error.exit && !error.message.starts_with("in macro ") {
@@ -1851,7 +1783,11 @@ impl Shell {
     }
 
     fn arity(expr: &Expr, args: &[Expr], min: usize, max: usize) -> Result<(), Error> {
-        if args.len() >= min && args.len() <= max {
+        Self::arity_count(expr, args.len(), min, max)
+    }
+
+    fn arity_count(expr: &Expr, count: usize, min: usize, max: usize) -> Result<(), Error> {
+        if count >= min && count <= max {
             Ok(())
         } else {
             let expected = if min == max {
@@ -1863,7 +1799,7 @@ impl Shell {
             };
             Err(Error::new(
                 expr,
-                format!("expected {expected} arguments, got {}", args.len()),
+                format!("expected {expected} arguments, got {count}"),
             ))
         }
     }

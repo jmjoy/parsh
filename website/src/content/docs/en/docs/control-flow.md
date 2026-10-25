@@ -31,6 +31,9 @@ numbers are not implicitly booleans. `do` runs expressions in sequence in the cu
 more body expressions and create a fresh scope per iteration: `let` stays local,
 and `set` can update an outer binding.
 
+`and/or` short-circuit from left to right and return booleans. `(and)` is true;
+`(or)` is false. They accept the same conditions as `if`, including command statuses.
+
 ```parsh
 (let count 0)
 (while (< $count 5)
@@ -61,6 +64,49 @@ When called as a value, stdout is captured throughout the function body: if the
 last expression produces a command status, captured stdout is returned as text;
 otherwise the last typed value is returned. Earlier captured output is not
 printed in that case.
+
+## Function values and parameters
+
+`fn` creates an anonymous function; `function` explicitly obtains a named user
+function or ordinary builtin as a value. Functions can be stored in collections,
+passed, returned, and called through expressions:
+
+```parsh
+(let inc (fn (x) (+ $x 1)))
+($inc 2)
+((fn (x) (* $x 2)) 3)
+(let add (function +))
+(apply $add 1 [2 3])
+
+(defn sum (first &optional (second 0) &rest more)
+  (let result (+ $first $second))
+  (for n $more (set result (+ $result $n)))
+  (return $result))
+(sum 1 2 3 4)
+```
+
+Parameters appear in this order: required, `&optional`, then `&rest name`.
+An optional bare name defaults to nil. A `(name default)` expression runs only
+when that argument is omitted, once per call, and can read preceding parameters
+and captured bindings. Optional parameters consume positional arguments first;
+remaining arguments form the rest list. A list argument remains one value.
+`apply` expands its final list into arguments, optionally preceded by fixed
+arguments. Values are never parsed or evaluated again.
+
+Ordinary data retains value semantics; copies of a function retain its identity
+and captured environment. `eq` compares function identity. A reference retains
+the definition it obtained, even after that name is redefined. Closures retain
+the defining lexical scope and observe updates made by outer `set` calls.
+Functions display as `<function name>` and cannot implicitly become text,
+external arguments, or environment values. `function` rejects macros, external
+commands, and special forms such as `if`, `and`, and `let`. Ordinary builtins
+include `get`, `not`, numeric and collection operations, `glob`, `cd`, and `type`.
+
+`(return)` returns nil early; `(return expr)` evaluates once and exits the current
+function through loops, nested expressions, and redirections. It does not exit
+the caller. Using return outside a function is an error. Returned command
+expressions use the usual value-position output capture rules. A macro body can
+also return its expansion early; return in expanded code belongs to the caller.
 
 ## See the return value
 

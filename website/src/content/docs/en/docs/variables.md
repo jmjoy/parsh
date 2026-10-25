@@ -91,7 +91,7 @@ its old value until the final `set`.
 | Command | Result |
 | --- | --- |
 | `(mget $config key)` | Original value; a missing key is an error |
-| `(mget $config key default)` | Evaluate and return `default` only if the key is missing |
+| `(mget $config key default)` | Always evaluate `default`; return it if the key is missing |
 | `(mset $config key value)` | New map with the value inserted or replaced |
 | `(mdel $config key)` | New map without the key; a missing key is an error |
 | `(mhas $config key)` | Boolean indicating whether the key exists |
@@ -99,12 +99,15 @@ its old value until the final `set`.
 | `(mvals $config)` | Values in the same order, as a list |
 | `(mlen $config)` | Integer entry count |
 
-An existing key with a nil value is still present, so it does not use the default.
+An existing key with a nil value is still present and returns nil; an explicit
+default is still evaluated.
 The default does not handle undefined variables or non-map arguments.
-After checking argument count, arguments evaluate once from left to right. The
-first argument must produce a map before the key and value expressions are
-evaluated. The operation uses that independent map value, even if later expressions
-change the source variable. Invalid keys stop evaluation before the value expression.
+After checking argument count, arguments evaluate once from left to right.
+`mget` evaluates all explicit arguments before checking the map and choosing a
+result. Other map operations check the map before evaluating keys and values.
+The operation uses that independent map value, even if later expressions change
+the source variable. In map construction and `mset`, invalid keys stop evaluation
+before the value expression.
 
 Operations compose directly, without binding intermediate maps:
 
