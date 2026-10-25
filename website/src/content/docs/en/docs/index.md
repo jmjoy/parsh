@@ -22,6 +22,7 @@ The interactive result is `"hello, world"`. Scripts use exactly the same syntax;
 - [Try the language](/parsh/en/playground/) without installing anything.
 - [Learn the syntax](/parsh/en/docs/syntax/) and build up to functions and command composition.
 - [Define structs and macros](/parsh/en/docs/structs-and-macros/) to extend the language itself.
+- Read the [design principles](/parsh/en/docs/design/) behind these choices.
 
 ## AI-friendly
 

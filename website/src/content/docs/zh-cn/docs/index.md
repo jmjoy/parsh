@@ -22,6 +22,7 @@ description: "一个围绕 S 表达式构建的 Linux Shell。"
 - [在线体验语言](/parsh/zh-cn/playground/)，无需安装。
 - [了解语法](/parsh/zh-cn/docs/syntax/)，逐步学习函数与命令组合。
 - [定义结构与宏](/parsh/zh-cn/docs/structs-and-macros/)，扩展语言本身。
+- 阅读这些选择背后的[设计原则](/parsh/zh-cn/docs/design/)。
 
 ## 对 AI 友好
 

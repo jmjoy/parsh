@@ -33,6 +33,11 @@ export default defineConfig({
               translations: { "zh-CN": "项目介绍" },
             },
             {
+              slug: "docs/design",
+              label: "Design principles",
+              translations: { "zh-CN": "设计原则" },
+            },
+            {
               slug: "docs/getting-started",
               label: "Getting started",
               translations: { "zh-CN": "快速开始" },
