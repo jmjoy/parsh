@@ -447,3 +447,24 @@ mod native {
         assert_eq!(names(&mut shell, "(str a"), ["allowed"]);
     }
 }
+
+#[test]
+fn hash_literals_complete_without_becoming_quoted_paths() {
+    let mut shell = Shell::syntax();
+    for source in ["#f", "(list #f", "[#f", "{enabled #f"] {
+        let completion = Completion::query(&mut shell, source, source.len()).unwrap();
+        assert_eq!(completion.context.kind, Kind::Literal);
+        assert_eq!(completion.labels(), ["#false"]);
+        let edit = completion.edit(source).unwrap();
+        assert_eq!(edit.text, "#false ");
+    }
+    let completion = Completion::query(&mut shell, "#", 1).unwrap();
+    assert_eq!(completion.labels(), ["#false", "#nil", "#true"]);
+    for text in ["#1", "#false", "#file"] {
+        let source = literal(text);
+        assert!(
+            matches!(Reader::new(&source).read(), Read::Form(expr) if expr.kind == ExprKind::Text(text.into()))
+        );
+    }
+    assert!(Completion::query(&mut shell, "(; #f", 5).is_none());
+}

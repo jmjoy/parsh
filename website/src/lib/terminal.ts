@@ -17,7 +17,7 @@ const examples: Record<string, string> = {
     '(mkdir -p demo)\n(|> demo/greeting.txt (echo hello))\n(|>> demo/greeting.txt (echo parsh))\n(cat demo/greeting.txt)\n(<| numbers.txt (sort -n))',
   capture:
     '(let here (pwd))\n(echo (str "working in " $here))\n(if (test -f fruits.txt) (echo "found fruits.txt") (echo missing))',
-  hello: '(str "hello, " "parsh")\n(list text "a value with spaces" (eq a a))',
+  hello: '(str "hello, " "parsh")\n(list text "a value with spaces" #true)',
   variables:
     '(let name world)\n(str "hello, " $name)\n(set name parsh)\n(str "hello, " $name)',
   functions:

@@ -30,16 +30,16 @@ fn assert_values(source: &str, expected: &[&str]) {
 fn while_checks_the_condition_once_per_iteration_and_returns_the_last_body_value() {
     assert_values(
         r#"
-        (let checks (+ 0))
-        (let count (+ 0))
+        (let checks #0)
+        (let count #0)
         (list (while (do (set checks (+ $checks 1)) (< $count 3))
                 (set count (+ $count 1))
                 (list $count $checks))
               $count $checks)
-        (list (while (eq a b) $undefined))
+        (list (while #false $undefined))
         (while (< $count 1000) (set count (+ $count 1)) $count)
         "#,
-        &["((3 3) 3 4)", "(nil)", "1000"],
+        &["((#3 #3) #3 #4)", "(#nil)", "#1000"],
     );
 }
 
@@ -50,7 +50,7 @@ fn while_iterations_have_fresh_lexical_scopes_retained_by_closures() {
         &mut repl,
         r#"
         (let name outer)
-        (let count (+ 0))
+        (let count #0)
         (while (< $count 2)
           (set count (+ $count 1))
           (let copy $name)
@@ -77,9 +77,9 @@ fn while_iterations_have_fresh_lexical_scopes_retained_by_closures() {
 #[test]
 fn break_and_continue_preserve_the_last_complete_iteration_or_nil() {
     for (source, expected) in [
-        ("(list (while (eq a a) (break)))", "(nil)"),
-        ("(list (for item (list a b) (break)))", "(nil)"),
-        ("(list (for item (list a b) (continue)))", "(nil)"),
+        ("(list (while #true (break)))", "(#nil)"),
+        ("(list (for item (list a b) (break)))", "(#nil)"),
+        ("(list (for item (list a b) (continue)))", "(#nil)"),
         (
             "(for item (list first second third) (if (eq $item second) (break)) (str $item))",
             r#""first""#,
@@ -89,16 +89,16 @@ fn break_and_continue_preserve_the_last_complete_iteration_or_nil() {
             r#""first""#,
         ),
         (
-            "(let n (+ 0)) (while (< $n 3) (set n (+ $n 1)) (if (= $n 2) (break)) (str $n))",
+            "(let n #0) (while (< $n 3) (set n (+ $n 1)) (if (= $n 2) (break)) (str $n))",
             r#""1""#,
         ),
         (
-            "(let n (+ 0)) (while (< $n 3) (set n (+ $n 1)) (if (> $n 1) (continue)) (str $n))",
+            "(let n #0) (while (< $n 3) (set n (+ $n 1)) (if (> $n 1) (continue)) (str $n))",
             r#""1""#,
         ),
         (
-            "(let n (+ 0)) (list (while (< $n 3) (set n (+ $n 1)) (continue)))",
-            "(nil)",
+            "(let n #0) (list (while (< $n 3) (set n (+ $n 1)) (continue)))",
+            "(#nil)",
         ),
     ] {
         assert_values(source, &[expected]);
@@ -109,15 +109,15 @@ fn break_and_continue_preserve_the_last_complete_iteration_or_nil() {
 fn break_values_preserve_types_and_are_evaluated_exactly_once() {
     for header in ["while (< $n 3)", "for item (list a b c)"] {
         for (value, expected) in [
-            ("(+ 7)", "(7 2)"),
-            ("(list a (+ 2))", r#"(("a" 2) 2)"#),
-            ("(eq a a)", "(true 2)"),
-            ("(do)", "(nil 2)"),
-            ("text", r#"("text" 2)"#),
-            ("(do (set n (+ $n 10)) (list $n))", "((12) 12)"),
+            ("(+ 7)", "(#7 #2)"),
+            ("(list a (+ 2))", r#"(("a" #2) #2)"#),
+            ("(eq a a)", "(#true #2)"),
+            ("(do)", "(#nil #2)"),
+            ("text", r#"("text" #2)"#),
+            ("(do (set n (+ $n 10)) (list $n))", "((#12) #12)"),
         ] {
             let source = format!(
-                "(let n (+ 0)) (list ({header} (set n (+ $n 1)) \
+                "(let n #0) (list ({header} (set n (+ $n 1)) \
                  (if (= $n 2) (break {value})) (str completed)) $n)"
             );
             assert_values(&source, &[expected]);
@@ -130,10 +130,10 @@ fn mixed_nested_loops_target_only_the_nearest_loop() {
     for outer in ["while (< $round 3)", "for outer_item (list a b c)"] {
         for inner in ["while (< $n 5)", "for inner_item (list a b c d e)"] {
             let source = format!(
-                "(let round (+ 0)) (let visits (+ 0)) (let after (+ 0))
+                "(let round #0) (let visits #0) (let after #0)
                  ({outer}
                    (set round (+ $round 1))
-                   (let n (+ 0))
+                   (let n #0)
                    ({inner}
                      (set n (+ $n 1))
                      (if (= $n 2) (continue))
@@ -143,7 +143,7 @@ fn mixed_nested_loops_target_only_the_nearest_loop() {
                    (set after (+ $after 1)))
                  (list $visits $after $round)"
             );
-            assert_values(&source, &["(6 2 3)"]);
+            assert_values(&source, &["(#6 #2 #3)"]);
         }
     }
 }
@@ -153,7 +153,7 @@ fn loop_jumps_unwind_nested_expressions_without_evaluating_the_rest() {
     for jump in ["(break returned)", "(continue)"] {
         for body in [
             format!("(do (str before) {jump} $undefined)"),
-            format!("(if (eq a a) {jump} $undefined)"),
+            format!("(if #true {jump} $undefined)"),
             format!("(str {jump} $undefined)"),
             format!("(list {jump} $undefined)"),
             format!("(+ 1 {jump} $undefined)"),
@@ -168,12 +168,11 @@ fn loop_jumps_unwind_nested_expressions_without_evaluating_the_rest() {
             format!("(while {jump} $undefined)"),
             format!("(for item {jump} $undefined)"),
         ] {
-            let source =
-                format!("(let n (+ 0)) (list (while (< $n 3) (set n (+ $n 1)) {body}) $n)");
+            let source = format!("(let n #0) (list (while (< $n 3) (set n (+ $n 1)) {body}) $n)");
             let expected = if jump.starts_with("(break") {
-                r#"("returned" 1)"#
+                r#"("returned" #1)"#
             } else {
-                "(nil 3)"
+                "(#nil #3)"
             };
             assert_values(&source, &[expected]);
         }
@@ -196,18 +195,18 @@ fn functions_isolate_loop_control_but_arguments_use_the_callers_loop() {
             diagnostics(&events)[0].contains("outside a loop body"),
             "{events:?}"
         );
-        assert_eq!(values(&execute(&mut repl, "(+ 1 2)")), ["3"]);
+        assert_eq!(values(&execute(&mut repl, "(+ 1 2)")), ["#3"]);
     }
     assert_values(
         "(defn inner () (for item (list a b) (break (list $item))))
-         (let n (+ 0))
+         (let n #0)
          (while (< $n 3)
            (set n (+ $n 1)) (inner)
            (if (= $n 1) (continue))
            (break $n))
          (defn unused (arg) (unavailable))
-         (while (eq a a) (unused (break from-argument)))",
-        &["2", r#""from-argument""#],
+         (while #true (unused (break from-argument)))",
+        &["#2", r#""from-argument""#],
     );
 }
 
@@ -215,7 +214,7 @@ fn functions_isolate_loop_control_but_arguments_use_the_callers_loop() {
 fn invalid_loops_and_jumps_report_positions_without_evaluating_arguments() {
     for (source, message, position) in [
         ("(while)", "expected at least 2 arguments", "1:1"),
-        ("(while (eq a a))", "expected at least 2 arguments", "1:1"),
+        ("(while #true)", "expected at least 2 arguments", "1:1"),
         (
             "(while\n (str text)\n (unavailable))",
             "a condition must be a boolean or command status",
@@ -237,7 +236,7 @@ fn invalid_loops_and_jumps_report_positions_without_evaluating_arguments() {
             "2:2",
         ),
         (
-            "(while (eq a a)\n (break a b))",
+            "(while #true\n (break a b))",
             "expected 0..1 arguments",
             "2:2",
         ),
@@ -262,7 +261,7 @@ fn invalid_loops_and_jumps_report_positions_without_evaluating_arguments() {
             "continue used outside a loop body",
             "2:2",
         ),
-        ("(while (eq a a)\n (+ 1 invalid))", "invalid number", "2:7"),
+        ("(while #true\n (+ 1 invalid))", "invalid number", "2:7"),
     ] {
         let mut repl = Repl::new();
         execute(&mut repl, "(let sentinel retained)");
@@ -287,7 +286,7 @@ fn invalid_loops_and_jumps_report_positions_without_evaluating_arguments() {
         assert!(diagnostics(&events)[0].contains("function name is reserved"));
     }
     assert_values(
-        "(if (eq a b) (break)) (if (eq a b) (continue)) (str done)",
+        "(if #false (break)) (if #false (continue)) (str done)",
         &[r#""done""#],
     );
 }
@@ -301,9 +300,7 @@ fn exit_and_interrupts_unwind_loop_context_and_allow_later_execution() {
         expr
     }
     let mut shell = Shell::syntax();
-    let error = shell
-        .execute(&form("(while (eq a a) (exit 7))"))
-        .unwrap_err();
+    let error = shell.execute(&form("(while #true (exit 7))")).unwrap_err();
     assert!(error.exit);
     assert_eq!(error.code, 7);
     let error = shell.execute(&form("(continue)")).unwrap_err();
@@ -321,12 +318,12 @@ fn exit_and_interrupts_unwind_loop_context_and_allow_later_execution() {
         interrupted.store(true, std::sync::atomic::Ordering::Relaxed);
     });
     let error = shell
-        .execute(&form("(while (eq a a) (continue))"))
+        .execute(&form("(while #true (continue))"))
         .unwrap_err();
     thread.join().unwrap();
     assert_eq!(error.code, 130);
     assert!(!error.exit);
     let error = shell.execute(&form("(break)")).unwrap_err();
     assert!(error.message.contains("outside a loop body"));
-    assert_eq!(shell.execute(&form("(+ 1 2)")).unwrap().display(), "3");
+    assert_eq!(shell.execute(&form("(+ 1 2)")).unwrap().display(), "#3");
 }

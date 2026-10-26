@@ -20,6 +20,7 @@ cargo run -- examples/macros.parsh
 | [hello.parsh](hello.parsh) | 脚本参数、函数和命令条件 |
 | [variables.parsh](variables.parsh) | 变量绑定、字符串插值、原样字符串、列表、`get` 和环境变量导出 |
 | [arithmetic.parsh](arithmetic.parsh) | 累加、四则运算、数值比较和文本相等判断 |
+| [literals.parsh](literals.parsh) | `#` 类型字面值、映射及 int/float/bool 显式转换 |
 | [stdlib.parsh](stdlib.parsh) | 不可变列表、字符串、数值函数、闭包、可选与变长参数、return 和宏 |
 | [functions.parsh](functions.parsh) | 递归、词法作用域、不同类型的返回值和函数输出捕获 |
 | [for.parsh](for.parsh) | 列表遍历、`continue`、`break`、外层绑定和嵌套循环 |

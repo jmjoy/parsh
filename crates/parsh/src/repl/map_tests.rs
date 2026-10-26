@@ -32,7 +32,7 @@ fn maps_preserve_value_types_text_keys_and_display_order() {
         r#"
         (map)
         (let key dynamic)
-        (let m (map $key (+ 3) flag (eq a a) nothing (do)
+        (let m (map $key #3 flag #true nothing #nil
                     items (list a b) nested (map x y) "" empty))
         (get m)
         (list (mget $m dynamic) (mget $m flag) (mget $m nothing)
@@ -41,8 +41,8 @@ fn maps_preserve_value_types_text_keys_and_display_order() {
         "#,
         &[
             "(map)",
-            r#"(map "dynamic" 3 "flag" true "nothing" nil "items" ("a" "b") "nested" (map "x" "y") "" "empty")"#,
-            r#"(3 true nil ("a" "b") (map "x" "y") "empty")"#,
+            r#"(map "dynamic" #3 "flag" #true "nothing" #nil "items" ("a" "b") "nested" (map "x" "y") "" "empty")"#,
+            r#"(#3 #true #nil ("a" "b") (map "x" "y") "empty")"#,
             r#"(map "a\$b" "x\$y")"#,
         ],
     );
@@ -70,9 +70,9 @@ fn updates_preserve_order_and_reinsertions_append() {
         &[
             r#"("a" "b" "d")"#,
             r#"("updated" "second" "fourth")"#,
-            "(3 true false)",
+            "(#3 #true #false)",
             r#"("a" "b" "d" "c")"#,
-            "(0 () () (map))",
+            "(#0 () () (map))",
         ],
     );
 }
@@ -102,10 +102,10 @@ fn map_commands_accept_values_and_updates_return_independent_maps() {
             r#""one""#,
             r#"(map "key" "value")"#,
             r#"(map "second" "two")"#,
-            "true",
+            "#true",
             r#"("first" "second" "third")"#,
             r#"("two")"#,
-            "2",
+            "#2",
             r#""value""#,
             r#"((map "first" "one" "second" "two") (map "first" "changed" "second" "two") (map "second" "two"))"#,
             r#"(map "first" "discarded" "second" "two")"#,
@@ -119,16 +119,18 @@ fn map_commands_accept_values_and_updates_return_independent_maps() {
 fn map_equality_ignores_order_and_compares_nested_values_by_type() {
     assert_values(
         r#"
-        (eq (map a (map x (list (+ 1) (eq x x))) b (do))
-            (map b (do) a (map x (list (+ 1) (eq x x)))))
+        (eq (map a (map x (list #1 #true)) b #nil)
+            (map b #nil a (map x (list #1 #true))))
         (eq (list (map a one b two)) (list (map b two a one)))
-        (eq (map a (+ 1)) (map a 1))
-        (eq (map a (+ 1)) (map a (+ 1.0)))
+        (eq (map a #1) (map a 1))
+        (eq (map a #1) (map a #1.0))
         (eq (map a one) (map a two))
         (eq (map a one) (map b one))
         (eq (map) (list))
         "#,
-        &["true", "true", "false", "false", "false", "false", "false"],
+        &[
+            "#true", "#true", "#false", "#false", "#false", "#false", "#false",
+        ],
     );
 }
 
@@ -136,20 +138,20 @@ fn map_equality_ignores_order_and_compares_nested_values_by_type() {
 fn defaults_are_eager_but_only_returned_for_missing_keys() {
     assert_values(
         r#"
-        (let m (map present (do)))
-        (let calls (+ 0))
+        (let m (map present #nil))
+        (let calls #0)
         (list (mget $m present (set calls (+ $calls 100)))
               (mget $m absent (do (set calls (+ $calls 1)) (list fallback)))
               $calls)
         (mget $m added (do (set m (mset $m added installed)) (mget $m added)))
         (mget $m added fallback)
-        (list (mget $m absent (do)))
+        (list (mget $m absent #nil))
         "#,
         &[
-            r#"(nil ("fallback") 101)"#,
+            r#"(#nil ("fallback") #101)"#,
             r#""installed""#,
             r#""installed""#,
-            "(nil)",
+            "(#nil)",
         ],
     );
 }
@@ -217,8 +219,8 @@ fn operands_evaluate_once_in_order_and_use_the_initial_map_value() {
             r#"("mkv" (map "start" "original" "target" "stored") (map "start" "original" "from_key" "key-side" "from_value" "value-side"))"#,
             r#""original""#,
             r#""changed""#,
-            "false",
-            "true",
+            "#false",
+            "#true",
             r#"(map "added" "value")"#,
             r#""scalar""#,
             r#"(map "start" "original" "key" "value")"#,
@@ -273,7 +275,7 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
         let mut repl = Repl::new();
         execute(
             &mut repl,
-            "(let m (map key value)) (let text scalar) (let calls (+ 0))",
+            "(let m (map key value)) (let text scalar) (let calls #0)",
         );
         for (target, message) in [
             ("m", "expected a map"),
@@ -327,7 +329,7 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
         );
         assert_eq!(
             values(&execute(&mut repl, "(get calls)")),
-            [if command == "mget" { "1" } else { "0" }]
+            [if command == "mget" { "#1" } else { "#0" }]
         );
         let events = execute(
             &mut repl,
@@ -344,7 +346,7 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
 #[test]
 fn missing_and_invalid_keys_report_errors_without_overwriting_or_evaluating_values() {
     let mut repl = Repl::new();
-    execute(&mut repl, "(let m (map key value)) (let calls (+ 0))");
+    execute(&mut repl, "(let m (map key value)) (let calls #0)");
     for command in ["mget", "mdel"] {
         let source = format!("(set m ({command} $m missing))");
         let events = execute(&mut repl, &source);
@@ -367,11 +369,11 @@ fn missing_and_invalid_keys_report_errors_without_overwriting_or_evaluating_valu
     }
     assert_eq!(
         values(&execute(&mut repl, "(list $calls $m)")),
-        [r#"(0 (map "key" "value"))"#]
+        [r#"(#0 (map "key" "value"))"#]
     );
     let events = execute(&mut repl, "(mget $missing key (set calls (+ $calls 1)))");
     assert!(diagnostics(&events)[0].contains("undefined variable $missing"));
-    assert_eq!(values(&execute(&mut repl, "(get calls)")), ["0"]);
+    assert_eq!(values(&execute(&mut repl, "(get calls)")), ["#0"]);
 }
 
 #[test]

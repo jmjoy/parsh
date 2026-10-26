@@ -11,10 +11,7 @@ impl Number {
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
         let text = text.trim();
         if text.contains(['.', 'e', 'E']) {
-            let value = text
-                .parse::<f64>()
-                .map_err(|_| format!("invalid number {text:?}"))?;
-            Self::finite(value).map_err(str::to_owned)
+            Self::parse_float(text)
         } else {
             text.parse::<i64>().map(Self::Int).map_err(|error| {
                 if matches!(
@@ -29,11 +26,37 @@ impl Number {
         }
     }
 
-    fn finite(value: f64) -> Result<Self, &'static str> {
+    pub(crate) fn parse_float(text: &str) -> Result<Self, String> {
+        let text = text.trim();
+        let value = text
+            .parse::<f64>()
+            .map_err(|_| format!("invalid number {text:?}"))?;
+        Self::finite(value).map_err(str::to_owned)
+    }
+
+    pub(crate) fn finite(value: f64) -> Result<Self, &'static str> {
         if value.is_finite() {
             Ok(Self::Float(value))
         } else {
             Err("number must be finite")
+        }
+    }
+
+    pub(crate) fn integer(self) -> Result<i64, &'static str> {
+        match self {
+            Self::Int(value) => Ok(value),
+            Self::Float(value) => {
+                if !value.is_finite() {
+                    return Err("number must be finite");
+                }
+                if value.fract() != 0.0 {
+                    return Err("expected an integer value");
+                }
+                if value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
+                    return Err("integer out of range for i64");
+                }
+                Ok(value as i64)
+            }
         }
     }
 

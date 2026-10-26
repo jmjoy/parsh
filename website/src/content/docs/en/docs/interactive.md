@@ -8,6 +8,7 @@ description: "The parenthesis prompt, multiline editing, Tab completion, paste, 
   effective user ID; the browser uses `$ ()`. Parentheses are gray while input
   is blank; the implicit `(` returns to the default color when you start typing.
   The prefix and gray closing hint are display-only.
+- A first non-whitespace `#` switches the current input to direct literal source, hiding the implicit gray parentheses immediately. Deleting the prefix restores command input. Literal history entries keep their exact source and place the cursor at the end. Tab offers `#true`, `#false`, and `#nil`; paths starting with `#` are quoted when inserted.
 - Enter checks the entire edit buffer, wherever the cursor is. Complete source
   executes immediately; otherwise parsh tries appending exactly one `)`. If the
   source is still unfinished, Enter inserts a newline at the cursor. Ctrl+J

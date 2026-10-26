@@ -7,7 +7,7 @@ Every call is a parenthesized expression. Inner calls are evaluated as arguments
 
 ```parsh
 (str "hello, " (str "a " "friend"))
-(list one "two words" (eq a a))
+(list one "two words" #true)
 ```
 
 In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no
@@ -18,19 +18,54 @@ Outside strings, variable references use `$name`. Binding
 and assignment targets use bare names, including function parameters, loop
 bindings, and environment settings.
 
-The reader creates text, variable references, interpolated strings, and lists of expressions. Evaluation can return text, numbers, booleans, lists, maps, nil, or native command statuses. These are different value types even though words such as `true` and `nil` themselves are just text.
+The reader creates text, scalar literals, variable references, interpolated strings, and lists of expressions. Evaluation can return text, numbers, booleans, lists, maps, nil, or native command statuses. These are different value types even though words such as `true` and `nil` themselves are just text.
 
 ```parsh
 (eq true true)
-(not (eq a b))
-(list a "b c" (eq x x))
+(not #false)
+(list a "b c" #true)
 ```
 
-The interactive results are `true`, `true`, and `("a" "b c" true)`. Text is displayed with quotes and escapes; nil is not displayed. A file or `-c` script runs expressions without automatically printing their results.
+The interactive results are `#true`, `#true`, and `("a" "b c" #true)`. Text is displayed with quotes and escapes; nil is not displayed. A file or `-c` script runs expressions without automatically printing their results.
 
 `(map name parsh)` constructs a map and displays as `(map "name" "parsh")`.
 Maps have text keys and preserve insertion order. See [maps](/parsh/en/docs/variables/#maps)
 for construction, lookup, and update commands.
+
+## Scalar literals
+
+Use `#` to create typed scalars: `#1` is an int, `#1.0` and `#1e3` are floats,
+`#true` and `#false` are booleans, and `#nil` is nil. Plain `1`, `false`, and
+`nil` remain text. For example:
+
+```parsh
+(let config {retries #3 timeout #1.5 enabled #false})
+(list (typeof #1) (typeof 1) (eq #1 1))
+```
+
+The list displays as `("int" "text" #false)`. Numeric and boolean results display
+with `#`, including inside collections; nested nil displays as `#nil`. A top-level
+nil result stays silent. `str`, interpolation, external arguments, and environment
+values use ordinary text without the prefix: `(str #1 #false)` returns `"1false"`.
+
+All unquoted words beginning with `#` are reserved. Invalid forms such as `#flase`,
+`#123abc`, or a lone `#` are reader errors. Quote text such as `"#fff"`; `abc#1`
+remains ordinary text. A shebang is allowed at the very start of source. Structured
+comments do not validate `#` literals, but still check strings and balanced delimiters.
+Literal spelling must be contiguous. Numbers use the existing signed decimal,
+fraction, and exponent syntax, with i64 integers and finite f64 floats; integer
+overflow never falls back to floating point. Boolean and nil names are lowercase,
+with no `#t`/`#f` aliases.
+
+Literals can appear directly at the prompt or at script top level. Scripts do not
+print their results automatically. A literal is source syntax: quoted text,
+variable contents, and command output are never parsed again, and `#$name` is not
+a conversion. Use `int`, `float`, or `bool` for runtime conversion.
+
+A command head must evaluate to text or a function. `(#1)` and a numeric variable
+used as a command name are errors; use `str` to explicitly construct a text command
+name. `#false` is an ordinary false value, while `(false)` retains its external
+command failure behavior. Numeric values and nil are not implicit conditions.
 
 ## Collection shorthand
 
@@ -38,16 +73,16 @@ for construction, lookup, and update commands.
 
 ```parsh
 []
-[one "two words" (eq a a)]
+[one "two words" #true]
 {}
-{name parsh items [one two] nested {enabled (eq a a)}}
+{name parsh items [one two] nested {enabled #true}}
 (let items [a (; ignored) b])
 ```
 
 Elements are separated by whitespace. Maps take alternating keys and values,
 with the same text-key and duplicate-key rules as `map`. Elements, keys, and values
 evaluate once from left to right. Collections can nest and appear anywhere a call can.
-Interactive results keep their existing format: `("one" "two words" true)` and `(map ...)`.
+Interactive results keep their existing format: `("one" "two words" #true)` and `(map ...)`.
 
 All three delimiter pairs, `()`, `[]`, and `{}`, must match, including inside
 structured comments. Only `(; ...)` introduces a comment; `[; a]` contains two text values.
@@ -122,20 +157,20 @@ follow the same rule as bare words and quoted strings.
 
 | Expression | Interactive result |
 | --- | --- |
-| `(+ 123 2)` | `125` |
-| `(+ "1.5" 2)` | `3.5` |
-| `(/ 5 2)` | `2.5` |
-| `(/ 8 2)` | `4.0` |
+| `(+ 123 2)` | `#125` |
+| `(+ "1.5" 2)` | `#3.5` |
+| `(/ 5 2)` | `#2.5` |
+| `(/ 8 2)` | `#4.0` |
 | `(str 00123)` | `"00123"` |
-| `(eq (+ 1 2) 3)` | `false` |
-| `(eq (+ 3) (+ 3.0))` | `false` |
-| `(= (+ 1 2) 3)` | `true` |
-| `(= 001 1.0)` | `true` |
-| `(!= 1 1.5)` | `true` |
-| `(< 2 10)` | `true` |
-| `(<= 3 3.0)` | `true` |
-| `(> 10 2)` | `true` |
-| `(>= 2.5 3)` | `false` |
+| `(eq (+ 1 2) 3)` | `#false` |
+| `(eq #3 #3.0)` | `#false` |
+| `(= (+ 1 2) 3)` | `#true` |
+| `(= 001 1.0)` | `#true` |
+| `(!= 1 1.5)` | `#true` |
+| `(< 2 10)` | `#true` |
+| `(<= 3 3.0)` | `#true` |
+| `(> 10 2)` | `#true` |
+| `(>= 2.5 3)` | `#false` |
 
 Text is trimmed and must parse completely. Supported forms include `+001`,
 `-12`, `.5`, `1.`, and `2.5e1`. Integers use `i64`; a decimal point or exponent
@@ -166,9 +201,9 @@ can also lose large integer precision.
 (if (>= $count 3) (str "at least three") (str fewer))
 ```
 
-Numbers display without quotes. Floats retain a decimal point or exponent,
-including `4.0` and `-0.0`; `str`, external command arguments, and environment
-values use the same format. Capturing a command or exporting a number produces
+Numbers display with `#`, and floats retain a decimal point or exponent,
+including `#4.0` and `#-0.0`. `str`, external command arguments, and environment
+values use numeric text without `#`. Capturing a command or exporting a number produces
 text again. Numbers are not implicitly booleans; use a numeric comparison in a condition.
 Invalid operands, division by zero, integer overflow, and non-finite floats
 report a language error at the failing operand with exit status `2`.

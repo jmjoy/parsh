@@ -28,13 +28,13 @@ pub fn run_source(shell: &mut Shell, name: &str, source: &str) -> i32 {
                 if halted || expr.kind == Kind::Comment {
                     continue;
                 }
-                if !matches!(expr.kind, Kind::List(_)) {
+                if !expr.is_top_level() {
                     eprintln!(
                         "{}",
                         Diagnostic {
                             offset: expr.offset,
                             message:
-                                "top-level expressions must be calls or collection expressions"
+                                "top-level expressions must be calls, collection expressions or literals"
                                     .into()
                         }
                         .render(name, source)

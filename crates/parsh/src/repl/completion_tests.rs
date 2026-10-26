@@ -237,7 +237,7 @@ fn loop_builtins_complete_in_commands_and_nested_expressions_without_running() {
         ("wh", "while "),
         ("br", "break "),
         ("cont", "continue "),
-        ("while (eq a a) (br", "while (eq a a) (break "),
+        ("while #true (br", "while #true (break "),
         ("for item (list a) (cont", "for item (list a) (continue "),
     ] {
         let mut repl = Repl::new();

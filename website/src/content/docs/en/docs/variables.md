@@ -15,6 +15,8 @@ bindings, and environment settings. Names start with a letter or `_`, followed
 by letters, digits, or `_`. Binding targets must be bare names, not quoted strings
 or expressions.
 
+Typed scalars use `#1`, `#1.0`, `#true`, `#false`, and `#nil`. Runtime text conversion uses `int`, `float`, and `bool`; see [syntax](/parsh/en/docs/syntax/#scalar-literals) and [conversions](/parsh/en/docs/stdlib/#scalar-conversions).
+
 Values use copy semantics. Reading a variable, assigning a value, or passing a
 function argument copies it, including nested lists and maps. Collection updates
 return new values; use `set` to replace an existing binding.
@@ -74,7 +76,7 @@ before evaluating any arguments; a duplicate key is rejected at its second occur
 before evaluating that key's value.
 
 ```parsh
-(let config (map name parsh version (+ 1) nested (map enabled (eq a a))))
+(let config (map name parsh version #1 nested (map enabled #true)))
 (let updated (mset $config name new-name))
 (mget $config name)
 (mget $updated name)

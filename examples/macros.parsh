@@ -4,11 +4,11 @@
 (; A macro receives its arguments as quoted forms and returns a form to run. )
 (defmacro unless (condition body)
   `(if (not ,$condition) ,$body))
-(unless (eq 1 2) (echo "unless ran"))
+(unless #false (echo "unless ran"))
 
 (defmacro when (condition body)
   `(if ,$condition ,$body))
-(when (eq a a) (echo "when ran"))
+(when #true (echo "when ran"))
 
 (; Unquote-splicing flattens a list form into the surrounding call. )
 (defmacro begin (body)

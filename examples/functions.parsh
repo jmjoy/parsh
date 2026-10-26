@@ -3,7 +3,7 @@
 
 (defn factorial (n)
   (if (<= $n 1)
-      (+ 1)
+      #1
       (* $n (factorial (- $n 1)))))
 (echo "6! = $(factorial 6)")
 

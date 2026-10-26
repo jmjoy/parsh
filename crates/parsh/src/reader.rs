@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::number::Number;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Expr {
     pub kind: Kind,
@@ -10,6 +12,9 @@ pub struct Expr {
 pub enum Kind {
     Word(String),
     Text(String),
+    Number(Number),
+    Bool(bool),
+    Nil,
     Variable(String),
     /// Double-quoted text fragments and embedded variable or call expressions.
     Interpolated(Vec<Expr>),
@@ -24,11 +29,21 @@ pub struct Diagnostic {
 }
 
 impl Expr {
+    pub(crate) fn is_top_level(&self) -> bool {
+        matches!(
+            self.kind,
+            Kind::List(_) | Kind::Comment | Kind::Number(_) | Kind::Bool(_) | Kind::Nil
+        )
+    }
+
     /// Render an expression back to source. Quoted forms are printed with it.
     pub fn source(&self) -> String {
         match &self.kind {
             Kind::Word(text) => text.clone(),
             Kind::Text(text) => format!("\"{}\"", escape_text(text)),
+            Kind::Number(number) => format!("#{number}"),
+            Kind::Bool(value) => format!("#{value}"),
+            Kind::Nil => "#nil".into(),
             Kind::Variable(name) => format!("${name}"),
             Kind::Interpolated(parts) => {
                 let mut rendered = String::from("\"");
@@ -145,6 +160,8 @@ pub struct Reader<'a> {
     pub offset: usize,
     /// Nonzero while reading a quasiquote template, where `,` starts an unquote.
     quasiquote: usize,
+    /// Comments still balance strings and delimiters, but do not parse literals.
+    comments: usize,
 }
 
 impl<'a> Reader<'a> {
@@ -153,6 +170,7 @@ impl<'a> Reader<'a> {
             source,
             offset: 0,
             quasiquote: 0,
+            comments: 0,
         }
     }
 
@@ -169,7 +187,10 @@ impl<'a> Reader<'a> {
                 message: format!("unexpected '{close}'"),
             });
         }
-        match self.expr(0) {
+        let result = self.expr(0);
+        self.quasiquote = 0;
+        self.comments = 0;
+        match result {
             Ok(expr) => Read::Form(expr),
             Err((incomplete, diagnostic)) => {
                 if incomplete {
@@ -226,6 +247,7 @@ impl<'a> Reader<'a> {
                     });
                 }
                 let mut quasiquote = false;
+                let mut comment = false;
                 loop {
                     self.space();
                     match self.peek() {
@@ -246,6 +268,13 @@ impl<'a> Reader<'a> {
                         _ => {
                             let item = self.expr(depth + 1)?;
                             if item.kind != Kind::Comment {
+                                if items.is_empty()
+                                    && open == '('
+                                    && matches!(&item.kind, Kind::Word(head) if head == ";")
+                                {
+                                    comment = true;
+                                    self.comments += 1;
+                                }
                                 // `(quasiquote template)` enables `,` just like a backquote.
                                 if !quasiquote
                                     && items.is_empty()
@@ -262,6 +291,9 @@ impl<'a> Reader<'a> {
                 }
                 if quasiquote {
                     self.quasiquote -= 1;
+                }
+                if comment {
+                    self.comments -= 1;
                 }
                 if open == '('
                     && matches!(items.first().map(|e| &e.kind), Some(Kind::Word(s)) if s == ";")
@@ -324,7 +356,20 @@ impl<'a> Reader<'a> {
                 {
                     text.push(self.bump().unwrap());
                 }
-                if let Some(name) = text.strip_prefix('$') {
+                if self.comments == 0 && text.starts_with('#') {
+                    match &text[1..] {
+                        "true" => Kind::Bool(true),
+                        "false" => Kind::Bool(false),
+                        "nil" => Kind::Nil,
+                        literal => Kind::Number(Number::parse(literal).map_err(|message| {
+                            self.error(
+                                offset,
+                                &format!("invalid literal {text:?}: {message}"),
+                                false,
+                            )
+                        })?),
+                    }
+                } else if let Some(name) = text.strip_prefix('$') {
                     Kind::Variable(name.into())
                 } else {
                     Kind::Word(text)
@@ -459,15 +504,12 @@ pub(crate) fn string_escape(ch: char) -> Option<char> {
     }
 }
 
-/// True only when the source contains one complete call, collection or comment and no tail.
+/// True only for one complete top-level expression and no tail.
 pub fn complete(source: &str) -> bool {
     let mut reader = Reader::new(source);
     matches!(
         reader.read(),
-        Read::Form(Expr {
-            kind: Kind::List(_) | Kind::Comment,
-            ..
-        })
+        Read::Form(expr) if expr.is_top_level()
     ) && reader.read() == Read::End
 }
 

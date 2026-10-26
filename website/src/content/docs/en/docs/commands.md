@@ -13,6 +13,8 @@ are started directly, without passing the expression through another shell.
 The command name may also come from a text variable, as in `($EDITOR file.txt)`;
 its value is one program name, without implicit splitting into flags.
 
+Command heads must be text or function values. Numeric, boolean, and nil heads are not callable, including values read from variables. Use `str` to explicitly construct a text command name. `int`, `float`, and `bool` are reserved builtins.
+
 `map` constructs a map. Its built-in operations are `mget`, `mset`, `mdel`, `mhas`,
 `mkeys`, `mvals`, and `mlen`; all take a map value first, such as `$config` or
 `{name parsh}`. Updates return new maps; use `set` to replace a variable's value.

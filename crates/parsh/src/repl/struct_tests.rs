@@ -58,7 +58,7 @@ fn structs_construct_access_and_print_in_field_order() {
         (Point? $point)
         (Point? 7)
         "#,
-        &[r#"(Point "3" "4")"#, r#""3""#, r#""4""#, "true", "false"],
+        &[r#"(Point "3" "4")"#, r#""3""#, r#""4""#, "#true", "#false"],
     );
 }
 
@@ -74,7 +74,7 @@ fn structs_compare_by_name_and_fields_and_copy_with_bindings() {
         (set original (Point 9 9))
         (Point.x $copy)
         "#,
-        &["true", "false", r#""1""#],
+        &["#true", "#false", r#""1""#],
     );
 }
 

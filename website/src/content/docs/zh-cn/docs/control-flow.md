@@ -34,7 +34,7 @@ description: "词法函数、条件分支、顺序求值与循环。"
 它们沿用 `if` 的条件规则，可直接检查命令状态。
 
 ```parsh
-(let count 0)
+(let count #0)
 (while (< $count 5)
   (set count (+ $count 1))
   (if (= $count 2) (continue))
@@ -45,7 +45,7 @@ description: "词法函数、条件分支、顺序求值与循环。"
 `(continue)` 跳过本轮剩余表达式。`(break)` 结束最近一层循环；`(break 值)` 对值求值一次，
 并将其作为循环返回值，支持数值、列表、映射、布尔值和 `nil`。没有显式指定退出值时，循环返回
 最近一次完整迭代的结果；没有完整迭代则返回 `nil`。被跳过或提前结束的迭代不会覆盖此前结果。
-上述示例输出 `iteration 1` 和 `iteration 3`，并返回 `("stopped" 4)`。
+上述示例输出 `iteration 1` 和 `iteration 3`，并返回 `("stopped" #4)`。
 
 循环跳转不能跨越函数边界。在当前函数没有活动循环体时使用会报错。循环条件或列表表达式
 在自身循环体之外执行，其中的跳转只作用于已有的外层循环。`while` 循环体中的命令失败
@@ -69,7 +69,7 @@ description: "词法函数、条件分支、顺序求值与循环。"
 (let add (function +))
 (apply $add 1 [2 3])
 
-(defn sum (first &optional (second 0) &rest more)
+(defn sum (first &optional (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
@@ -99,7 +99,7 @@ description: "词法函数、条件分支、顺序求值与循环。"
 (defn greet (who)
   (str "hello, " $who))
 (greet parsh)
-(if (eq a a) (list yes) (list no))
+(if #true (list yes) (list no))
 (for item (list first last) (str $item))
 ```
 

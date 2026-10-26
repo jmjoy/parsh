@@ -128,7 +128,7 @@ reported before evaluating the duplicate key's value. Values may contain lists
 and nested maps.
 
 ```lisp
-(let config (map name parsh version (+ 1)))
+(let config (map name parsh version #1))
 (let updated (mset $config name new-name))
 (mget $config name)
 (mget $updated name)
@@ -169,6 +169,70 @@ of insertion order. `mset` and `mdel` return independent maps; their inputs and
 other copies retain their values. Maps cannot
 be converted implicitly to text, command arguments, or environment values.
 
+## Scalar literals
+
+Use `#` to create typed scalars: `#1` is an int, `#1.0` and `#1e3` are floats,
+`#true` and `#false` are booleans, and `#nil` is nil. Plain `1`, `false`, and
+`nil` remain text. For example:
+
+```lisp
+(let config {retries #3 timeout #1.5 enabled #false})
+(list (typeof #1) (typeof 1) (eq #1 1))
+```
+
+The list displays as `("int" "text" #false)`. Numeric and boolean results display
+with `#`, including inside collections; nested nil displays as `#nil`. A top-level
+nil result stays silent. `str`, interpolation, external arguments, and environment
+values use ordinary text without the prefix: `(str #1 #false)` returns `"1false"`.
+
+All unquoted words beginning with `#` are reserved. Invalid forms such as `#flase`,
+`#123abc`, or a lone `#` are reader errors. Quote text such as `"#fff"`; `abc#1`
+remains ordinary text. A shebang is allowed at the very start of source. Structured
+comments do not validate `#` literals, but still check strings and balanced delimiters.
+Literal spelling must be contiguous. Numbers use the existing signed decimal,
+fraction, and exponent syntax, with i64 integers and finite f64 floats; integer
+overflow never falls back to floating point. Boolean and nil names are lowercase,
+with no `#t`/`#f` aliases.
+
+Literals can appear directly at the prompt or at script top level. Scripts do not
+print their results automatically. A literal is source syntax: quoted text,
+variable contents, and command output are never parsed again, and `#$name` is not
+a conversion. Use `int`, `float`, or `bool` for runtime conversion.
+
+A command head must evaluate to text or a function. `(#1)` and a numeric variable
+used as a command name are errors; use `str` to explicitly construct a text command
+name. `#false` is an ordinary false value, while `(false)` retains its external
+command failure behavior. Numeric values and nil are not implicit conditions.
+
+## Scalar conversions
+
+Each conversion takes exactly one argument, checks arity before evaluation, and
+evaluates that argument once. Function references and `apply` use the same rules.
+`int`, `float`, and `bool` are reserved ordinary builtin names.
+
+| Call | Accepted input and result |
+| --- | --- |
+| `(int value)` | An int, an integral float in i64 range, or numeric text parsed by the existing number rules. `(int "1e2")` returns `#100`; `(int #1.5)` is an error. |
+| `(float value)` | An int, float, or numeric text parsed directly as f64. Normal rounding is allowed, including for large integers; non-finite results are errors. |
+| `(bool value)` | A boolean, or text that is exactly lowercase `true` or `false` after trimming. Numbers, nil, and other types are errors. |
+
+Numeric text is trimmed and must parse completely. For `int`, text containing a
+point or exponent is first parsed as f64, so integrality is checked after f64
+rounding. Integer text must fit in i64; `(float "9223372036854775808")` can instead
+parse directly as a finite float. Booleans are not numbers, and no conversion
+accepts collections, forms, functions, nil, or command statuses. Text `"#1"` and
+`"#false"` is not re-read as literal syntax. Errors have exit status `2` and point
+to the operand.
+
+```lisp
+(int " 1.0 ")
+(float #1)
+(bool " false ")
+(apply (function int) ["1e2"])
+```
+
+Results are `#1`, `#1.0`, `#false`, and `#100`.
+
 ## Arithmetic and comparisons
 
 Bare words remain text. Arithmetic operators `+`, `-`, `*`, `/` and comparison
@@ -185,7 +249,7 @@ number; ordinary text such as `00123` keeps its original spelling.
 (str 00123)
 ```
 
-After the binding, an interactive session displays `4`, `2.5`, `false`, `true`,
+After the binding, an interactive session displays `#4`, `#2.5`, `#false`, `#true`,
 and `"00123"`. `eq` compares types and values, so text, integers, and floats are
 distinct. `=` compares numeric values, including numeric text; it takes exactly
 two arguments and does not use a floating-point tolerance.
@@ -215,9 +279,9 @@ overflow. Each operation involving a float uses `f64`, which can lose integer
 precision and has ordinary floating-point rounding: `(+ 0.1 0.2)` returns
 `0.30000000000000004`. Invalid operands, division by zero, integer overflow,
 and non-finite floats are language errors with exit status `2`.
-Numbers display without quotes; floats retain a decimal point or exponent,
-such as `4.0`. `str`, command arguments, and environment values use that same
-format. Files and `-c` scripts require an explicit command such as `echo` to
+Numbers display with `#`; floats retain a decimal point or exponent,
+such as `#4.0`. `str`, command arguments, and environment values use numeric
+text without the `#` prefix. Files and `-c` scripts require an explicit command such as `echo` to
 print results.
 
 ## Standard library
@@ -233,7 +297,7 @@ prefix and text operations an `s` prefix; updates return new values:
 (lget $items -1)
 (sjoin (lslice $items 1) " / ")
 (list (quot -7 3) (rem -7 3) (round 2.5) (round -2.5))
-(list (typeof 123) (typeof (+ 123)) (number? (+ 123)) (empty? []))
+(list (typeof 123) (typeof #123) (number? #123) (empty? []))
 ```
 
 Text counts Rust `chars()`. Indexing and slicing support negative indices;
@@ -360,7 +424,7 @@ more body expressions and create a fresh scope per iteration: `let` stays local,
 and `set` can update an outer binding.
 
 ```lisp
-(let count 0)
+(let count #0)
 (while (< $count 5)
   (set count (+ $count 1))
   (if (= $count 2) (continue))
@@ -373,7 +437,7 @@ loop; `(break value)` evaluates `value` once and returns it from the loop,
 including numbers, lists, maps, booleans, or `nil`. Without an explicit break value,
 a loop returns its last complete iteration's result, or `nil` if none completed.
 Skipped or interrupted iterations do not replace that result. The example prints
-`iteration 1` and `iteration 3`, and returns `("stopped" 4)`.
+`iteration 1` and `iteration 3`, and returns `("stopped" #4)`.
 
 Loop jumps cannot cross a function boundary. Using one without an active loop
 body in the current function is an error. A loop's condition or list expression
@@ -410,7 +474,7 @@ passed, returned, and called through expressions:
 (let add (function +))
 (apply $add 1 [2 3])
 
-(defn sum (first &optional (second 0) &rest more)
+(defn sum (first &optional (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
@@ -447,12 +511,12 @@ accessor per field, and a predicate:
 
 ```lisp
 (defstruct Point x y)
-(let point (Point 1 2))
+(let point (Point #1 #2))
 (echo (Point.x $point) (Point.y $point))
 (if (Point? $point) (echo a point))
 ```
 
-Structs print in field order, for example `(Point 3 4)` or `(Point "3" "4")`
+Structs print in field order, for example `(Point #3 #4)` or `(Point "3" "4")`
 when the fields are text. They compare by name and fields, and copy like every
 other value. Accessors read the field from the value itself, so
 redefining a struct keeps existing values readable. `type` reports the
@@ -505,6 +569,7 @@ are global, even when they appear inside a function.
   effective user ID; the browser uses `$ ()`. Parentheses are gray while input
   is blank; the implicit `(` returns to the default color when you start typing.
   The prefix and gray closing hint are display-only.
+- A first non-whitespace `#` hides the implicit parentheses and edits literal source directly. Literal history places the cursor at the end; Tab completes `#true`, `#false`, and `#nil`.
 - Enter checks the entire edit buffer, wherever the cursor is. Complete source
   executes immediately; otherwise parsh tries appending exactly one `)`. If the
   source is still unfinished, Enter inserts a newline at the cursor. Ctrl+J

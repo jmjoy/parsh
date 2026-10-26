@@ -10,6 +10,8 @@ description: "变量绑定、环境变量、列表、映射与显式展开。"
 读取变量值时使用 `$name`；绑定和赋值目标使用裸名字，包括函数参数、循环绑定和环境变量设置。
 变量名以字母或 `_` 开头，后续可包含字母、数字和 `_`。绑定目标不接受引号字符串或表达式。
 
+有类型的标量使用 `#1`、`#1.0`、`#true`、`#false`、`#nil`。动态文本转换使用 `int`、`float`、`bool`，见[字面值语法](/parsh/zh-cn/docs/syntax/#标量字面值)与[转换接口](/parsh/zh-cn/docs/stdlib/#标量转换)。
+
 所有普通数据采用值语义。读取变量、赋值和函数传参都会复制值，包括列表、映射及其嵌套内容。
 集合更新返回新值，使用 `set` 显式赋回才会更新已有变量。
 
@@ -61,7 +63,7 @@ description: "变量绑定、环境变量、列表、映射与显式展开。"
 参数个数为奇数时，在求值前报错；重复键在第二次出现的位置报错，不再求值该键对应的值。
 
 ```parsh
-(let config (map name parsh version (+ 1) nested (map enabled (eq a a))))
+(let config (map name parsh version #1 nested (map enabled #true)))
 (let updated (mset $config name new-name))
 (mget $config name)
 (mget $updated name)

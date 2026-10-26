@@ -35,7 +35,7 @@ and `set` can update an outer binding.
 `(or)` is false. They accept the same conditions as `if`, including command statuses.
 
 ```parsh
-(let count 0)
+(let count #0)
 (while (< $count 5)
   (set count (+ $count 1))
   (if (= $count 2) (continue))
@@ -48,7 +48,7 @@ loop; `(break value)` evaluates `value` once and returns it from the loop,
 including numbers, lists, maps, booleans, or `nil`. Without an explicit break value,
 a loop returns its last complete iteration's result, or `nil` if none completed.
 Skipped or interrupted iterations do not replace that result. The example prints
-`iteration 1` and `iteration 3`, and returns `("stopped" 4)`.
+`iteration 1` and `iteration 3`, and returns `("stopped" #4)`.
 
 Loop jumps cannot cross a function boundary. Using one without an active loop
 body in the current function is an error. A loop's condition or list expression
@@ -78,7 +78,7 @@ passed, returned, and called through expressions:
 (let add (function +))
 (apply $add 1 [2 3])
 
-(defn sum (first &optional (second 0) &rest more)
+(defn sum (first &optional (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
@@ -114,7 +114,7 @@ also return its expansion early; return in expanded code belongs to the caller.
 (defn greet (who)
   (str "hello, " $who))
 (greet parsh)
-(if (eq a a) (list yes) (list no))
+(if #true (list yes) (list no))
 (for item (list first last) (str $item))
 ```
 

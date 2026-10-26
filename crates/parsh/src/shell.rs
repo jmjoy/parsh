@@ -101,6 +101,9 @@ fn expr_eq(left: &Expr, right: &Expr) -> bool {
                     .all(|(left, right)| expr_eq(left, right))
         }
         (Kind::Comment, Kind::Comment) => true,
+        (Kind::Number(left), Kind::Number(right)) => left == right,
+        (Kind::Bool(left), Kind::Bool(right)) => left == right,
+        (Kind::Nil, Kind::Nil) => true,
         _ => false,
     }
 }
@@ -124,8 +127,8 @@ impl Value {
     pub fn display(&self) -> String {
         match self {
             Self::Text(text) => format!("{text:?}").replace('$', "\\$"),
-            Self::Number(number) => number.to_string(),
-            Self::Bool(boolean) => boolean.to_string(),
+            Self::Number(number) => format!("#{number}"),
+            Self::Bool(boolean) => format!("#{boolean}"),
             Self::List(values) => format!(
                 "({})",
                 values
@@ -149,7 +152,7 @@ impl Value {
                 parts.extend(fields.values().map(Value::display));
                 format!("({})", parts.join(" "))
             }
-            Self::Nil => "nil".into(),
+            Self::Nil => "#nil".into(),
             Self::Status(code) => format!("status {code}"),
         }
     }
@@ -747,6 +750,9 @@ impl Shell {
     fn eval_inner(&mut self, expr: &Expr, env: &Env, mode: Mode, io: &Io) -> EvalResult<Value> {
         let items = match &expr.kind {
             Kind::Text(text) | Kind::Word(text) => return Ok(Value::Text(text.clone())),
+            Kind::Number(number) => return Ok(Value::Number(*number)),
+            Kind::Bool(value) => return Ok(Value::Bool(*value)),
+            Kind::Nil => return Ok(Value::Nil),
             Kind::Variable(name) => return Ok(self.variable(expr, name, env)?),
             Kind::Interpolated(parts) => {
                 let mut text = String::new();
@@ -775,7 +781,17 @@ impl Shell {
                         io,
                     );
                 }
-                value => value.text().map_err(|message| Error::new(head, message))?,
+                Value::Text(name) => name,
+                value => {
+                    return Err(Error::new(
+                        head,
+                        format!(
+                            "{} is not callable; expected a text command name or function",
+                            value.type_name()
+                        ),
+                    )
+                    .into());
+                }
             },
         };
         self.eval_named(expr, &name, args, env, mode, io)
@@ -1524,9 +1540,9 @@ impl Shell {
         let kind = match value {
             Value::Form(form) => return Ok(*form),
             Value::Text(text) => Kind::Text(text),
-            Value::Number(number) => Kind::Word(number.to_string()),
-            Value::Bool(boolean) => Kind::Word(boolean.to_string()),
-            Value::Nil => Kind::Word("nil".into()),
+            Value::Number(number) => Kind::Number(number),
+            Value::Bool(boolean) => Kind::Bool(boolean),
+            Value::Nil => Kind::Nil,
             _ => {
                 return Err(Error::new(
                     expr,

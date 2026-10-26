@@ -338,7 +338,7 @@ fn runtime_failure_stops_the_batch_and_preserves_exit_status() {
 
 #[test]
 fn foreground_interrupt_restores_terminal_and_reaps_child() {
-    for source in ["sleep 30", "while (eq a a) (sleep 30)"] {
+    for source in ["sleep 30", "while #true (sleep 30)"] {
         let mut terminal = Terminal::new();
         let offset = terminal.send(format!("{source}\r").as_bytes());
         terminal.expect(b"\x1b[?2004l", offset);
@@ -378,7 +378,7 @@ fn foreground_interrupt_restores_terminal_and_reaps_child() {
 #[test]
 fn interrupting_a_builtin_while_loop_restores_the_prompt() {
     let mut terminal = Terminal::new();
-    let offset = terminal.execute("(while (eq a a) (continue)) (echo SKIPPED)");
+    let offset = terminal.execute("(while #true (continue)) (echo SKIPPED)");
     terminal.expect(b"\x1b[?2004l", offset);
     thread::sleep(Duration::from_millis(30));
     terminal.send(b"\x03");
@@ -593,4 +593,19 @@ fn emacs_clear_screen_preserves_the_draft_and_search() {
     terminal.expect(b"(reverse-i-search)`CLEAR':", end);
     terminal.send(b"\x07");
     terminal.exit(0);
+}
+
+#[test]
+fn literal_input_and_history_use_direct_source_without_prompt_parentheses() {
+    let mut terminal = Terminal::new();
+    let offset = terminal.send(b"#1");
+    terminal.expect(b"#1", offset);
+    let output = terminal.send(b"\r");
+    terminal.expect(b"#1\r\n", output);
+    let offset = terminal.send(b"\x10");
+    terminal.expect(b"#1", offset);
+    let offset = terminal.send(b"\r");
+    terminal.expect(b"#1\r\n", offset);
+    let offset = terminal.execute("(printf \"%s\" (bool false))");
+    terminal.expect(b"false", offset);
 }

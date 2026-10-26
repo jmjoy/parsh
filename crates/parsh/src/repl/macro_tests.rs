@@ -45,7 +45,7 @@ fn quoted_forms_print_as_source_and_compare_by_syntax() {
         (eq (quote (a b)) (quote (a c)))
         (quote "text $x")
         "#,
-        &[r#"(a b)"#, "true", "false", r#""text $x""#],
+        &[r#"(a b)"#, "#true", "#false", r#""text $x""#],
     );
 }
 
@@ -58,7 +58,7 @@ fn quasiquote_substitutes_unquoted_values() {
         (quasiquote (list 1 ,(+ 1 2)))
         (list `(a ,(+ 1 2)))
         "#,
-        &[r#"((str "hello " "world"))"#, "(list 1 3)", "((a 3))"],
+        &[r#"((str "hello " "world"))"#, "(list 1 #3)", "((a #3))"],
     );
 }
 

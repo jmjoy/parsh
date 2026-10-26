@@ -1,7 +1,7 @@
 #!/usr/bin/env parsh
 (; Run with: cargo run -- examples/for.parsh )
 
-(let completed 0)
+(let completed #0)
 (let item outer)
 (for item (list first skip third stop unreachable)
   (if (eq $item skip) (continue))

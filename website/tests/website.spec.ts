@@ -71,36 +71,36 @@ test("WASM loads from the project subpath and executes real expressions", async 
   await page.getByRole("button", { name: /Hello, parsh/ }).click();
   await expect(terminal(page)).toContainText('"hello, parsh"');
   await expect(terminal(page)).toContainText(
-    '("text" "a value with spaces" true)',
+    '("text" "a value with spaces" #true)',
   );
 });
 
 test("maps preserve insertion order, value types, and eager defaults in the browser", async ({ page }) => {
   await playground(page);
   await execute(page, `
-    (let config (map name parsh count (+ 1) nested (map enabled (eq a a))))
+    (let config (map name parsh count #1 nested (map enabled #true)))
     (let copy $config)
     (let updated (mset $config name changed-copy))
     (let deleted (mdel $config count))
     (list (mget $config name) (mget $updated name) (mhas $config count) (mhas $deleted count))
     (set config (mset $config name updated))
     (set config (mdel $config count))
-    (set config (mset $config count (+ 2)))
+    (set config (mset $config count #2))
     (list (mkeys $config) (mget $config count) (mlen $config)
           (mhas $config missing) (mget $copy name))
-    (let defaults (+))
+    (let defaults #0)
     (mget $config nested (do (set defaults (+ $defaults 1)) fallback))
     (list $defaults)
     (mget $config missing (do (set config (mset $config fallback added)) (mget $config fallback)))
     (mvals $config)
     (mget (mset {name literal} name composed) name)
   `);
-  await expect(terminal(page)).toContainText('("parsh" "changed-copy" true false)');
-  await expect(terminal(page)).toContainText('(("name" "nested" "count") 2 3 false "parsh")');
-  await expect(terminal(page)).toContainText('(map "enabled" true)');
-  await expect(terminal(page)).toContainText('(1)');
+  await expect(terminal(page)).toContainText('("parsh" "changed-copy" #true #false)');
+  await expect(terminal(page)).toContainText('(("name" "nested" "count") #2 #3 #false "parsh")');
+  await expect(terminal(page)).toContainText('(map "enabled" #true)');
+  await expect(terminal(page)).toContainText('(#1)');
   await expect(terminal(page)).toContainText('"added"');
-  await expect(terminal(page)).toContainText('("updated" (map "enabled" true) 2 "added")');
+  await expect(terminal(page)).toContainText('("updated" (map "enabled" #true) #2 "added")');
   await expect(terminal(page)).toContainText('"composed"');
 
   await execute(page, '(map duplicate first duplicate (exit 9))');
@@ -126,13 +126,13 @@ test("function values, optional and rest parameters, and the standard library sh
     (defmacro when (condition &rest body) \`(if ,$condition (do ,@$body)))
     (defn find (items) (for item $items (when (eq $item b) (return $item))) (str missing))
     (find [a b c])
-    (list (apply (function max) [2 3 1]) (function? $next) (typeof (+ 1)))
+    (list (apply (function max) [2 3 1]) (function? $next) (typeof #1))
   `);
-  await expect(terminal(page)).toContainText("(11 16 17)");
+  await expect(terminal(page)).toContainText("(#11 #16 #17)");
   await expect(terminal(page)).toContainText('(("a" "b") ("a" "b" ("c" "d")) "a/b")');
-  await expect(terminal(page)).toContainText('(2 "文a" -2 -1 -3)');
+  await expect(terminal(page)).toContainText('(#2 "文a" #-2 #-1 #-3)');
   await expect(terminal(page)).toContainText('"b"');
-  await expect(terminal(page)).toContainText('(3 true "int")');
+  await expect(terminal(page)).toContainText('(#3 #true "int")');
   await execute(page, '(mget {key value} key $undefined)');
   await expect(terminal(page)).toContainText('undefined variable $undefined');
   await execute(page, '(str recovered-functions)');
@@ -143,12 +143,12 @@ test("collection shorthand supports nested values, Enter submission, and history
   await playground(page);
   await execute(page, `
     []{}
-    (let config {name parsh items [one "two words"] nested {enabled (eq a a)}})
+    (let config {name parsh items [one "two words"] nested {enabled #true}})
     [(mget $config items) (mget $config nested)]
     (eq [one {key [two]}] (list one (map key (list two))))
   `);
-  await expect(terminal(page)).toContainText('(("one" "two words") (map "enabled" true))');
-  await expect(terminal(page)).toContainText("true");
+  await expect(terminal(page)).toContainText('(("one" "two words") (map "enabled" #true))');
+  await expect(terminal(page)).toContainText("#true");
 
   await page.keyboard.type("[first");
   await expect(terminal(page)).toContainText("$ [first]");
@@ -231,7 +231,7 @@ test("bindings, closures, conditions, loops and Unicode retain shared semantics"
 (caller inner)
 (set name changed)
 (caller inner)
-(if (eq a a) (str "你好，parsh") (echo unavailable))
+(if #true (str "你好，parsh") (echo unavailable))
 (for item (list first last) (str $item))`,
   );
   await expect(terminal(page)).toContainText('"outer"');
@@ -259,10 +259,10 @@ test("while and for share loop control, typed break values and fresh iteration s
   (if (eq $item third) (break (list for-stopped $item)))
   (str $item))
 (while (false) (echo unavailable))`);
-  await expect(terminal(page)).toContainText('("stopped" 4 "outer4")');
-  await expect(terminal(page)).toContainText('(4 "outer")');
+  await expect(terminal(page)).toContainText('("stopped" #4 "outer4")');
+  await expect(terminal(page)).toContainText('(#4 "outer")');
   await expect(terminal(page)).toContainText('("for-stopped" "third")');
-  await execute(page, "(defn stop () (break)) (while (eq a a) (stop)) (str skipped)");
+  await execute(page, "(defn stop () (break)) (while #true (stop)) (str skipped)");
   await expect(terminal(page)).toContainText("in stop: break used outside a loop body");
   await expect(terminal(page)).not.toContainText('"skipped"');
   await execute(page, '(str recovered)');
@@ -274,10 +274,10 @@ test("loop keywords complete inside browser control flow", async ({ page }) => {
   await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
   await page.keyboard.type("wh");
   await page.keyboard.press("Tab");
-  await page.keyboard.type("(eq a a) (br");
+  await page.keyboard.type("#true (br");
   await page.keyboard.press("Tab");
   await page.keyboard.type("(list completed))");
-  await expect(terminal(page)).toContainText("(while (eq a a) (break (list completed))");
+  await expect(terminal(page)).toContainText("(while #true (break (list completed))");
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('("completed")');
   await page.keyboard.type("for item (list a b) (cont");
@@ -302,7 +302,7 @@ test("quoted strings share variable and expression interpolation semantics", asy
     '("hello, parsh" "parsh_suffix" "sum=3" "called" "nested=ab" "世界")',
   );
   await expect.poll(async () =>
-    (await terminal(page).innerText()).split("\n").some(line => line.trim() === "true"),
+    (await terminal(page).innerText()).split("\n").some(line => line.trim() === "#true"),
   ).toBe(true);
   await expect(terminal(page)).toContainText('"capture=line"');
   await execute(page, '(str "value=$missing") (str skipped-interpolation)');
@@ -426,8 +426,8 @@ test("numeric comparisons preserve precision and work in browser conditions", as
     (< 9223372036854775807 9223372036854775808.0) (>= -0.0 0))
 (let count (printf " 3\\n"))
 (if (>= $count 3.0) (str enough) (str missing))`);
-  await expect(terminal(page)).toContainText("(true true true true true false)");
-  await expect(terminal(page)).toContainText("(true true true)");
+  await expect(terminal(page)).toContainText("(#true #true #true #true #true #false)");
+  await expect(terminal(page)).toContainText("(#true #true #true)");
   await expect(terminal(page)).toContainText('"enough"');
   await execute(page, "(> 1 invalid) (str skipped)");
   await expect(terminal(page)).toContainText("invalid number");
@@ -497,7 +497,7 @@ test("running Ctrl+C stops an infinite while loop and resets the session", async
 }) => {
   await playground(page);
   await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
-  await execute(page, "(let name before) (while (eq a a) (continue))");
+  await execute(page, "(let name before) (while #true (continue))");
   await expect(page.locator("[data-playground]")).toHaveAttribute(
     "data-state",
     "running",
@@ -519,7 +519,7 @@ test("an infinite while loop times out without freezing the page", async ({
 }) => {
   test.setTimeout(20_000);
   await playground(page);
-  await execute(page, "(while (eq a a) (do))");
+  await execute(page, "(while #true #nil)");
   await expect(page.locator("[data-notice]")).toContainText(
     "Execution exceeded 5 seconds",
     { timeout: 12_000 },
@@ -899,4 +899,47 @@ test("Emacs browser shortcuts are scoped to terminal focus", async ({ page }) =>
   await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"draft"');
+});
+
+test("scalar literals hide prompt parentheses and share strict conversions and macro types", async ({ page }) => {
+  await playground(page);
+  await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
+  await page.keyboard.type("#");
+  await expect(terminal(page)).toContainText("$ #");
+  await expect(terminal(page)).not.toContainText("$ (#");
+  await page.keyboard.type("1.0");
+  await expect(terminal(page)).toContainText("$ #1.0");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await terminal(page).innerText()).split("\n").some(line => line.trim() === "#1.0")).toBe(true);
+  await page.keyboard.press("Control+p");
+  await page.keyboard.press("End");
+  await page.keyboard.type("0");
+  await expect(terminal(page)).toContainText("$ #1.00");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("#f");
+  await page.keyboard.press("Tab");
+  await expect(terminal(page)).toContainText("$ #false");
+  await page.keyboard.press("Enter");
+  await execute(page, `
+    (let typed {count #3 enabled #false empty #nil})
+    (list (typeof (mget $typed count)) (mvals $typed))
+    (list (int "1e2") (float #1) (bool " false ") (apply (function int) [#2.0]))
+    (defmacro keep (value) \`(list ,$value ,(+ #1 #2) ,#nil))
+    (keep #true)
+    (str "external:" #1 #false)
+    (; #flase #fff ignored)
+  `);
+  await expect(terminal(page)).toContainText('("int" (#3 #false #nil))');
+  await expect(terminal(page)).toContainText('(#100 #1.0 #false #2)');
+  await expect(terminal(page)).toContainText('(#true #3 #nil)');
+  await expect(terminal(page)).toContainText('"external:1false"');
+  await execute(page, '(int #1.5) (echo never-converted)');
+  await expect(terminal(page)).toContainText("expected an integer value");
+  await execute(page, '#flase');
+  await expect(terminal(page)).toContainText('invalid literal "#flase"');
+  await page.keyboard.press("Control+u");
+  await execute(page, '(bool #1)');
+  await expect(terminal(page)).toContainText("expected a boolean or true/false text");
+  await execute(page, '(#1 (echo never-called))');
+  await expect(terminal(page)).toContainText("int is not callable");
 });

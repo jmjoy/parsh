@@ -27,8 +27,8 @@ fn collections_match_constructors_and_preserve_types_and_comments() {
         r#"
         []{}
         (let value "two words")
-        [text $value (+ 1) (eq a a) (do) [] {}]
-        {name parsh nested {items [one "two words"]} flag (eq a a)}
+        [text $value #1 #true #nil [] {}]
+        {name parsh nested {items [one "two words"]} flag #true}
         (eq [one {key [two]}] (list one (map key (list two))))
         [; a (; $undefined [ignored {key value}]) b]
         {; text (; $undefined)}
@@ -41,9 +41,9 @@ fn collections_match_constructors_and_preserve_types_and_comments() {
         [
             "()",
             "(map)",
-            r#"("text" "two words" 1 true nil () (map))"#,
-            r#"(map "name" "parsh" "nested" (map "items" ("one" "two words")) "flag" true)"#,
-            "true",
+            r#"("text" "two words" #1 #true #nil () (map))"#,
+            r#"(map "name" "parsh" "nested" (map "items" ("one" "two words")) "flag" #true)"#,
+            "#true",
             r#"(";" "a" "b")"#,
             r#"(map ";" "text")"#,
             r#""true \${name} [x] {y}""#,

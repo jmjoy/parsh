@@ -90,7 +90,7 @@ fn success(output: &Output) {
 #[test]
 fn maps_capture_commands_and_expand_only_explicit_key_and_value_lists() {
     let output = run(r#"
-        (let m (map (printf name) (printf 'parsh\n\n') count (+ 2)))
+        (let m (map (printf name) (printf 'parsh\n\n') count #2))
         (set m (mset $m empty (printf '')))
         (printf "<%s>\n" (mget $m name) (mget $m count) (mget $m empty))
         (printf "key=%s\n" (mkeys $m))
@@ -542,7 +542,7 @@ fn conditions_check_status_without_disabling_fail_fast_elsewhere() {
 #[test]
 fn while_command_conditions_and_loop_values_capture_complete_stdout() {
     let output = run(r#"
-        (let n (+ 0))
+        (let n #0)
         (printf "<%s>\n"
           (while (test $n -lt 3)
             (printf "[%s]" $n)
@@ -551,7 +551,7 @@ fn while_command_conditions_and_loop_values_capture_complete_stdout() {
         (while (false) (echo skipped))
         (while (| (false) (true)) (echo skipped))
         (printf "<%s>\n"
-          (while (eq a a)
+          (while #true
             (printf discarded)
             (break (printf "a b\n\n"))))
         (printf "<%s>\n"
@@ -574,7 +574,7 @@ fn loop_jumps_propagate_through_host_arguments_and_redirection_paths() {
         "(| (printf (break passed) $undefined) (cat))",
     ] {
         let output = run(&format!(
-            "(printf \"<%s>\" (while (eq a a) {expression} (echo skipped)))"
+            "(printf \"<%s>\" (while #true {expression} (echo skipped)))"
         ));
         success(&output);
         assert_eq!(stdout(&output), "<passed>", "{expression}");
@@ -590,7 +590,7 @@ fn loop_jumps_propagate_through_host_arguments_and_redirection_paths() {
             (printf %s $item)
             (if (eq $item c) (break))
             (printf .)))
-        (|>> {} (while (eq a a) (printf D) (break)))
+        (|>> {} (while #true (printf D) (break)))
         (cat {})
         "#,
         quote(path.to_str().unwrap()),
@@ -605,24 +605,24 @@ fn loop_jumps_propagate_through_host_arguments_and_redirection_paths() {
 #[test]
 fn loop_errors_and_exit_preserve_status_and_stop_the_script() {
     for (source, code, message) in [
-        ("(while (eq a a) (false))", 1, "status 1"),
+        ("(while #true (false))", 1, "status 1"),
         (
-            "(if (while (eq a a) (false)) (echo skipped) (echo also-skipped))",
+            "(if (while #true (false)) (echo skipped) (echo also-skipped))",
             1,
             "status 1",
         ),
-        ("(while (eq a a) (break (false)))", 1, "status 1"),
+        ("(while #true (break (false)))", 1, "status 1"),
         (
             "(while (parsh-command-does-not-exist) (echo skipped))",
             127,
             "parsh-command-does-not-exist",
         ),
         (
-            "(while (eq a a) (parsh-command-does-not-exist))",
+            "(while #true (parsh-command-does-not-exist))",
             127,
             "parsh-command-does-not-exist",
         ),
-        ("(while (eq a a) (exit 9))", 9, ""),
+        ("(while #true (exit 9))", 9, ""),
         ("(for item (list a b) (exit 7))", 7, ""),
         ("(break (echo skipped))", 2, "outside a loop body"),
         (
@@ -653,7 +653,7 @@ fn loop_errors_and_exit_preserve_status_and_stop_the_script() {
 
 #[test]
 fn loop_builtins_are_rejected_as_pipeline_stages() {
-    for stage in ["(while (eq a b) (echo skipped))", "(break)", "(continue)"] {
+    for stage in ["(while #false (echo skipped))", "(break)", "(continue)"] {
         let output = run(&format!("(| {stage} (cat)) (echo skipped)"));
         assert_eq!(output.status.code(), Some(2));
         assert!(stderr(&output).contains("pipeline stages must be external commands"));
@@ -888,7 +888,8 @@ fn cli_passes_all_arguments_after_source_or_script_unchanged() {
     let output = invoke(&["-c", "--help"], "");
     assert_eq!(output.status.code(), Some(2));
     assert!(
-        stderr(&output).contains("top-level expressions must be calls or collection expressions")
+        stderr(&output)
+            .contains("top-level expressions must be calls, collection expressions or literals")
     );
 }
 
@@ -1067,5 +1068,41 @@ fn eager_defaults_fail_even_when_the_requested_entry_exists() {
             stderr(&output)
         );
         assert!(stdout(&output).is_empty());
+    }
+}
+
+#[test]
+fn scalar_literals_and_conversions_preserve_external_text_and_failure_status() {
+    let output = run(r##"
+        #1 #false #nil
+        (printf "%s|%s|%s|%s\n" #1 #1.0 #false #nil)
+        (printf "%s|%s|%s|%s\n" (int (printf ' 1e2 ')) (float 1)
+                (bool (printf ' false ')) (typeof (printf '#1')))
+        #false
+        (printf continued)
+    "##);
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "1|1.0|false|\n100|1.0|false|text\ncontinued"
+    );
+    let output = run("#false (false) (printf skipped)");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    for source in [
+        "#flase",
+        "(int #1.5)",
+        "(float \"1e309\")",
+        "(bool #1)",
+        "(#1 (printf skipped))",
+    ] {
+        let output = run(source);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{source}: {}",
+            stderr(&output)
+        );
+        assert!(output.stdout.is_empty());
     }
 }

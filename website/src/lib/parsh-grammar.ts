@@ -6,6 +6,7 @@ export default {
   patterns: [
     { include: "#comment" },
     { include: "#string" },
+    { include: "#literal" },
     {
       begin: "(\\()(defn|defmacro)\\s+([^\\s()\\[\\]{}\"'$]+)\\s+(\\()",
       beginCaptures: {
@@ -43,7 +44,7 @@ export default {
     {
       name: "keyword.control.parsh",
       match:
-        "(?<=\\()(?:unquote-splicing|quasiquote|defstruct|scontains|function\\?|continue|function|defmacro|sreplace|unquote|lappend|lconcat|number\\?|struct\\?|status\\?|return|export|lfirst|lslice|sslice|ssplit|slines|typeof|float\\?|empty\\?|while|break|quote|mkeys|mvals|lrest|sjoin|strim|text\\?|bool\\?|list\\?|form\\?|floor|round|apply|defn|glob|exit|type|list|mget|mset|mdel|mhas|mlen|llen|lget|slen|sget|int\\?|map\\?|nil\\?|quot|ceil|let|set|and|for|get|map|str|not|rem|abs|min|max|do|if|or|fn|cd|eq)(?=[\\s()\\[\\]{}\"'])",
+        "(?<=\\()(?:unquote-splicing|quasiquote|defstruct|scontains|function\\?|continue|function|defmacro|sreplace|unquote|lappend|lconcat|number\\?|struct\\?|status\\?|return|export|lfirst|lslice|sslice|ssplit|slines|typeof|float\\?|empty\\?|while|break|quote|mkeys|mvals|lrest|sjoin|strim|text\\?|bool\\?|list\\?|form\\?|floor|round|apply|defn|glob|exit|type|list|mget|mset|mdel|mhas|mlen|llen|lget|slen|sget|int\\?|map\\?|nil\\?|quot|ceil|float|bool|int|let|set|and|for|get|map|str|not|rem|abs|min|max|do|if|or|fn|cd|eq)(?=[\\s()\\[\\]{}\"'])",
     },
     {
       name: "keyword.operator.parsh",
@@ -54,6 +55,18 @@ export default {
     { name: "punctuation.section.parsh", match: "`" },
   ],
   repository: {
+    literal: {
+      patterns: [
+        {
+          name: "constant.language.parsh",
+          match: "(?<![^\\s()\\[\\]{}\"'`,])#(?:true|false|nil)(?=[\\s()\\[\\]{}\"',]|$)",
+        },
+        {
+          name: "constant.numeric.parsh",
+          match: "(?<![^\\s()\\[\\]{}\"'`,])#[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?(?=[\\s()\\[\\]{}\"',]|$)",
+        },
+      ],
+    },
     parameters: {
       patterns: [
         { include: "#comment" },

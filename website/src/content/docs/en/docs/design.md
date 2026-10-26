@@ -24,9 +24,9 @@ balancing, instead of a line comment that ends at a newline. See
 ## Text first, types explicit
 
 Bare words are text. `123` is the text `123`, and `true`, `false`, and `nil`
-have no literal meaning in value positions. Numbers appear when arithmetic or a
-numeric comparison parses numeric text, and booleans come from comparisons,
-`not`, or a command status:
+have no literal meaning in value positions. Explicit literals such as `#123`,
+`#false`, and `#nil` create typed values. Arithmetic and numeric comparisons also
+parse numeric text; `int`, `float`, and `bool` convert runtime values explicitly:
 
 ```parsh
 (eq 001 1)
@@ -123,8 +123,8 @@ Limits are documented rather than discovered.
 These choices are not free:
 
 - One-off commands are wordier: `(if (eq $x y) ...)` instead of `[ "$x" = y ]`.
-- There are no numeric literals; `(echo 1)` prints text, and numbers appear in
-  arithmetic contexts.
+- Typed scalar literals require a `#` prefix; plain `(echo 1)` still passes text.
+- Words starting with `#` need quotes when they are intended as text.
 - Copy semantics make large collections expensive to pass around.
 - POSIX habits do not transfer: `for f in *.rs` becomes `(for f (glob "*.rs"))`.
 

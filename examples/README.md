@@ -21,6 +21,7 @@ results explicitly.
 | [hello.parsh](hello.parsh) | Script arguments, functions, and a command condition |
 | [variables.parsh](variables.parsh) | Bindings, interpolation, literal strings, lists, `get`, and exported environment values |
 | [arithmetic.parsh](arithmetic.parsh) | Accumulation, arithmetic, numeric comparisons, and text equality |
+| [literals.parsh](literals.parsh) | Typed `#` literals, maps, and explicit int/float/bool conversions |
 | [stdlib.parsh](stdlib.parsh) | Immutable lists, text, numeric helpers, closures, optional/rest parameters, return, and macros |
 | [functions.parsh](functions.parsh) | Recursion, lexical scope, typed return values, and function output capture |
 | [for.parsh](for.parsh) | List iteration, `continue`, `break`, outer bindings, and nested loops |

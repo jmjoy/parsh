@@ -15,6 +15,9 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "mvals",
     "mlen",
     "str",
+    "int",
+    "float",
+    "bool",
     "eq",
     "not",
     "+",
@@ -245,6 +248,44 @@ impl Shell {
                     result.push_str(&args.scalar(self, expr, i, env, io)?);
                 }
                 Ok(Value::Text(result))
+            }
+            "int" | "float" => {
+                let error =
+                    |message: String| Error::new(args.at(expr, 0), format!("{name}: {message}"));
+                let number = match args.value(self, 0, env, io)? {
+                    Value::Number(number) => number,
+                    Value::Text(text) => if name == "float" {
+                        Number::parse_float(&text)
+                    } else {
+                        Number::parse(&text)
+                    }
+                    .map_err(error)?,
+                    _ => return Err(error("expected a number or numeric text".into()).into()),
+                };
+                let result = if name == "int" {
+                    Number::Int(number.integer().map_err(|message| error(message.into()))?)
+                } else {
+                    Number::finite(number.as_float()).map_err(|message| error(message.into()))?
+                };
+                Ok(Value::Number(result))
+            }
+            "bool" => {
+                let value = match args.value(self, 0, env, io)? {
+                    Value::Bool(value) => Some(value),
+                    Value::Text(text) => match text.trim() {
+                        "true" => Some(true),
+                        "false" => Some(false),
+                        _ => None,
+                    },
+                    _ => None,
+                }
+                .ok_or_else(|| {
+                    Error::new(
+                        args.at(expr, 0),
+                        "bool: expected a boolean or true/false text",
+                    )
+                })?;
+                Ok(Value::Bool(value))
             }
             "+" | "-" | "*" | "/" => {
                 if args.len() == 0 {

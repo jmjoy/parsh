@@ -8,6 +8,35 @@ They support `(function name)` and `apply`. Collection updates return new values
 use `set` to replace a binding. In the signatures below, brackets mark optional
 arguments and `...` marks repeated arguments.
 
+## Scalar conversions
+
+Each conversion takes exactly one argument, checks arity before evaluation, and
+evaluates that argument once. Function references and `apply` use the same rules.
+`int`, `float`, and `bool` are reserved ordinary builtin names.
+
+| Call | Accepted input and result |
+| --- | --- |
+| `(int value)` | An int, an integral float in i64 range, or numeric text parsed by the existing number rules. `(int "1e2")` returns `#100`; `(int #1.5)` is an error. |
+| `(float value)` | An int, float, or numeric text parsed directly as f64. Normal rounding is allowed, including for large integers; non-finite results are errors. |
+| `(bool value)` | A boolean, or text that is exactly lowercase `true` or `false` after trimming. Numbers, nil, and other types are errors. |
+
+Numeric text is trimmed and must parse completely. For `int`, text containing a
+point or exponent is first parsed as f64, so integrality is checked after f64
+rounding. Integer text must fit in i64; `(float "9223372036854775808")` can instead
+parse directly as a finite float. Booleans are not numbers, and no conversion
+accepts collections, forms, functions, nil, or command statuses. Text `"#1"` and
+`"#false"` is not re-read as literal syntax. Errors have exit status `2` and point
+to the operand.
+
+```parsh
+(int " 1.0 ")
+(float #1)
+(bool " false ")
+(apply (function int) ["1e2"])
+```
+
+Results are `#1`, `#1.0`, `#false`, and `#100`.
+
 ## Lists
 
 | Call | Result |
@@ -70,12 +99,12 @@ the result. Even a successful lookup executes the default's side effects and
 propagates its errors:
 
 ```parsh
-(let calls (+))
+(let calls #0)
 (mget {name parsh} name (do (set calls (+ $calls 1)) fallback))
 (list $calls)
 ```
 
-Results are `"parsh"` and `(1)`. A stored nil value counts as present and returns
+Results are `"parsh"` and `(#1)`. A stored nil value counts as present and returns
 nil, but the explicit default still runs. Function references and `apply` follow
 the same rule. Defaults declared with `&optional` run only when an argument is omitted.
 
@@ -88,7 +117,7 @@ are `text?`, `int?`, `float?`, `bool?`, `list?`, `map?`, `form?`, `struct?`,
 `empty?` accepts text, lists, and maps, and rejects other types.
 
 Predicates inspect runtime types strictly: `(number? 123)` is false because the
-bare word is text; `(number? (+ 123))` is true. Commands in value position are
+bare word is text; `(number? #123)` is true. Commands in value position are
 captured as text. `type` continues to inspect command lookup.
 
 ## Numeric helpers
@@ -107,7 +136,7 @@ captured as text. `type` continues to inspect command lookup.
 (list (quot -7 3) (rem -7 3) (round 2.5) (round -2.5))
 ```
 
-The result is `(-2 -1 3 -3)`. `quot/rem` require integers or integer text; other
+The result is `(#-2 #-1 #3 #-3)`. `quot/rem` require integers or integer text; other
 numeric helpers accept numbers or numeric text. `min/max` retain the winning
 number's type and preserve integer precision in mixed comparisons. Division by
 zero, integer overflow, rounding outside i64, and non-finite values are language errors.

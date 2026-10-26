@@ -19,14 +19,14 @@ three kinds of command:
 
 ```parsh
 (defstruct Point x y)
-(let point (Point 3 4))
+(let point (Point #3 #4))
 (echo (Point.x $point) (Point.y $point))
 (if (Point? $point) (echo a point))
 ```
 
 A struct is an ordinary value: it can sit in lists and maps, be passed to
 functions, and be captured by interpolation. It prints in field order, for
-example `(Point 3 4)`, or `(Point "3" "4")` when the fields are text. It
+example `(Point #3 #4)`, or `(Point "3" "4")` when the fields are text. It
 compares by name and fields, and copies with the usual value semantics. Structs are immutable, so changing a field means building a new value.
 
 Accessors read the field from the value rather than from the current definition,
@@ -34,7 +34,7 @@ so redefining a struct keeps existing values readable:
 
 ```parsh
 (defstruct Point x y)
-(let old (Point 1 2))
+(let old (Point #1 #2))
 (defstruct Point x)
 (Point.y $old)
 ```
@@ -98,7 +98,7 @@ form or a list of quoted forms.
 ```parsh
 (defmacro when (condition &rest body)
   `(if ,$condition (do ,@$body)))
-(when (eq a a) (str first) (str last))
+(when #true (str first) (str last))
 ```
 
 Explicit macro arguments remain unevaluated forms. `&rest` collects a list of
@@ -115,3 +115,5 @@ the caller's function or loop.
 - Macros and struct members cannot be used as pipeline stages.
 - A nested quasiquote is copied literally rather than nested one level deeper.
 - Structs have no field setters and no dynamic field names.
+
+Scalar literals retain their types through quote, quasiquote, and unquote. Form source uses `#` for typed scalars and normalizes numeric spelling: `#001` prints as `#1`. Literal nodes compare by type and value, ignoring source offsets.

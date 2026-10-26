@@ -14,6 +14,8 @@ mod collection_tests;
 mod editing;
 #[cfg(test)]
 mod editing_tests;
+#[cfg(test)]
+mod literal_tests;
 use editing::{Editing, Search};
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -35,13 +37,15 @@ fn submission(source: &str) -> Submission {
     loop {
         let start = reader.offset;
         match reader.read() {
-            Read::Form(expr) if matches!(expr.kind, Kind::List(_) | Kind::Comment) => {
+            Read::Form(expr) if expr.is_top_level() => {
                 forms.push((expr, start..reader.offset));
             }
             Read::Form(expr) => {
                 return Submission::Invalid(Diagnostic {
                     offset: expr.offset,
-                    message: "top-level expressions must be calls or collection expressions".into(),
+                    message:
+                        "top-level expressions must be calls, collection expressions or literals"
+                            .into(),
                 });
             }
             Read::End => {
@@ -66,16 +70,20 @@ fn submission(source: &str) -> Submission {
 }
 
 impl Input {
+    fn implicit(&self) -> bool {
+        !self.explicit && !self.body.trim_start().starts_with('#')
+    }
+
     fn source(&self) -> String {
         self.source_until(self.body.len())
     }
 
     fn source_until(&self, end: usize) -> String {
         let body = &self.body[..end];
-        if self.explicit {
-            body.to_owned()
-        } else {
+        if self.implicit() {
             format!("({body}")
+        } else {
+            body.to_owned()
         }
     }
 
@@ -223,12 +231,8 @@ impl History {
 }
 
 pub(crate) fn layout(input: &Input, width: usize) -> (Vec<String>, (usize, usize)) {
-    let text = if input.explicit {
-        input.body.clone()
-    } else {
-        format!("({}", input.body)
-    };
-    let caret = input.cursor + usize::from(!input.explicit);
+    let text = input.source();
+    let caret = input.cursor + usize::from(input.implicit());
     let mut lines = vec![String::new()];
     let mut column = 0;
     let mut cursor = (0, 0);
@@ -305,9 +309,9 @@ pub(crate) fn view_layout(
     rows: usize,
 ) -> View {
     let mut text = input.source();
-    let caret = input.cursor + usize::from(!input.explicit);
+    let caret = input.cursor + usize::from(input.implicit());
     let mut dimmed = Vec::new();
-    if !input.explicit && input.body.trim().is_empty() {
+    if input.implicit() && input.body.trim().is_empty() {
         dimmed.push((0, '('));
     }
     if let Submission::Incomplete(close) = submission(&text) {
@@ -403,7 +407,7 @@ impl Session {
             .as_ref()
             .is_some_and(|(body, cursor)| body == &self.input.body && *cursor == self.input.cursor);
         self.completion = None;
-        let implicit = usize::from(!self.input.explicit);
+        let implicit = usize::from(self.input.implicit());
         let source = self.input.source();
         let Some(completion) = Completion::query(shell, &source, self.input.cursor + implicit)
         else {
@@ -1028,8 +1032,8 @@ mod syntax_tests {
             values(&events),
             [
                 r#"("parsh" "parsh_suffix" "sum=3" "called" "nested=ab" "世界parsh" "" "")"#,
-                "(true true true)",
-                "true",
+                "(#true #true #true)",
+                "#true",
             ]
         );
     }
@@ -1063,7 +1067,7 @@ mod syntax_tests {
                 r#""\n  hello, \"世界\"\n  sum=3\n""#,
                 r#""\n  '\$missing' \$(missing)\\n\n""#,
                 r#""12""#,
-                "2",
+                "#2",
                 r#""nested=inner \"世界\" text'literal' '' quotes""#,
             ]
         );
@@ -1076,9 +1080,9 @@ mod syntax_tests {
             r#"
             (export GREETING hello)
             (let name outer)
-            (let number (+ 2))
-            (let flag (eq a a))
-            (let nothing (do))
+            (let number #2)
+            (let flag #true)
+            (let nothing #nil)
             (let items (list a b))
             (defn read () (get name))
             (defn caller (name) (read))
@@ -1093,7 +1097,7 @@ mod syntax_tests {
         assert_eq!(
             values(&events),
             [
-                r#"("outer" "outer" 2 true nil ("a" "b") "hello")"#,
+                r#"("outer" "outer" #2 #true #nil ("a" "b") "hello")"#,
                 r#""2|true|""#,
                 r#""changed""#,
             ]
@@ -1105,7 +1109,7 @@ mod syntax_tests {
         let events = execute(
             &mut Repl::new(),
             r#"
-            (let count (+ 0))
+            (let count #0)
             (let name before)
             (defn show () (str "$name"))
             (str "$(do (set count (+ $count 1)) $count)$(do (set count (+ $count 1)) $count)")
@@ -1115,7 +1119,7 @@ mod syntax_tests {
         "#,
         );
         assert!(diagnostics(&events).is_empty(), "{events:?}");
-        assert_eq!(values(&events), [r#""12""#, "2", r#""after""#]);
+        assert_eq!(values(&events), [r#""12""#, "#2", r#""after""#]);
     }
 
     #[test]
@@ -1248,36 +1252,36 @@ mod syntax_tests {
     #[test]
     fn arithmetic_parses_text_and_preserves_integer_and_float_results() {
         for (source, expected) in [
-            ("(+)", "0"),
-            ("(*)", "1"),
-            ("(+ 123 2)", "125"),
-            (r#"(+ "1.5" 2)"#, "3.5"),
-            ("(- 10 3 2)", "5"),
-            ("(- 5)", "-5"),
-            ("(- -3.5)", "3.5"),
-            ("(* 2 3 4)", "24"),
-            ("(/ 20 2 4)", "2.5"),
-            ("(/ 5 2)", "2.5"),
-            ("(/ 8 2)", "4.0"),
-            ("(/ 4)", "0.25"),
-            ("(+ 1 2.0 3)", "6.0"),
-            ("(+ 1.0)", "1.0"),
-            ("(* -2)", "-2"),
-            (r#"(+ "\n +00123 \t")"#, "123"),
-            ("(+ .5 1.)", "1.5"),
-            ("(+ 2.5e1 -5)", "20.0"),
-            ("(+ 1E-2)", "0.01"),
-            ("(+ 0.1 0.2)", "0.30000000000000004"),
-            ("(+ -0.0)", "-0.0"),
-            ("(+ 9007199254740992 1)", "9007199254740993"),
-            ("(+ 9223372036854775807)", "9223372036854775807"),
-            ("(+ -9223372036854775808)", "-9223372036854775808"),
-            ("(- -9223372036854775808 -1)", "-9223372036854775807"),
+            ("(+)", "#0"),
+            ("(*)", "#1"),
+            ("(+ 123 2)", "#125"),
+            (r#"(+ "1.5" 2)"#, "#3.5"),
+            ("(- 10 3 2)", "#5"),
+            ("(- 5)", "#-5"),
+            ("(- -3.5)", "#3.5"),
+            ("(* 2 3 4)", "#24"),
+            ("(/ 20 2 4)", "#2.5"),
+            ("(/ 5 2)", "#2.5"),
+            ("(/ 8 2)", "#4.0"),
+            ("(/ 4)", "#0.25"),
+            ("(+ 1 2.0 3)", "#6.0"),
+            ("(+ 1.0)", "#1.0"),
+            ("(* -2)", "#-2"),
+            (r#"(+ "\n +00123 \t")"#, "#123"),
+            ("(+ .5 1.)", "#1.5"),
+            ("(+ 2.5e1 -5)", "#20.0"),
+            ("(+ 1E-2)", "#0.01"),
+            ("(+ 0.1 0.2)", "#0.30000000000000004"),
+            ("(+ -0.0)", "#-0.0"),
+            ("(+ 9007199254740992 1)", "#9007199254740993"),
+            ("(+ 9223372036854775807)", "#9223372036854775807"),
+            ("(+ -9223372036854775808)", "#-9223372036854775808"),
+            ("(- -9223372036854775808 -1)", "#-9223372036854775807"),
             ("(str 00123)", r#""00123""#),
             ("(str (/ 8 2))", r#""4.0""#),
             (
                 "(list 123 00123 (+ 1 2) (/ 8 2))",
-                r#"("123" "00123" 3 4.0)"#,
+                r#"("123" "00123" #3 #4.0)"#,
             ),
         ] {
             let events = execute(&mut Repl::new(), source);
@@ -1289,23 +1293,23 @@ mod syntax_tests {
     #[test]
     fn numeric_equality_is_distinct_from_typed_equality() {
         for (source, expected) in [
-            ("(eq 001 1)", "false"),
-            ("(= 001 1.0)", "true"),
-            ("(eq (+ 1 2) 3)", "false"),
-            ("(eq (+ 1 2) (+ 3))", "true"),
-            ("(eq (+ 1 2) (+ 3.0))", "false"),
-            ("(eq (list (+ 3)) (list 3))", "false"),
-            ("(eq (+ 1.0) (+ 1e0))", "true"),
-            ("(= (+ 1 2) 3.0)", "true"),
-            ("(= 3.0 (+ 1 2))", "true"),
-            ("(= 1 1.5)", "false"),
-            ("(= -0.0 0)", "true"),
-            ("(= (+ 0.1 0.2) 0.3)", "false"),
-            ("(= 9007199254740993 9007199254740992.0)", "false"),
-            ("(= 9007199254740992.0 9007199254740993)", "false"),
-            ("(= 9007199254740993 9007199254740993)", "true"),
-            ("(= 9223372036854775807 9223372036854775808.0)", "false"),
-            ("(= -9223372036854775808 -9223372036854775808.0)", "true"),
+            ("(eq 001 1)", "#false"),
+            ("(= 001 1.0)", "#true"),
+            ("(eq (+ 1 2) 3)", "#false"),
+            ("(eq (+ 1 2) (+ 3))", "#true"),
+            ("(eq (+ 1 2) (+ 3.0))", "#false"),
+            ("(eq (list (+ 3)) (list 3))", "#false"),
+            ("(eq (+ 1.0) (+ 1e0))", "#true"),
+            ("(= (+ 1 2) 3.0)", "#true"),
+            ("(= 3.0 (+ 1 2))", "#true"),
+            ("(= 1 1.5)", "#false"),
+            ("(= -0.0 0)", "#true"),
+            ("(= (+ 0.1 0.2) 0.3)", "#false"),
+            ("(= 9007199254740993 9007199254740992.0)", "#false"),
+            ("(= 9007199254740992.0 9007199254740993)", "#false"),
+            ("(= 9007199254740993 9007199254740993)", "#true"),
+            ("(= 9223372036854775807 9223372036854775808.0)", "#false"),
+            ("(= -9223372036854775808 -9223372036854775808.0)", "#true"),
         ] {
             let events = execute(&mut Repl::new(), source);
             assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
@@ -1316,36 +1320,36 @@ mod syntax_tests {
     #[test]
     fn numeric_comparisons_return_booleans_for_numbers_and_numeric_text() {
         for (source, expected) in [
-            ("(< 2 10)", "true"),
-            ("(< 10 2)", "false"),
-            ("(< 2 2.0)", "false"),
-            ("(<= 2 2.0)", "true"),
-            ("(<= 1.5 2)", "true"),
-            ("(<= 2 1.5)", "false"),
-            ("(> 10 2)", "true"),
-            ("(> 2 10)", "false"),
-            ("(> 2.0 2)", "false"),
-            ("(>= 2.0 2)", "true"),
-            ("(>= 2 1.5)", "true"),
-            ("(>= 1.5 2)", "false"),
-            ("(!= 001 1.0)", "false"),
-            ("(!= 1 1.5)", "true"),
-            ("(< -2 -1.5)", "true"),
-            ("(> -1 -1.5)", "true"),
-            ("(< 0 .5)", "true"),
-            ("(> 0 -.5)", "true"),
-            ("(>= -0.0 0)", "true"),
-            (r#"(< " +001 " "2e0")"#, "true"),
-            ("(> (+ 1 2) (/ 5 2))", "true"),
-            ("(< 1e308 1.1e308)", "true"),
-            ("(> 9007199254740993 9007199254740992.0)", "true"),
-            ("(< 9007199254740992.0 9007199254740993)", "true"),
-            ("(> -9007199254740992.0 -9007199254740993)", "true"),
-            ("(< -9007199254740993 -9007199254740992.0)", "true"),
-            ("(< 9223372036854775807 9223372036854775808.0)", "true"),
-            ("(> -9223372036854775808 -1e19)", "true"),
-            ("(<= -9223372036854775808 -9223372036854775808.0)", "true"),
-            ("(!= 9223372036854775807 9223372036854775808.0)", "true"),
+            ("(< 2 10)", "#true"),
+            ("(< 10 2)", "#false"),
+            ("(< 2 2.0)", "#false"),
+            ("(<= 2 2.0)", "#true"),
+            ("(<= 1.5 2)", "#true"),
+            ("(<= 2 1.5)", "#false"),
+            ("(> 10 2)", "#true"),
+            ("(> 2 10)", "#false"),
+            ("(> 2.0 2)", "#false"),
+            ("(>= 2.0 2)", "#true"),
+            ("(>= 2 1.5)", "#true"),
+            ("(>= 1.5 2)", "#false"),
+            ("(!= 001 1.0)", "#false"),
+            ("(!= 1 1.5)", "#true"),
+            ("(< -2 -1.5)", "#true"),
+            ("(> -1 -1.5)", "#true"),
+            ("(< 0 .5)", "#true"),
+            ("(> 0 -.5)", "#true"),
+            ("(>= -0.0 0)", "#true"),
+            (r#"(< " +001 " "2e0")"#, "#true"),
+            ("(> (+ 1 2) (/ 5 2))", "#true"),
+            ("(< 1e308 1.1e308)", "#true"),
+            ("(> 9007199254740993 9007199254740992.0)", "#true"),
+            ("(< 9007199254740992.0 9007199254740993)", "#true"),
+            ("(> -9007199254740992.0 -9007199254740993)", "#true"),
+            ("(< -9007199254740993 -9007199254740992.0)", "#true"),
+            ("(< 9223372036854775807 9223372036854775808.0)", "#true"),
+            ("(> -9223372036854775808 -1e19)", "#true"),
+            ("(<= -9223372036854775808 -9223372036854775808.0)", "#true"),
+            ("(!= 9223372036854775807 9223372036854775808.0)", "#true"),
             ("(if (> 3 2) (str yes) (unavailable))", r#""yes""#),
             ("(if (< 3 2) (unavailable) (str no))", r#""no""#),
         ] {
@@ -1360,7 +1364,7 @@ mod syntax_tests {
         let events = execute(
             &mut Repl::new(),
             r#"
-            (let count (+))
+            (let count #0)
             (defn next () (set count (+ $count 1)) $count)
             (defn increasing (a b) (< $a $b))
             (list (< (next) (next)) $count
@@ -1374,7 +1378,7 @@ mod syntax_tests {
         assert!(diagnostics(&events).is_empty(), "{events:?}");
         assert_eq!(
             values(&events),
-            ["(true 2 true 4 false 6 false 8 true 10 true 12)"]
+            ["(#true #2 #true #4 #false #6 #false #8 #true #10 #true #12)"]
         );
     }
 
@@ -1429,7 +1433,7 @@ mod syntax_tests {
             (set n (increment $n))
             (list $n (increment $n) (str $n) (= $n 4.0))
             (if (= $n 4) (increment $n) (unavailable))
-            (let count (+))
+            (let count #0)
             (defn next () (set count (+ $count 1)) $count)
             (list (+ (next) (next)) $count
                   (- (next) (next)) $count
@@ -1441,7 +1445,11 @@ mod syntax_tests {
         assert!(diagnostics(&events).is_empty(), "{events:?}");
         assert_eq!(
             values(&events),
-            [r#"(4 5 "4" true)"#, "5", "(3 2 -1 4 30 6 0.875 8 false 10)"]
+            [
+                r#"(#4 #5 "4" #true)"#,
+                "#5",
+                "(#3 #2 #-1 #4 #30 #6 #0.875 #8 #false #10)"
+            ]
         );
     }
 
@@ -1510,7 +1518,7 @@ mod syntax_tests {
         assert_eq!(errors.len(), 1, "{events:?}");
         assert!(errors[0].starts_with("interactive:3:2:"), "{errors:?}");
         assert!(errors[0].contains("invalid number"), "{errors:?}");
-        assert_eq!(values(&execute(&mut repl, "(+ 2 3)")), ["5"]);
+        assert_eq!(values(&execute(&mut repl, "(+ 2 3)")), ["#5"]);
     }
 
     #[test]
@@ -1600,7 +1608,7 @@ mod syntax_tests {
             (call inner)
             (set name changed)
             (call inner)
-            (defn factory (value) (defn captured () (list $value (eq a a))))
+            (defn factory (value) (defn captured () (list $value #true)))
             (factory retained)
             (captured)
         "#,
@@ -1608,7 +1616,7 @@ mod syntax_tests {
         assert!(diagnostics(&events).is_empty());
         assert_eq!(
             values(&events),
-            ["\"outer\"", "\"changed\"", "(\"retained\" true)"]
+            ["\"outer\"", "\"changed\"", "(\"retained\" #true)"]
         );
     }
 

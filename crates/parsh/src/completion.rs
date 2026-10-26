@@ -28,6 +28,7 @@ enum Kind {
     ParameterMarker,
     Path { directories_only: bool },
     Variable,
+    Literal,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -80,6 +81,20 @@ impl Context {
         quote: Quote,
         closed: bool,
     ) -> Option<Self> {
+        if quote == Quote::None && prefix.starts_with('#') {
+            if frames.iter().any(|frame| frame.comment)
+                || frames.last().is_some_and(Frame::declaration)
+            {
+                return None;
+            }
+            return Some(Self {
+                range,
+                prefix,
+                kind: Kind::Literal,
+                quote,
+                closed,
+            });
+        }
         let frame = frames.last()?;
         if frames.iter().any(|frame| frame.comment) {
             return None;
@@ -349,6 +364,7 @@ fn unescape(text: &str) -> Option<String> {
 fn needs_quotes(text: &str) -> bool {
     text.is_empty()
         || text.starts_with('$')
+        || text.starts_with('#')
         || text == ";"
         || text.chars().any(|ch| !reader::word_character(ch))
 }
@@ -401,6 +417,10 @@ impl Completion {
                 shell.completion_paths(&context.prefix, directories_only, false)
             }
             Kind::Variable => shell.completion_variables(&context.prefix),
+            Kind::Literal => ["#true", "#false", "#nil"]
+                .into_iter()
+                .map(Candidate::word)
+                .collect(),
         };
         candidates.retain(|candidate| {
             !candidate.text.is_empty()
@@ -429,7 +449,7 @@ impl Completion {
         self.candidates
             .iter()
             .map(|candidate| {
-                if self.context.kind == Kind::Variable {
+                if matches!(self.context.kind, Kind::Variable | Kind::Literal) {
                     candidate.text.clone()
                 } else {
                     literal(&candidate.text)
@@ -464,7 +484,7 @@ impl Completion {
         let embedded_variable =
             self.context.kind == Kind::Variable && self.context.quote.interpolates();
         let finished = unique && !first.directory && !embedded_variable;
-        let quote = if self.context.kind == Kind::Variable {
+        let quote = if matches!(self.context.kind, Kind::Variable | Kind::Literal) {
             Quote::None
         } else if self.context.quote == Quote::Single && !text.contains('\'') {
             Quote::Single

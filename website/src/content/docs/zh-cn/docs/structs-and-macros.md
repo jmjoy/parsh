@@ -18,13 +18,13 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 
 ```parsh
 (defstruct Point x y)
-(let point (Point 3 4))
+(let point (Point #3 #4))
 (echo (Point.x $point) (Point.y $point))
 (if (Point? $point) (echo a point))
 ```
 
 结构体是普通值：可以放进列表和映射、传给函数，也可以被字符串插值捕获。
-它按字段顺序显示，例如 `(Point 3 4)`；字段是文本时保留引号，显示为 `(Point "3" "4")`。
+它按字段顺序显示，例如 `(Point #3 #4)`；字段是文本时保留引号，显示为 `(Point "3" "4")`。
 它按名字与字段比较，并遵循通常的按值拷贝语义。
 结构体不可变，修改字段意味着重新构造一个值。
 
@@ -32,7 +32,7 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 
 ```parsh
 (defstruct Point x y)
-(let old (Point 1 2))
+(let old (Point #1 #2))
 (defstruct Point x)
 (Point.y $old)
 ```
@@ -89,7 +89,7 @@ unquote 接受被引用的表单或标量值；splicing 接受被引用的列表
 ```parsh
 (defmacro when (condition &rest body)
   `(if ,$condition (do ,@$body)))
-(when (eq a a) (str first) (str last))
+(when #true (str first) (str last))
 ```
 
 宏的显式实参保持为 Form，不会提前求值。`&rest` 收集 Form 列表，`&optional` 的缺省表达式
@@ -104,3 +104,5 @@ unquote 接受被引用的表单或标量值；splicing 接受被引用的列表
 - 宏和结构体成员不能作为管道阶段。
 - 嵌套的 quasiquote 会原样拷贝，不会按层级展开。
 - 结构体没有字段修改器，也不支持动态字段名。
+
+标量字面值通过 quote、quasiquote 和 unquote 时保留类型。表单源码中的标量带 `#`，数值拼写会规范化，例如 `#001` 显示为 `#1`；字面值节点按类型和值比较，忽略源码位置。
