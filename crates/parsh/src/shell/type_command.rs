@@ -165,7 +165,7 @@ impl Shell {
                 }
             }
         }
-        Ok(Self::command_status(expr, "type", code, mode)?)
+        Ok(self.command_status(expr, "type", code, mode)?)
     }
 
     fn external_types(

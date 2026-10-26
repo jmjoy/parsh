@@ -32,8 +32,13 @@ use std::{
 };
 
 mod builtins;
+mod execution;
 mod functions;
 mod map;
+#[cfg(feature = "native")]
+mod snapshot;
+#[cfg(feature = "native")]
+pub(crate) mod tasks;
 mod type_command;
 
 use builtins::{Arguments, VALUE_BUILTINS};
@@ -50,12 +55,26 @@ pub enum Value {
     /// Quoted source, produced by `quote` and `quasiquote`.
     Form(Box<Expr>),
     Function(FunctionValue),
+    Command(String),
+    Bytes(Arc<[u8]>),
     Struct {
         name: String,
         fields: IndexMap<String, Value>,
     },
     Nil,
-    Status(i32),
+    Status(CommandStatus),
+}
+
+/// A command's compatibility status and its complete, immutable invocation result.
+#[derive(Clone, Debug)]
+pub struct CommandStatus {
+    pub code: i32,
+    pub(crate) result: Box<Value>,
+}
+impl PartialEq for CommandStatus {
+    fn eq(&self, other: &Self) -> bool {
+        self.code == other.code
+    }
 }
 
 impl PartialEq for Value {
@@ -69,6 +88,8 @@ impl PartialEq for Value {
             // Forms compare as syntax; the reader offset of every node is irrelevant.
             (Self::Form(left), Self::Form(right)) => expr_eq(left, right),
             (Self::Function(left), Self::Function(right)) => left == right,
+            (Self::Command(left), Self::Command(right)) => left == right,
+            (Self::Bytes(left), Self::Bytes(right)) => left == right,
             (
                 Self::Struct {
                     name: left,
@@ -120,6 +141,8 @@ impl Value {
             Self::Form(_) => Err("expected a scalar value, got a form".into()),
             Self::Function(_) => Err("expected a scalar value, got a function".into()),
             Self::Struct { .. } => Err("expected a scalar value, got a struct".into()),
+            Self::Command(_) => Err("expected a scalar value, got a command".into()),
+            Self::Bytes(_) => Err("expected a scalar value, got bytes".into()),
             Self::Status(_) => Err("a command status cannot be used as text".into()),
         }
     }
@@ -147,23 +170,29 @@ impl Value {
             }
             Self::Form(form) => form.source(),
             Self::Function(function) => function.display(),
+            Self::Command(name) => format!("<command {name}>"),
+            Self::Bytes(bytes) => format!("<bytes {}>", bytes.len()),
             Self::Struct { name, fields } => {
                 let mut parts = vec![name.clone()];
                 parts.extend(fields.values().map(Value::display));
                 format!("({})", parts.join(" "))
             }
             Self::Nil => "#nil".into(),
-            Self::Status(code) => format!("status {code}"),
+            Self::Status(status) => format!("status {}", status.code),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Error {
     pub code: i32,
     pub offset: usize,
     pub message: String,
     pub exit: bool,
+    pub(crate) cancelled: bool,
+    pub kind: String,
+    pub payload: Box<Value>,
+    pub result: Option<Box<Value>>,
 }
 
 impl Error {
@@ -173,6 +202,10 @@ impl Error {
             offset: expr.offset,
             message: message.into(),
             exit: false,
+            cancelled: false,
+            kind: "runtime".into(),
+            payload: Box::new(Value::Nil),
+            result: None,
         }
     }
 }
@@ -180,7 +213,7 @@ impl Error {
 /// Loop jumps unwind expressions without becoming values or command failures.
 #[derive(Debug)]
 enum Signal {
-    Error(Error),
+    Error(Box<Error>),
     Break(Option<Value>),
     Continue,
     Return(Value),
@@ -188,14 +221,14 @@ enum Signal {
 
 impl From<Error> for Signal {
     fn from(error: Error) -> Self {
-        Self::Error(error)
+        Self::Error(Box::new(error))
     }
 }
 
 impl Signal {
     fn into_error(self, expr: &Expr) -> Error {
         match self {
-            Self::Error(error) => error,
+            Self::Error(error) => *error,
             Self::Break(_) => Error::new(expr, "break used outside a loop body"),
             Self::Continue => Error::new(expr, "continue used outside a loop body"),
             Self::Return(_) => Error::new(expr, "return used outside a function or macro body"),
@@ -303,6 +336,8 @@ enum Mode {
 pub struct Shell {
     #[cfg(feature = "native")]
     pub cwd: PathBuf,
+    #[cfg(feature = "native")]
+    initial_args: Vec<String>,
     pub environment: HashMap<OsString, OsString>,
     root: Env,
     functions: HashMap<String, FunctionValue>,
@@ -320,6 +355,18 @@ pub struct Shell {
     loop_depth: usize,
     macro_depth: usize,
     return_depth: usize,
+    finally_depth: usize,
+    cleanup_depth: usize,
+    capture_depth: usize,
+    last_result: Value,
+    #[cfg(feature = "native")]
+    tasks: Arc<tasks::Registry>,
+    #[cfg(feature = "native")]
+    task_id: Option<i64>,
+    #[cfg(feature = "native")]
+    task_control: Option<Arc<tasks::Control>>,
+    #[cfg(feature = "native")]
+    task_cache: HashMap<i64, Value>,
     // Keep weak references so dropping/resetting a session can break closure cycles.
     scopes: Vec<Weak<RefCell<Scope>>>,
 }
@@ -328,6 +375,9 @@ pub struct Shell {
 const MACRO_EXPANSION_LIMIT: usize = 32;
 
 const BUILTINS: &[&str] = &[
+    "try",
+    "catch",
+    "finally",
     "do",
     "let",
     "set",
@@ -401,9 +451,11 @@ impl Shell {
         root.borrow_mut()
             .variables
             .insert("args".into(), Value::List(Vec::new()));
-        Self {
+        let mut shell = Self {
             #[cfg(feature = "native")]
             cwd: PathBuf::new(),
+            #[cfg(feature = "native")]
+            initial_args: Vec::new(),
             environment: HashMap::new(),
             scopes: vec![Rc::downgrade(&root)],
             root,
@@ -422,7 +474,21 @@ impl Shell {
             loop_depth: 0,
             macro_depth: 0,
             return_depth: 0,
-        }
+            finally_depth: 0,
+            cleanup_depth: 0,
+            capture_depth: 0,
+            last_result: Value::Nil,
+            #[cfg(feature = "native")]
+            tasks: Arc::new(tasks::Registry::new()),
+            #[cfg(feature = "native")]
+            task_id: None,
+            #[cfg(feature = "native")]
+            task_control: None,
+            #[cfg(feature = "native")]
+            task_cache: HashMap::new(),
+        };
+        shell.install_execution_types();
+        shell
     }
 
     /// Create a session with an isolated execution and filesystem backend.
@@ -446,6 +512,21 @@ impl Shell {
     }
 
     pub(crate) fn reset_session(&mut self) -> Result<(), HostError> {
+        #[cfg(feature = "native")]
+        if !self.syntax_only && self.host.is_none() {
+            let mut replacement = Self::new(self.initial_args.clone()).map_err(|e| HostError {
+                code: 2,
+                message: e.to_string(),
+            })?;
+            if self.job.is_some() {
+                replacement.interactive().map_err(|e| HostError {
+                    code: 2,
+                    message: e.to_string(),
+                })?;
+            }
+            *self = replacement;
+            return Ok(());
+        }
         *self = if let Some(host) = &self.host {
             Self::with_shared_host(host.clone())?
         } else {
@@ -527,6 +608,7 @@ impl Shell {
             .map(String::as_str)
             .chain(self.environment.keys().filter_map(|name| name.to_str()))
             .filter(|name| variable_name(name))
+            .chain(std::iter::once("?"))
             .map(|name| format!("${name}"))
             .filter(|name| name.starts_with(prefix))
             .map(Candidate::word)
@@ -628,6 +710,7 @@ impl Shell {
     #[cfg(feature = "native")]
     pub fn new(args: Vec<String>) -> std::io::Result<Self> {
         let mut shell = Self::syntax();
+        shell.initial_args = args.clone();
         shell.root.borrow_mut().variables.insert(
             "args".into(),
             Value::List(args.into_iter().map(Value::Text).collect()),
@@ -656,12 +739,28 @@ impl Shell {
     }
 
     fn check(&self, expr: &Expr) -> Result<(), Error> {
+        #[cfg(feature = "native")]
+        if self
+            .task_control
+            .as_ref()
+            .is_some_and(|c| c.forced() || (c.cancelled() && self.cleanup_depth == 0))
+        {
+            return Err(Error {
+                code: 130,
+                kind: "cancelled".into(),
+                cancelled: true,
+                ..Error::new(expr, "task cancelled")
+            });
+        }
         if self.interrupted.load(Ordering::Relaxed) {
             Err(Error {
                 code: 130,
                 offset: expr.offset,
                 message: "interrupted".into(),
                 exit: false,
+                kind: "cancelled".into(),
+                cancelled: true,
+                ..Error::new(expr, "interrupted")
             })
         } else {
             Ok(())
@@ -672,14 +771,16 @@ impl Shell {
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let nested = Io {
             output: Output::Capture(buffer.clone()),
+            capture_budget: Some(io.capture_budget.clone().unwrap_or_default()),
             host_output: None,
             ..io.clone()
         };
         let result = self.eval(expr, env, Mode::Normal, &nested)?;
         if matches!(result, Value::Status(_)) {
             let bytes = std::mem::take(&mut *buffer.lock().unwrap());
-            let text = String::from_utf8(bytes).map_err(|_| {
-                Error::new(
+            let text = String::from_utf8(bytes).map_err(|_| Error {
+                result: Some(Box::new(self.last_result.clone())),
+                ..Error::new(
                     expr,
                     "captured output is not UTF-8; use a pipeline or redirection for binary data",
                 )
@@ -698,6 +799,9 @@ impl Shell {
     }
 
     fn variable(&self, expr: &Expr, name: &str, env: &Env) -> Result<Value, Error> {
+        if name == "?" {
+            return Ok(self.last_result.clone());
+        }
         Self::valid_name(expr, name)?;
         Scope::get(env, name)
             .or_else(|| {
@@ -711,7 +815,7 @@ impl Shell {
     fn condition(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<bool> {
         match self.eval(expr, env, Mode::Condition, io)? {
             Value::Bool(value) => Ok(value),
-            Value::Status(status) => Ok(status == 0),
+            Value::Status(status) => Ok(status.code == 0),
             _ => Err(Error::new(
                 expr,
                 "a condition must be a boolean or command status; use eq to compare text",
@@ -808,6 +912,11 @@ impl Shell {
                         io,
                     );
                 }
+                Value::Command(command) => {
+                    let values = Arguments::Expressions(args).values(self, env, io)?;
+                    let argv = Self::argv_values(expr, &command, values)?;
+                    return Ok(self.commands(expr, &[argv], mode, io)?);
+                }
                 Value::Text(name) => name,
                 value => {
                     return Err(Error::new(
@@ -833,6 +942,23 @@ impl Shell {
         mode: Mode,
         io: &Io,
     ) -> EvalResult<Value> {
+        let positions = Self::capture_positions(io);
+        let mut outcome = self.eval_named_inner(expr, name, args, env, mode, io);
+        if matches!(name, "cd" | "export" | "type") {
+            self.publish_invocation(expr, &mut outcome, io, positions);
+        }
+        outcome
+    }
+
+    fn eval_named_inner(
+        &mut self,
+        expr: &Expr,
+        name: &str,
+        args: &[Expr],
+        env: &Env,
+        mode: Mode,
+        io: &Io,
+    ) -> EvalResult<Value> {
         if VALUE_BUILTINS.contains(&name) {
             return self.call_builtin(expr, name, Arguments::Expressions(args), env, mode, io);
         }
@@ -844,7 +970,17 @@ impl Shell {
                 ),
             ).into());
         }
+        if execution::TYPES
+            .iter()
+            .any(|(reserved, _)| *reserved == name)
+        {
+            return Err(Error::new(expr, format!("{name} is constructed by the runtime")).into());
+        }
         match name {
+            "try" => self.try_expression(expr, args, env, mode, io),
+            "catch" | "finally" => {
+                Err(Error::new(expr, format!("{name} is only valid at the end of try")).into())
+            }
             "do" => self.sequence(args, env, mode, io),
             "let" | "set" => {
                 Self::arity(expr, args, 2, 2)?;
@@ -909,6 +1045,9 @@ impl Shell {
                 Ok(Value::Bool(name == "and"))
             }
             "return" => {
+                if self.finally_depth > 0 {
+                    return Err(Error::new(expr, "return is not allowed in finally").into());
+                }
                 Self::arity(expr, args, 0, 1)?;
                 if self.return_depth == 0 {
                     return Err(
@@ -958,6 +1097,11 @@ impl Shell {
                 Ok(result)
             }
             "break" | "continue" => {
+                if self.finally_depth > 0 {
+                    return Err(
+                        Error::new(expr, format!("{name} is not allowed in finally")).into(),
+                    );
+                }
                 Self::arity(expr, args, 0, usize::from(name == "break"))?;
                 if self.loop_depth == 0 {
                     return Err(Error::new(expr, format!("{name} used outside a loop body")).into());
@@ -1180,6 +1324,7 @@ impl Shell {
                     offset: expr.offset,
                     message: String::new(),
                     exit: true,
+                    ..Error::new(expr, "")
                 }
                 .into())
             }
@@ -1249,19 +1394,24 @@ impl Shell {
                     let Some(head) = call.first() else {
                         return Err(Error::new(stage, "pipeline stage needs a command name").into());
                     };
-                    let command = match &head.kind {
-                        Kind::Text(command) | Kind::Word(command) => command.clone(),
-                        Kind::Interpolated(_) => self.scalar(head, env, io)?,
-                        _ => {
-                            return Err(
-                                Error::new(stage, "pipeline stage needs a command name").into()
-                            );
-                        }
-                    };
-                    if builtin(&command)
-                        || self.functions.contains_key(&command)
-                        || self.macros.contains_key(&command)
-                        || self.struct_member_kind(&command).is_some()
+                    let (command, explicit) =
+                        match &head.kind {
+                            Kind::Text(command) | Kind::Word(command) => (command.clone(), false),
+                            _ => match self.value(head, env, io)? {
+                                Value::Command(command) => (command, true),
+                                Value::Text(command) => (command, false),
+                                _ => return Err(Error::new(
+                                    stage,
+                                    "pipeline stage needs an external command name or reference",
+                                )
+                                .into()),
+                            },
+                        };
+                    if !explicit
+                        && (builtin(&command)
+                            || self.functions.contains_key(&command)
+                            || self.macros.contains_key(&command)
+                            || self.struct_member_kind(&command).is_some())
                     {
                         return Err(Error::new(
                             stage,
@@ -1391,6 +1541,12 @@ impl Shell {
                 "struct name must be a bare word without '$'",
             ));
         };
+        if execution::TYPES
+            .iter()
+            .any(|(reserved, _)| *reserved == name)
+        {
+            return Err(Error::new(&args[0], "struct name is reserved"));
+        }
         if name.is_empty()
             || name == ";"
             || builtin(name)
@@ -1502,7 +1658,7 @@ impl Shell {
             error.message = format!("in macro {name}: {}", error.message);
             error.offset = expr.offset;
         }
-        error.into()
+        Signal::Error(error)
     }
 
     fn quasiquote(&mut self, template: &Expr, env: &Env, io: &Io) -> EvalResult<Value> {
@@ -1632,6 +1788,8 @@ impl Shell {
             offset: expr.offset,
             message: error.message,
             exit: false,
+            kind: "spawn-failed".into(),
+            ..Error::new(expr, "")
         }
     }
 
@@ -1691,73 +1849,291 @@ impl Shell {
         io: &Io,
     ) -> Result<Value, Error> {
         self.check(expr)?;
+        let positions = Self::capture_positions(io);
+        let mut statuses = Vec::new();
+        let mut incomplete = false;
+        let mut stage_records = Vec::new();
+        let mut issue: Option<Error> = None;
         if self.syntax_only {
-            return Err(Self::unavailable_command(expr, &stages[0][0]));
-        }
-        let code = if let Some(host) = &self.host {
+            issue = Some(Self::unavailable_command(expr, &stages[0][0]));
+        } else if let Some(host) = &self.host {
             let streams = HostStreams {
                 input: io.host_input.as_ref().map(|f| f.handle),
                 output: io.host_output.as_ref().map(|f| f.handle),
                 error: io.host_error.as_ref().map(|f| f.handle),
                 capture: matches!(io.output, Output::Capture(_)),
+                capture_error: io.error_capture.is_some(),
             };
-            let CommandOutput { code, chunks } = host
-                .borrow_mut()
-                .run(stages, &self.host_cwd, &self.environment, streams)
-                .map_err(|e| Self::host_error(expr, e))?;
-            for chunk in chunks {
-                self.output_bytes = self.output_bytes.saturating_add(chunk.bytes.len());
-                if self.output_bytes > MAX_OUTPUT_BYTES {
-                    return Err(Error::new(expr, "command output exceeds 8 MiB"));
+            let executed =
+                host.borrow_mut()
+                    .run(stages, &self.host_cwd, &self.environment, streams);
+            match executed {
+                Ok(CommandOutput {
+                    code,
+                    chunks,
+                    stages: host_stages,
+                    error: execution_error,
+                }) => {
+                    let execution_failed = execution_error.is_some();
+                    if let Some(error) = execution_error {
+                        incomplete = true;
+                        issue = Some(Error {
+                            code: error.code,
+                            kind: if error.message.contains("8 MiB") {
+                                "output-limit"
+                            } else {
+                                "runtime"
+                            }
+                            .into(),
+                            ..Error::new(expr, error.message)
+                        });
+                    }
+                    statuses = if host_stages.is_empty() && issue.is_none() {
+                        vec![crate::host::Termination::Exited(code)]
+                    } else {
+                        host_stages
+                    };
+                    for chunk in chunks {
+                        let capture = if chunk.stream == Stream::Stdout && io.host_output.is_none()
+                        {
+                            match &io.output {
+                                Output::Capture(buffer) => Some(buffer),
+                                _ => None,
+                            }
+                        } else if chunk.stream == Stream::Stderr && io.host_error.is_none() {
+                            io.error_capture.as_ref()
+                        } else {
+                            None
+                        };
+                        if let Some(buffer) = capture {
+                            if let Err(error) = crate::streams::append_capture(
+                                buffer,
+                                io.capture_budget.as_ref(),
+                                &chunk.bytes,
+                            ) {
+                                issue = Some(Error {
+                                    kind: "output-limit".into(),
+                                    ..Error::new(expr, error.to_string())
+                                });
+                            }
+                        } else if !execution_failed {
+                            // A failed buffered host call only exposes partial bytes to captures.
+                            self.output_bytes = self.output_bytes.saturating_add(chunk.bytes.len());
+                            if self.output_bytes > MAX_OUTPUT_BYTES {
+                                issue = Some(Error::new(expr, "command output exceeds 8 MiB"));
+                            } else {
+                                self.output.push(chunk);
+                            }
+                        }
+                    }
                 }
-                if chunk.stream == Stream::Stdout
-                    && let Output::Capture(buffer) = &io.output
-                {
-                    buffer.lock().unwrap().extend(chunk.bytes);
-                } else {
-                    self.output.push(chunk);
-                }
+                Err(error) => issue = Some(Self::host_error(expr, error)),
             }
-            code
         } else {
             #[cfg(feature = "native")]
-            {
-                process::run(stages, &self.cwd, &self.environment, io, self.job.as_ref()).map_err(
-                    |e| Error {
-                        code: e.code,
-                        offset: expr.offset,
-                        message: e.message,
-                        exit: false,
-                    },
-                )?
+            match process::run(
+                stages,
+                &self.cwd,
+                &self.environment,
+                io,
+                self.job.as_ref(),
+                self.task_control.as_ref(),
+                self.cleanup_depth > 0,
+            ) {
+                Ok(report) => {
+                    let startup_failed = report.stages.iter().any(|stage| stage.error.is_some());
+                    for stage in &report.stages {
+                        if let Some(status) = &stage.termination {
+                            statuses.push(status.clone());
+                        }
+                        let error = stage.error.as_ref().map(|e| Error {
+                            code: e.code,
+                            kind: "spawn-failed".into(),
+                            ..Error::new(expr, &e.message)
+                        });
+                        stage_records.push(execution::record(
+                            "StageResult",
+                            [
+                                (
+                                    "argv",
+                                    Value::List(
+                                        stage.argv.iter().cloned().map(Value::Text).collect(),
+                                    ),
+                                ),
+                                (
+                                    "termination",
+                                    stage
+                                        .termination
+                                        .as_ref()
+                                        .map_or(Value::Nil, execution::termination),
+                                ),
+                                (
+                                    "error",
+                                    error.as_ref().map_or(Value::Nil, |e| e.as_value(false)),
+                                ),
+                            ],
+                        ));
+                    }
+                    if let Some(error) = report.error {
+                        issue = Some(Error {
+                            code: error.code,
+                            kind: if error.message.contains("8 MiB") {
+                                "output-limit"
+                            } else if startup_failed {
+                                "spawn-failed"
+                            } else {
+                                "runtime"
+                            }
+                            .into(),
+                            ..Error::new(expr, error.message)
+                        });
+                    }
+                    if self
+                        .task_control
+                        .as_ref()
+                        .is_some_and(|c| c.forced() || (c.cancelled() && self.cleanup_depth == 0))
+                    {
+                        issue = Some(Error {
+                            code: 130,
+                            kind: "cancelled".into(),
+                            cancelled: true,
+                            ..Error::new(expr, "task cancelled")
+                        });
+                    }
+                }
+                Err(error) => {
+                    issue = Some(Error {
+                        code: error.code,
+                        kind: "spawn-failed".into(),
+                        ..Error::new(expr, error.message)
+                    })
+                }
             }
             #[cfg(not(feature = "native"))]
             {
-                return Err(Self::unavailable_command(expr, &stages[0][0]));
+                issue = Some(Self::unavailable_command(expr, &stages[0][0]));
             }
-        };
-        Self::command_status(
-            expr,
-            &stages
+        }
+        if stage_records.is_empty() {
+            for (index, argv) in stages.iter().enumerate() {
+                stage_records.push(execution::record(
+                    "StageResult",
+                    [
+                        (
+                            "argv",
+                            Value::List(argv.iter().cloned().map(Value::Text).collect()),
+                        ),
+                        (
+                            "termination",
+                            statuses
+                                .get(index)
+                                .map_or(Value::Nil, execution::termination),
+                        ),
+                        (
+                            "error",
+                            if index == if incomplete { statuses.len() } else { 0 } {
+                                issue.as_ref().map_or(Value::Nil, |e| e.as_value(false))
+                            } else {
+                                Value::Nil
+                            },
+                        ),
+                    ],
+                ));
+            }
+        }
+        let status = if incomplete
+            || issue
+                .as_ref()
+                .is_some_and(|e| e.kind == "spawn-failed" || e.kind == "unsupported")
+        {
+            None
+        } else {
+            statuses
                 .iter()
-                .map(|s| s[0].as_str())
-                .collect::<Vec<_>>()
-                .join(" | "),
-            code,
-            mode,
-        )
-    }
-
-    fn command_status(expr: &Expr, name: &str, code: i32, mode: Mode) -> Result<Value, Error> {
-        if code != 0 && mode != Mode::Condition {
-            return Err(Error {
+                .rev()
+                .find(|s| s.code() != 0)
+                .or_else(|| statuses.last())
+        };
+        let code = status.map_or(0, crate::host::Termination::code);
+        if issue.is_none() && code != 0 {
+            issue = Some(Error {
                 code,
-                offset: expr.offset,
-                exit: false,
-                message: format!("{name} exited with status {code}"),
+                kind: if matches!(status, Some(crate::host::Termination::Signaled { .. })) {
+                    "signaled"
+                } else {
+                    "command-failed"
+                }
+                .into(),
+                ..Error::new(
+                    expr,
+                    format!(
+                        "{} exited with status {code}",
+                        stages
+                            .iter()
+                            .map(|s| s[0].as_str())
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    ),
+                )
             });
         }
-        Ok(Value::Status(code))
+        let result = execution::result_record(
+            Value::Nil,
+            status.map_or(Value::Nil, execution::termination),
+            issue.as_ref().map_or(Value::Nil, |e| e.as_value(false)),
+            Value::List(stage_records),
+        );
+        self.publish(result);
+        let mut outcome = if let Some(mut error) = issue {
+            error.result = Some(Box::new(self.last_result.clone()));
+            if mode == Mode::Condition
+                && matches!(error.kind.as_str(), "command-failed" | "signaled")
+            {
+                Ok(Value::Status(CommandStatus {
+                    code,
+                    result: Box::new(self.last_result.clone()),
+                }))
+            } else {
+                Err(Signal::Error(Box::new(error)))
+            }
+        } else {
+            Ok(Value::Status(CommandStatus {
+                code,
+                result: Box::new(self.last_result.clone()),
+            }))
+        };
+        // Reuse the already published command metadata and attach this invocation's output.
+        self.publish_invocation(expr, &mut outcome, io, positions);
+        outcome.map_err(|signal| signal.into_error(expr))
+    }
+
+    fn command_status(
+        &mut self,
+        expr: &Expr,
+        name: &str,
+        code: i32,
+        mode: Mode,
+    ) -> Result<Value, Error> {
+        let issue = (code != 0).then(|| Error {
+            code,
+            kind: "command-failed".into(),
+            ..Error::new(expr, format!("{name} exited with status {code}"))
+        });
+        self.publish(execution::result_record(
+            Value::Nil,
+            execution::exited(code),
+            issue.as_ref().map_or(Value::Nil, |e| e.as_value(false)),
+            Value::List(Vec::new()),
+        ));
+        if code != 0 && mode != Mode::Condition {
+            let mut error = issue.unwrap();
+            error.result = Some(Box::new(self.last_result.clone()));
+            return Err(error);
+        }
+        Ok(Value::Status(CommandStatus {
+            code,
+            result: Box::new(self.last_result.clone()),
+        }))
     }
 
     /// Write builtin output through the same destinations as external commands.
@@ -1783,11 +2159,24 @@ impl Shell {
                 .write(file.handle, &bytes)
                 .map_err(|error| Self::host_error(expr, error));
         }
-        if stream == Stream::Stdout
-            && let Output::Capture(buffer) = &io.output
-        {
-            buffer.lock().unwrap().extend(bytes);
-            return Ok(());
+        #[cfg(feature = "native")]
+        let error_redirected = io.error.is_some();
+        #[cfg(not(feature = "native"))]
+        let error_redirected = false;
+        let capture = match stream {
+            Stream::Stdout => match &io.output {
+                Output::Capture(buffer) => Some(buffer),
+                _ => None,
+            },
+            Stream::Stderr if !error_redirected => io.error_capture.as_ref(),
+            Stream::Stderr => None,
+        };
+        if let Some(buffer) = capture {
+            return crate::streams::append_capture(buffer, io.capture_budget.as_ref(), &bytes)
+                .map_err(|e| Error {
+                    kind: "output-limit".into(),
+                    ..Error::new(expr, e.to_string())
+                });
         }
         if self.host.is_some() || self.syntax_only {
             self.output.push(OutputChunk { stream, bytes });
@@ -1820,6 +2209,8 @@ impl Shell {
             message: format!(
                 "external command '{name}' requires native parsh; try (str \"hello\") to return text"
             ),
+            kind: "unsupported".into(),
+            ..Error::new(expr, "")
         }
     }
 
@@ -1836,6 +2227,9 @@ impl Shell {
     }
 
     fn valid_name(expr: &Expr, name: &str) -> Result<(), Error> {
+        if name == "?" {
+            return Err(Error::new(expr, "$? is read-only"));
+        }
         if !variable_name(name) {
             Err(Error::new(
                 expr,

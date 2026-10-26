@@ -1868,14 +1868,32 @@ mod host_tests {
                     "{}\n",
                     environment[&OsString::from(&argv[1])].to_string_lossy()
                 ),
+                "partial" => {
+                    return Ok(CommandOutput {
+                        code: 2,
+                        stages: Vec::new(),
+                        error: Some(HostError {
+                            code: 2,
+                            message: "command output exceeds 8 MiB".into(),
+                        }),
+                        chunks: vec![OutputChunk {
+                            stream: Stream::Stdout,
+                            bytes: b"prefix".to_vec(),
+                        }],
+                    });
+                }
                 "false" => {
                     return Ok(CommandOutput {
+                        error: None,
+                        stages: Vec::new(),
                         code: 1,
                         chunks: vec![],
                     });
                 }
                 "binary" => {
                     return Ok(CommandOutput {
+                        error: None,
+                        stages: Vec::new(),
                         code: 0,
                         chunks: vec![OutputChunk {
                             stream: Stream::Stdout,
@@ -1891,6 +1909,8 @@ mod host_tests {
                 }
             };
             Ok(CommandOutput {
+                error: None,
+                stages: Vec::new(),
                 code: 0,
                 chunks: vec![OutputChunk {
                     stream: Stream::Stdout,
@@ -1967,6 +1987,24 @@ mod host_tests {
                 .any(|event| matches!(event, Event::Diagnostic(_))),
             "{events:?}"
         );
+    }
+
+    #[test]
+    fn host_failures_retain_partial_captured_output_without_a_fake_exit_status() {
+        let mut repl = Repl::with_host(TestHost).unwrap();
+        let events = execute(
+            &mut repl,
+            r#"
+            (try (capture-call partial)
+              (catch e (list (Error.kind $e) (stdout-text (Error.result $e))
+                             (nil? (CallResult.termination (Error.result $e))))))
+        "#,
+        );
+        assert!(
+            events.contains(&Event::Value(r#"("output-limit" "prefix" #true)"#.into())),
+            "{events:?}"
+        );
+        assert!(outputs(&events).is_empty());
     }
 
     #[test]

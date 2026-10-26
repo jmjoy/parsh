@@ -60,6 +60,8 @@ impl ExecutionHost for TestHost {
     ) -> Result<CommandOutput, HostError> {
         self.runs.set(self.runs.get() + 1);
         Ok(CommandOutput {
+            error: None,
+            stages: Vec::new(),
             code: 0,
             chunks: vec![OutputChunk {
                 stream: Stream::Stdout,

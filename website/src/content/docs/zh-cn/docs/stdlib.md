@@ -128,3 +128,8 @@ description: "不可变列表、Unicode 字符串、类型判断和数值函数�
 结果为 `(#-2 #-1 #3 #-3)`。`quot/rem` 仅接受 int，其他数值函数只接受 int 或 float；文本应先用 `int`、`float` 显式转换。
 `min/max` 保留胜出数值的类型，并保留大整数与浮点混合比较的精度。
 除零、整数溢出、取整结果超出 i64 和非有限数值仍是语言错误。
+
+
+## 调用、结果与任务
+
+`command`、`command?`、`callable?`、`bytes?`、`capture-call`、`stdout-text`、`stderr-text`、`exit-code`、`signal`、`check`、`throw` 在原生与浏览器环境共用实现；`spawn`、`wait`、`job-status`、`cancel` 要求原生任务支持。这些普通内置都可通过 `function` 和 `apply` 调用。签名及结构体见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。

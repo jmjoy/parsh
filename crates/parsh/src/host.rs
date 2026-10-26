@@ -15,9 +15,28 @@ pub struct OutputChunk {
     pub bytes: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum Termination {
+    Exited(i32),
+    Signaled { signal: i32, core_dumped: bool },
+}
+
+impl Termination {
+    pub fn code(&self) -> i32 {
+        match self {
+            Self::Exited(code) => *code,
+            Self::Signaled { signal, .. } => 128 + signal,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct CommandOutput {
     pub code: i32,
     pub chunks: Vec<OutputChunk>,
+    pub stages: Vec<Termination>,
+    /// Execution errors may retain partial output and completed pipeline stages.
+    pub error: Option<HostError>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -26,6 +45,7 @@ pub struct HostStreams {
     pub output: Option<u32>,
     pub error: Option<u32>,
     pub capture: bool,
+    pub capture_error: bool,
 }
 
 #[derive(Clone, Copy)]

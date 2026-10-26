@@ -959,3 +959,40 @@ test("numeric operations and indices require typed values at text boundaries", a
   await execute(page, '(list (+ (int (printf 1)) #2) (lget [a b] (int 1)) (+ #1 #2.5))');
   await expect(terminal(page)).toContainText('(#3 "b" #3.5)');
 });
+
+test("complete execution results, special variable, bytes, and exceptions share WASM semantics", async ({ page }) => {
+  await playground(page);
+  await execute(page, String.raw`
+    (let result (capture-call echo hello world))
+    (let saved $?)
+    (list (stdout-text $result) (exit-code $result) (signal $result)
+          (bytes? (CallResult.stdout $result)) (eq $result $saved))
+    (let failed (capture-call cat missing-result-file))
+    (list (exit-code $failed) (scontains (stderr-text $failed) missing-result-file))
+    (let sorter (command sort))
+    (stdout-text (capture-call (fn () (| (printf "b\na\n") ($sorter)))))
+    (let binary (capture-call printf "\\377"))
+    (list (typeof (CallResult.stdout $binary)) (exit-code $binary))
+    (let trace "")
+    (try (check $failed)
+      (catch err (set trace (str $trace (Error.kind $err))))
+      (finally (set trace (str $trace "/cleaned"))))
+    (list $trace (apply + [#2 #3]))
+    (try (stdout-text $binary) (catch err (str invalid-utf8)))
+    (try (throw payload) (catch err (Error.payload $err)))
+    (str "code=$(exit-code $saved)")
+  `);
+  await expect(terminal(page)).toContainText('("hello world\\n" #0 #nil #true #true)');
+  await expect(terminal(page)).toContainText('(#1 #true)');
+  await expect(terminal(page)).toContainText('"a\\nb\\n"');
+  await expect(terminal(page)).toContainText('("bytes" #0)');
+  await expect(terminal(page)).toContainText('("command-failed/cleaned" #5)');
+  await expect(terminal(page)).toContainText('"invalid-utf8"');
+  await expect(terminal(page)).toContainText('"payload"');
+  await expect(terminal(page)).toContainText('"code=0"');
+  await execute(page, '(try (capture-call seq 1 2000000) (catch err (list (Error.kind $err) (bytes? (CallResult.stdout (Error.result $err))))))');
+  await expect(terminal(page)).toContainText('("output-limit" #true)');
+  await execute(page, '(spawn echo unavailable-background)');
+  await expect(terminal(page)).toContainText('requires native background-task support');
+  await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
+});

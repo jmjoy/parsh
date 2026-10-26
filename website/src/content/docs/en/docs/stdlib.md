@@ -140,3 +140,8 @@ The result is `(#-2 #-1 #3 #-3)`. `quot/rem` require int values; other numeric h
 values. Text must be converted explicitly with `int` or `float`. `min/max` retain the winning
 number's type and preserve integer precision in mixed comparisons. Division by
 zero, integer overflow, rounding outside i64, and non-finite values are language errors.
+
+
+## Calls, results, and tasks
+
+`command`, `command?`, `callable?`, `bytes?`, `capture-call`, `stdout-text`, `stderr-text`, `exit-code`, `signal`, `check`, and `throw` work in native and browser sessions. `spawn`, `wait`, `job-status`, and `cancel` require native task support. All are ordinary builtins available through `function` and `apply`. See [execution results and tasks](/parsh/en/docs/execution/) for signatures and result structures.

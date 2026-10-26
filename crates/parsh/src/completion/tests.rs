@@ -468,3 +468,30 @@ fn hash_literals_complete_without_becoming_quoted_paths() {
     }
     assert!(Completion::query(&mut shell, "(; #f", 5).is_none());
 }
+
+#[test]
+fn invocation_helpers_and_special_result_complete_without_evaluation() {
+    for source in ["(capture-call ec", "(spawn ec", "(command ec", "(apply ec"] {
+        assert_eq!(
+            Context::parse(source, source.len()).unwrap().kind,
+            Kind::Command
+        );
+    }
+    let shell = Shell::syntax();
+    assert!(
+        shell
+            .completion_variables("$")
+            .iter()
+            .any(|c| c.text == "$?")
+    );
+    for source in ["(str $?", "(str \"$?", "(str \"\"\"$?"] {
+        let context = Context::parse(source, source.len()).unwrap();
+        assert_eq!(context.kind, Kind::Variable);
+        assert_eq!(context.prefix, "$?");
+    }
+    let source = "(str \"$?tail\")";
+    let cursor = source.find('?').unwrap() + 1;
+    let context = Context::parse(source, cursor).unwrap();
+    assert_eq!(&source[context.range], "$?");
+    assert!(Context::parse("(catch er", 9).is_none());
+}

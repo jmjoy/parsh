@@ -74,6 +74,11 @@ export default defineConfig({
               translations: { "zh-CN": "命令与组合" },
             },
             {
+              slug: "docs/execution",
+              label: "Execution results & tasks",
+              translations: { "zh-CN": "执行结果与后台任务" },
+            },
+            {
               slug: "docs/structs-and-macros",
               label: "Structs & macros",
               translations: { "zh-CN": "结构与宏" },

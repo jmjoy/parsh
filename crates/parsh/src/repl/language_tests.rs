@@ -337,7 +337,7 @@ fn direct_referenced_and_applied_builtins_share_typed_operations() {
         evaluated("(let name value) (apply (function get) [name])"),
         [r#""value""#]
     );
-    fails("(apply + [#1])", "a function value");
+    assert_eq!(evaluated("(apply + [#1])"), ["#1"]);
     fails("(apply (function +) 1)", "a final list");
 }
 
@@ -575,4 +575,134 @@ fn set_resolves_its_destination_before_evaluating_the_rhs() {
         ),
         ["(#nil #nil)"],
     );
+}
+
+#[test]
+fn callable_names_and_explicit_command_references_are_first_class() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (list (command? (command echo)) (callable? (function +))
+              (callable? (command echo)) (bytes? hello) (typeof (command echo)))
+        (apply + #1 [#2 #3])
+        (let r (capture-call + #1 #2))
+        (list (CallResult.value $r) (CallResult.termination $r)
+              (bytes? (CallResult.stdout $r)) (stdout-text $r))
+        "#
+        ),
+        [
+            r#"(#true #true #true #false "command")"#,
+            "#6",
+            r#"(#3 #nil #true "")"#
+        ]
+    );
+    fails("(apply if [#true a b])", "not an ordinary callable");
+    fails("(command #1)", "nonempty text program name");
+}
+
+#[test]
+fn special_result_is_read_only_and_pure_queries_do_not_replace_it() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (nil? $?)
+        (defn value () #42)
+        (value)
+        (let saved $?)
+        (list (CallResult.value $?) (CallResult.value (get ?))
+              (eq $? $saved) (nil? (exit-code $?)) (nil? (signal $?)))
+        "#
+        ),
+        ["#true", "#42", "(#42 #42 #true #true #true)"]
+    );
+    for source in [
+        "(let ? #1)",
+        "(set ? #1)",
+        "(export ? a)",
+        "(fn (?) #nil)",
+        "(for ? [] #nil)",
+    ] {
+        fails(source, "$? is read-only");
+    }
+    assert_eq!(evaluated(r#"(str '\$?' "\$?")"#), [r#""\\\$?\$?""#]);
+}
+
+#[test]
+fn exception_values_and_finally_preserve_function_returns() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (let trace "")
+        (defn answer ()
+          (try (throw {reason failure})
+            (catch e (set trace (str $trace caught))
+                     (return (Error.payload $e)))
+            (finally (set trace (str $trace cleaned)))))
+        (list (answer) $trace)
+        (try (try (throw original) (finally (throw replacement)))
+          (catch e (Error.payload $e)))
+        "#
+        ),
+        [
+            r#"((map "reason" "failure") "caughtcleaned")"#,
+            r#""replacement""#
+        ]
+    );
+    fails(
+        "(try #1 (finally (return #2)))",
+        "return is not allowed in finally",
+    );
+    fails(
+        "(try #1 (finally (for x [a] (break))))",
+        "break is not allowed in finally",
+    );
+    assert_eq!(
+        evaluated("(defn helper () (return #2)) (try #1 (finally (helper)))"),
+        ["#1"]
+    );
+}
+
+#[test]
+fn malformed_try_is_validated_before_any_body_side_effect() {
+    let mut repl = Repl::new();
+    execute(&mut repl, "(let count #0)");
+    for source in [
+        "(try (set count #1) (catch e #2) (catch e #3))",
+        "(try (set count #1) (finally #2) (catch e #3))",
+        "(try (set count #1) (finally #2) #3)",
+        "(try (set count #1))",
+    ] {
+        let events = execute(&mut repl, source);
+        assert!(!diagnostics(&events).is_empty(), "{source}");
+        assert_eq!(values(&execute(&mut repl, "(+ $count)")), ["#0"]);
+    }
+}
+
+#[test]
+fn result_interpolation_and_background_capability_are_explicit() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (defn value () #7) (value)
+        (str "value=$(CallResult.value $?)")
+        "#
+        ),
+        ["#7", r#""value=7""#]
+    );
+    fails(r#"(defn value () #1) (value) (str "$?")"#, "got a struct");
+    fails(
+        "(spawn echo hello)",
+        "requires native background-task support",
+    );
+    fails(
+        "(CallResult #nil #nil #nil #nil #nil [])",
+        "constructed by the runtime",
+    );
+    fails("(defstruct Job id)", "struct name is reserved");
+}
+
+#[test]
+fn higher_order_capture_calls_have_a_bounded_stack() {
+    let source = format!("({} + #1)", "capture-call ".repeat(256));
+    fails(&source, "capture nesting exceeds 32 levels");
 }

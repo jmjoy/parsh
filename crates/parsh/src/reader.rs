@@ -418,6 +418,13 @@ impl<'a> Reader<'a> {
                     let variable_offset = self.offset - 1;
                     let part = match self.peek() {
                         Some('(') => self.expr(depth + 1)?,
+                        Some('?') => {
+                            self.bump();
+                            Expr {
+                                kind: Kind::Variable("?".into()),
+                                offset: variable_offset,
+                            }
+                        }
                         Some(ch) if variable_start(ch) => {
                             let start = self.offset;
                             while self.peek().is_some_and(variable_continue) {

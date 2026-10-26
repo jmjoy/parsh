@@ -141,3 +141,8 @@ its caller's variable only when the caller explicitly assigns that result.
 Maps cannot implicitly become text: `str`, string interpolation, external command
 arguments, and environment values reject maps. Use `mkeys` or `mvals` explicitly
 when a list is needed for iteration or command arguments.
+
+
+## Previous execution result
+
+The read-only special variable `$?` (also `(get ?)`) holds the previous complete `CallResult`, initially nil. Use `(exit-code $?)` or `(signal $?)` to inspect termination, or `(let saved $?)` to keep a snapshot. It is not an environment variable and cannot be assigned. See [execution results](/parsh/en/docs/execution/).

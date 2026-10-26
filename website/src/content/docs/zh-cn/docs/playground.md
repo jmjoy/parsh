@@ -59,3 +59,6 @@ description: "在浏览器中运行 parsh、coreutils 和命令管道。"
 - `exit` 和空输入时 Ctrl+D 结束会话，可重置重新开始。
 
 要操作自己的文件并运行 Linux 程序，请[在 Linux 上使用 parsh](/parsh/zh-cn/docs/getting-started/)。
+
+
+同步的 `command` 引用、`apply`、`capture-call`、原始字节结果、`$?` 和 `try/catch/throw/finally` 与原生环境共用语义。浏览器不提供原生信号或后台任务，`spawn`、`wait`、`job-status`、`cancel` 明确提示能力限制。

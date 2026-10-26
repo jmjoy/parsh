@@ -11,9 +11,9 @@ use crate::{
 
 /// An opaque callable value. Copies retain its identity and lexical environment.
 #[derive(Clone)]
-pub struct FunctionValue(Rc<Callable>);
+pub struct FunctionValue(pub(super) Rc<Callable>);
 
-enum Callable {
+pub(super) enum Callable {
     User { name: String, definition: Function },
     Builtin(String),
 }
@@ -176,7 +176,10 @@ impl Shell {
             Callable::User { name, definition } => {
                 definition.parameters.check_arity(expr, args.len())?;
                 let values = args.values(self, env, io)?;
-                self.function_body(expr, name, definition, values, mode, io)
+                let positions = Self::capture_positions(io);
+                let mut result = self.function_body(expr, name, definition, values, mode, io);
+                self.publish_invocation(expr, &mut result, io, positions);
+                result
             }
             Callable::Builtin(name) if VALUE_BUILTINS.contains(&name.as_str()) => {
                 self.call_builtin(expr, name, args, env, mode, io)
@@ -226,6 +229,7 @@ impl Shell {
         definition.parameters.check_arity(expr, values.len())?;
         let local = self.child_scope(&definition.closure);
         let caller_loop_depth = std::mem::take(&mut self.loop_depth);
+        let caller_finally_depth = std::mem::take(&mut self.finally_depth);
         self.return_depth += 1;
         let result = (|| {
             let mut supplied = values.into_iter();
@@ -258,6 +262,7 @@ impl Shell {
         })();
         self.return_depth -= 1;
         self.loop_depth = caller_loop_depth;
+        self.finally_depth = caller_finally_depth;
         match result {
             Ok(value) | Err(Signal::Return(value)) => Ok(value),
             Err(signal) => {
@@ -274,6 +279,10 @@ impl Shell {
 
 impl Drop for Shell {
     fn drop(&mut self) {
+        #[cfg(feature = "native")]
+        if self.task_id.is_none() {
+            self.tasks.shutdown();
+        }
         // A recursive closure can be stored in its own captured scope. Release
         // bindings explicitly so session reset/drop also releases those cycles.
         for scope in &self.scopes {

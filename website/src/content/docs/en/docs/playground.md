@@ -59,3 +59,6 @@ Browser pipelines run one stage at a time with buffered output. They report the 
 - `exit` and Ctrl+D on empty input end the session; reset to restart.
 
 To work with your own files and Linux programs, [run parsh on Linux](/parsh/en/docs/getting-started/).
+
+
+Synchronous `command` references, `apply`, `capture-call`, raw-byte results, `$?`, and `try/catch/throw/finally` share native semantics. The browser has no native signal or background-task support; `spawn`, `wait`, `job-status`, and `cancel` report that capability limit.

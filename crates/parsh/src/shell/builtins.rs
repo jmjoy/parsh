@@ -69,6 +69,21 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "ceil",
     "round",
     "apply",
+    "command",
+    "command?",
+    "callable?",
+    "bytes?",
+    "capture-call",
+    "spawn",
+    "wait",
+    "job-status",
+    "cancel",
+    "check",
+    "stdout-text",
+    "stderr-text",
+    "exit-code",
+    "signal",
+    "throw",
 ];
 
 /// The same operations serve source calls and apply's already evaluated values.
@@ -215,6 +230,8 @@ impl Value {
             Self::Map(_) => "map",
             Self::Form(_) => "form",
             Self::Function(_) => "function",
+            Self::Command(_) => "command",
+            Self::Bytes(_) => "bytes",
             Self::Struct { .. } => "struct",
             Self::Nil => "nil",
             Self::Status(_) => "status",
@@ -227,6 +244,7 @@ fn arity(name: &str) -> (usize, usize) {
         "list" | "str" | "map" | "+" | "*" | "lconcat" => (0, usize::MAX),
         "-" | "/" | "min" | "max" | "lappend" => (1, usize::MAX),
         "apply" => (2, usize::MAX),
+        "capture-call" | "spawn" => (1, usize::MAX),
         "mget" | "lget" | "sget" | "lslice" | "sslice" => (2, 3),
         "mset" | "sreplace" => (3, 3),
         "eq" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "mdel" | "mhas" | "quot" | "rem"
@@ -249,6 +267,9 @@ impl Shell {
         let (min, max) = arity(name);
         Self::arity_count(expr, args.len(), min, max)?;
         match name {
+            "command" | "command?" | "callable?" | "bytes?" | "capture-call" | "spawn" | "wait"
+            | "job-status" | "cancel" | "check" | "stdout-text" | "stderr-text" | "exit-code"
+            | "signal" | "throw" => self.execution_builtin(expr, name, args, env, mode, io),
             "get" => {
                 let Value::Text(name) = args.value(self, 0, env, io)? else {
                     return Err(
@@ -352,7 +373,7 @@ impl Shell {
                 } else {
                     match args.value(self, 0, env, io)? {
                         Value::Bool(value) => value,
-                        Value::Status(code) => code == 0,
+                        Value::Status(status) => status.code == 0,
                         _ => return Err(Error::new(args.at(expr, 0), "a condition must be a boolean or command status; use eq to compare text").into()),
                     }
                 };
@@ -361,11 +382,7 @@ impl Shell {
             "apply" => {
                 let mut values = args.values(self, env, io)?;
                 let last = values.pop().unwrap();
-                let Value::Function(function) = values.remove(0) else {
-                    return Err(
-                        Error::new(args.at(expr, 0), "apply expects a function value").into(),
-                    );
-                };
+                let callee = values.remove(0);
                 let Value::List(tail) = last else {
                     return Err(Error::new(
                         args.at(expr, args.len() - 1),
@@ -374,14 +391,7 @@ impl Shell {
                     .into());
                 };
                 values.extend(tail);
-                if self.depth >= 128 {
-                    return Err(Error::new(expr, "evaluation nesting exceeds 128 levels").into());
-                }
-                self.depth += 1;
-                let result =
-                    self.call_function(expr, &function, Arguments::Values(&values), env, mode, io);
-                self.depth -= 1;
-                result
+                self.call_value(expr, callee, Arguments::Values(&values), env, mode, io)
             }
             _ => {
                 // New value operations evaluate explicit arguments in order before

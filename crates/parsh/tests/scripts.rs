@@ -1131,3 +1131,310 @@ fn numeric_text_from_commands_environment_and_arguments_requires_conversion() {
     success(&output);
     assert_eq!(stdout(&output), "2");
 }
+
+#[test]
+fn complete_results_preserve_both_streams_status_and_last_result() {
+    let output = run(r#"
+        (let here (pwd)) (let saved $?)
+        (printf "%s/%s\n" (exit-code $saved) (eq $here (strim (stdout-text $saved))))
+        (let r (capture-call sh -c 'printf output; printf error >&2; exit 7'))
+        (set saved $?)
+        (printf "%s/%s/%s/%s/%s\n" (stdout-text $r) (stderr-text $r)
+                (exit-code $r) (signal $r) (eq $r $saved))
+        (try (check $r) (catch e (printf "%s/%s" (Error.kind $e) (exit-code (Error.result $e)))))
+        "#);
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "0/true\noutput/error/7//true\ncommand-failed/7"
+    );
+}
+
+#[test]
+fn commands_through_apply_preserve_argument_values_and_run_once() {
+    let output = run(r#"
+        (let calls #0)
+        (defn once () (set calls (+ $calls #1)) '$missing (exit 99)')
+        (apply (command printf) '<%s>' [(once) 'a b'])
+        (printf "/%s/" $calls)
+        (apply printf ['<%s>' hello world])
+        (defn echo (x) (str wrapped- $x))
+        (printf "/%s/%s" (capture-call echo a) (stdout-text (capture-call (command echo) a)))
+        "#);
+    // A result struct cannot accidentally become an external argument.
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stdout(&output).starts_with("<$missing (exit 99)><a b>/1/<hello><world>"));
+    assert!(stderr(&output).contains("got a struct"));
+    let output = run(r#"(defn echo (x) (str wrapped- $x))
+        (printf "%s/%s" (CallResult.value (capture-call echo a))
+                (strim (stdout-text (capture-call (command echo) a))))"#);
+    success(&output);
+    assert_eq!(stdout(&output), "wrapped-a/a");
+}
+
+#[test]
+fn signal_termination_is_distinct_from_an_explicit_exit_code() {
+    let output = run(r#"
+        (let normal (capture-call sh -c 'exit 143'))
+        (let killed (capture-call sh -c 'kill -TERM $$'))
+        (printf "%s/%s/%s/%s" (exit-code $normal) (signal $normal)
+                (exit-code $killed) (signal $killed))
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "143///15");
+}
+
+#[test]
+fn raw_capture_accepts_binary_and_dual_streams_without_deadlocking() {
+    let output = run(r#"
+        (let binary (capture-call sh -c 'printf "\377"'))
+        (check $binary)
+        (printf "%s/%s/" (bytes? (CallResult.stdout $binary))
+                (eq (CallResult.stdout $binary) (CallResult.stdout (capture-call sh -c 'printf "\377"'))))
+        (try (stdout-text $binary) (catch e (printf invalid)))
+        (let large (capture-call sh -c 'head -c 1048576 /dev/zero; head -c 1048576 /dev/zero >&2'))
+        (printf "/%s/%s" (slen (stdout-text $large)) (slen (stderr-text $large)))
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "true/true/invalid/1048576/1048576");
+}
+
+#[test]
+fn capture_limits_raise_an_error_with_partial_output() {
+    let output = run(r#"
+        (try (capture-call head -c 8388609 /dev/zero)
+          (catch e (printf "%s/%s" (Error.kind $e)
+            (bytes? (CallResult.stdout (Error.result $e))))))
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "output-limit/true");
+}
+
+#[test]
+fn capture_preserves_redirection_and_pipeline_stage_information() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (let r (|> out (|2> err (capture-call sh -c 'printf stdout; printf stderr >&2'))))
+        (printf "%s/%s/" (nil? (CallResult.stdout $r)) (nil? (CallResult.stderr $r)))
+        (cat out err)
+        (set r (capture-call (fn () (| (sh -c 'exit 7') (sh -c 'exit 3') (cat)))))
+        (printf "/%s/%s/%s" (exit-code $r) (llen (CallResult.stages $r))
+          (Exited.code (StageResult.termination (lfirst (CallResult.stages $r)))))
+        "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(stdout(&output), "true/true/stdoutstderr/3/3/7");
+}
+
+#[test]
+fn captured_function_failures_stop_the_body_and_finally_runs() {
+    let output = run(r#"
+        (let trace "")
+        (defn failing ()
+          (try (printf before) (false) (set trace wrong)
+            (finally (set trace cleaned))))
+        (let r (capture-call failing))
+        (printf "%s/%s/%s" (stdout-text $r) (exit-code $r) $trace)
+        (try (capture-call missing-parsh-command) (catch e (printf "/%s/%s" (Error.kind $e) (nil? (CallResult.termination $?)))))
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "before/1/cleaned/spawn-failed/true");
+}
+
+#[test]
+fn background_commands_capture_output_and_wait_publishes_the_result() {
+    let output = run(r#"
+        (let j (spawn sh -c 'printf hello; printf warning >&2; exit 3'))
+        (let launched $?)
+        (let r (wait $j)) (let completed $?)
+        (printf "%s/%s/%s/%s/%s/%s/%s" (eq (CallResult.value $launched) $j)
+          (nil? (CallResult.termination $launched)) (stdout-text $r) (stderr-text $r)
+          (exit-code $r) (eq $r $completed) (eq $r (wait $j)))
+        (try (check $r) (catch e (printf "/%s" (Error.kind $e))))
+        "#);
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "true/true/hello/warning/3/true/true/command-failed"
+    );
+}
+
+#[test]
+fn background_functions_copy_closure_graphs_and_return_stable_closures() {
+    let output = run(r#"
+        (let value parent)
+        (let recurse (fn (n) (if (= $n #0) $value ($recurse (- $n #1)))))
+        (let job (spawn (fn () (set value child) ($recurse #3))))
+        (let r (wait $job))
+        (printf "%s/%s/" $value (CallResult.value $r))
+        (set job (spawn (fn () (let offset #5) (fn (x) (+ $offset $x)))))
+        (let first (wait $job)) (let second (wait $job))
+        (let f (CallResult.value $first))
+        (printf "%s/%s" ($f #2) (eq $f (CallResult.value $second)))
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "parent/child/7/true");
+}
+
+#[test]
+fn background_builtins_and_environment_changes_are_isolated() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (export PARSH_JOB_VALUE parent)
+        (let original (pwd))
+        (let j (spawn (fn () (cd /) (export PARSH_JOB_VALUE child) (printf "%s/%s" (pwd) $PARSH_JOB_VALUE))))
+        (let r (wait $j))
+        (printf "%s/%s/%s/" (stdout-text $r) (eq $original (pwd)) $PARSH_JOB_VALUE)
+        (let math (spawn + #2 #3))
+        (printf "%s/" (CallResult.value (wait $math)))
+        (let empty (spawn cat))
+        (printf "%s" (eq (stdout-text (wait $empty)) ""))
+        "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(stdout(&output), "//child/true/parent/5/true");
+}
+
+#[test]
+fn background_errors_and_cancellation_are_results() {
+    let output = run(r#"
+        (let failed (spawn (fn () (throw {reason expected}))))
+        (let r (wait $failed))
+        (printf "%s/" (Error.kind (CallResult.error $r)))
+        (let process (spawn sleep 30)) (cancel $process)
+        (set r (wait $process))
+        (printf "%s/" (Error.kind (CallResult.error $r)))
+        (let loop (spawn (fn () (while #true #nil)))) (cancel $loop)
+        (set r (wait $loop))
+        (printf "%s/" (Error.kind (CallResult.error $r)))
+        (try (spawn missing-parsh-command) (catch e (printf "%s" (Error.kind $e))))
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "user/cancelled/cancelled/spawn-failed");
+}
+
+#[test]
+fn session_exit_cancels_background_processes_and_interpreter_loops() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (let j (spawn sh -c 'printf "%s" $$ > pid; exec sleep 30'))
+        (while (not (test -f pid)) (sleep 0.01))
+        (spawn (fn () (while #true #nil)))
+        (exit 0)
+        "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    let pid: i32 = fs::read_to_string(directory.path().join("pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
+        Err(nix::errno::Errno::ESRCH)
+    );
+}
+
+#[test]
+fn finally_executes_before_exit_and_during_cooperative_cancellation() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (defn cleanup () (|> cleaned (printf first)) (|>> cleaned (printf second)))
+        (let j (spawn (fn ()
+          (try (|> ready (printf ready)) (while #true #nil)
+            (finally (cleanup))))))
+        (while (not (test -f ready)) (sleep 0.01))
+        (cancel $j) (wait $j)
+        (try (exit 7) (finally (|> exited (printf yes))))
+        "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    assert_eq!(output.status.code(), Some(7), "{}", stderr(&output));
+    assert_eq!(
+        fs::read_to_string(directory.path().join("cleaned")).unwrap(),
+        "firstsecond"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.path().join("exited")).unwrap(),
+        "yes"
+    );
+}
+
+#[test]
+fn task_exit_and_background_completion_do_not_exit_or_overwrite_the_parent() {
+    let output = run(r#"
+        (let j (spawn (fn () (exit 9))))
+        (let launched $?)
+        (while (eq (JobStatus.state (job-status $j)) running) #nil)
+        (let unchanged (eq $? $launched))
+        (let r (wait $j))
+        (printf "%s/%s/" $unchanged (exit-code $r))
+        (try (check $r) (catch e (printf checked)))
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "true/9/checked");
+}
+
+#[test]
+fn finally_and_skipped_iterations_cannot_replace_the_returned_command_metadata() {
+    let output = run(r#"
+        (let r (capture-call (fn () (try (sh -c 'exit 7') (finally (printf cleaned))))))
+        (printf "%s/%s/" (exit-code $r) (stdout-text $r))
+        (let next (capture-call (fn ()
+          (for n [#0 #1]
+            (if (= $n #1) (do (printf skipped) (continue)))
+            (printf completed)))))
+        (printf "%s/%s" (stdout-text $next)
+          (lfirst (StageResult.argv (lfirst (CallResult.stages $next)))))
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "7/cleaned/completedskipped/printf");
+}
+
+#[test]
+fn checking_a_cancelled_child_is_catchable_without_cancelling_the_parent() {
+    let output = run(r#"
+        (let job (spawn sleep 30)) (cancel $job)
+        (let r (wait $job))
+        (try (check $r) (catch e (printf "%s" (Error.kind $e))))
+        (printf /parent-alive)
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "cancelled/parent-alive");
+}
+
+#[test]
+fn external_references_and_dynamic_text_are_valid_pipeline_heads() {
+    let output = run(r#"
+        (let sorter (command sort))
+        (let sink cat)
+        (let r (capture-call (fn () (| (printf "b\na\n") ($sorter) ($sink)))))
+        (printf "%s" (stdout-text $r))
+        (let j (spawn (fn () (| (printf worker) ((command cat))))))
+        (printf "%s" (stdout-text (wait $j)))
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "a\nb\nworker");
+}

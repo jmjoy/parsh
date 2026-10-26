@@ -13,7 +13,7 @@ are started directly, without passing the expression through another shell.
 The command name may also come from a text variable, as in `($EDITOR file.txt)`;
 its value is one program name, without implicit splitting into flags.
 
-Command heads must be text or function values. Numeric, boolean, and nil heads are not callable, including values read from variables. Use `str` to explicitly construct a text command name. `int`, `float`, and `bool` are reserved builtins.
+Command heads accept text, function values, and explicit `command` references. Numeric, boolean, and nil heads are not callable, including values read from variables. Use `str` to explicitly construct a text command name. `int`, `float`, and `bool` are reserved builtins.
 
 `map` constructs a map. Its built-in operations are `mget`, `mset`, `mdel`, `mhas`,
 `mkeys`, `mvals`, and `mlen`; all take a map value first, such as `$config` or
@@ -80,3 +80,6 @@ pipeline is used as a value, stdout is captured as UTF-8, trailing LF characters
 are removed, and the result stays one argument. Stderr keeps its existing
 destination. Use a pipeline or file redirection for binary output. Explicit
 redirection takes precedence over capturing that expression's output.
+
+
+For complete results, raw-byte capture, `$?`, exceptions, and background execution, see [execution results and tasks](/parsh/en/docs/execution/).

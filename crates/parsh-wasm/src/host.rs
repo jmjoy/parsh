@@ -16,6 +16,7 @@ struct Run<'a> {
     output: Option<u32>,
     error: Option<u32>,
     capture: bool,
+    capture_error: bool,
 }
 
 #[derive(Deserialize)]
@@ -37,6 +38,10 @@ struct Chunk {
 #[derive(Deserialize)]
 struct Output {
     code: i32,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    stages: Vec<i32>,
     chunks: Vec<Chunk>,
 }
 
@@ -93,10 +98,20 @@ impl ExecutionHost for BrowserHost {
                 output: io.output,
                 error: io.error,
                 capture: io.capture,
+                capture_error: io.capture_error,
             },
         )?;
         Ok(CommandOutput {
             code: result.code,
+            error: result.error.map(|message| HostError {
+                code: result.code,
+                message,
+            }),
+            stages: result
+                .stages
+                .into_iter()
+                .map(parsh::host::Termination::Exited)
+                .collect(),
             chunks: result
                 .chunks
                 .into_iter()

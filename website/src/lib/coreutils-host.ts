@@ -15,6 +15,7 @@ interface RunRequest {
   output?: number;
   error?: number;
   capture: boolean;
+  capture_error: boolean;
 }
 interface Chunk { stream: "stdout" | "stderr"; bytes: Uint8Array }
 class HostFailure extends Error {
@@ -187,7 +188,7 @@ export class CoreutilsHost {
     }
   }
 
-  private run(request: RunRequest): { code: number; chunks: Chunk[] } {
+  private run(request: RunRequest): { code: number; stages: number[]; chunks: Chunk[]; error?: string } {
     // Resolve the supported command set before running any stage.
     for (const argv of request.stages) {
       if ((!argv[0] || !this.commands.has(argv[0]))) throw new HostFailure(`command '${argv[0]}' is not available in this playground`, 127);
@@ -196,55 +197,71 @@ export class CoreutilsHost {
     const chunks: Chunk[] = [];
     let outputBytes = 0;
     const emit = (stream: Chunk["stream"], bytes: Uint8Array): void => {
+      const remaining = Math.max(0, OUTPUT_LIMIT - outputBytes);
+      if (bytes.length > remaining) {
+        if (remaining > 0) chunks.push({ stream, bytes: bytes.slice(0, remaining) });
+        outputBytes = OUTPUT_LIMIT;
+        throw new HostFailure("command output exceeds 8 MiB");
+      }
       outputBytes += bytes.length;
-      if (outputBytes > OUTPUT_LIMIT) throw new HostFailure("command output exceeds 8 MiB");
       // Copy out of guest memory before it changes or grows.
       chunks.push({ stream, bytes: bytes.slice() });
     };
     let input: OpenFile = this.handle(request.input) ?? new OpenFile(new File(new Uint8Array()));
     let code = 0;
-    for (const [index, argv] of request.stages.entries()) {
-      const last = index === request.stages.length - 1;
-      const pipe: Uint8Array[] = [];
-      let pipeBytes = 0;
-      const stdout = last
-        ? this.handle(request.output) ?? new ConsoleStdout(bytes => emit("stdout", bytes))
-        : new ConsoleStdout(bytes => {
-          pipeBytes += bytes.length;
-          if (pipeBytes > OUTPUT_LIMIT) throw new HostFailure("pipeline buffer exceeds 8 MiB");
-          pipe.push(bytes.slice());
+    const stages: number[] = [];
+    try {
+      for (const [index, argv] of request.stages.entries()) {
+        const last = index === request.stages.length - 1;
+        const pipe: Uint8Array[] = [];
+        let pipeBytes = 0;
+        const stdout = last
+          ? this.handle(request.output) ?? new ConsoleStdout(bytes => emit("stdout", bytes))
+          : new ConsoleStdout(bytes => {
+            pipeBytes += bytes.length;
+            if (pipeBytes > OUTPUT_LIMIT) throw new HostFailure("pipeline buffer exceeds 8 MiB");
+            pipe.push(bytes.slice());
+          });
+        const stderr = this.handle(request.error) ?? new ConsoleStdout(bytes => emit("stderr", bytes));
+        // Only terminal streams report a character device. Captures/pipes are not TTYs.
+        if (!last || request.capture) {
+          if (stdout instanceof ConsoleStdout) {
+            stdout.fd_fdstat_get = () => ({ ret: 0, fdstat: new defs.Fdstat(defs.FILETYPE_REGULAR_FILE, 0) });
+            stdout.fd_filestat_get = () => ({ ret: 0, filestat: new defs.Filestat(0n, defs.FILETYPE_REGULAR_FILE, 0n) });
+          }
+        }
+        // Prevent fd_close in one instance from destroying a shared redirection.
+        const fds = [input, stdout, stderr, new PreopenDirectory("/", this.root.contents)];
+        const environment = Array.from(request.environment, ([key, value]) => `${key}=${value}`);
+        const wasi = new WASI(argv, environment, fds);
+        this.fixImports(wasi);
+        const cwd = encoder.encode(request.cwd);
+        const instance = new WebAssembly.Instance(this.module, {
+          wasi_snapshot_preview1: wasi.wasiImport,
+          parsh: {
+            cwd_len: () => cwd.length,
+            cwd_write: (ptr: number) => new Uint8Array(wasi.inst.exports.memory.buffer).set(cwd, ptr),
+          },
         });
-      const stderr = this.handle(request.error) ?? new ConsoleStdout(bytes => emit("stderr", bytes));
-      // Only terminal streams report a character device. Captures/pipes are not TTYs.
-      if (!last || request.capture) {
-        if (stdout instanceof ConsoleStdout) {
-          stdout.fd_fdstat_get = () => ({ ret: 0, fdstat: new defs.Fdstat(defs.FILETYPE_REGULAR_FILE, 0) });
-          stdout.fd_filestat_get = () => ({ ret: 0, filestat: new defs.Filestat(0n, defs.FILETYPE_REGULAR_FILE, 0n) });
+        if (request.capture_error && stderr instanceof ConsoleStdout && request.error == null) {
+          stderr.fd_fdstat_get = () => ({ ret: 0, fdstat: new defs.Fdstat(defs.FILETYPE_REGULAR_FILE, 0) });
+          stderr.fd_filestat_get = () => ({ ret: 0, filestat: new defs.Filestat(0n, defs.FILETYPE_REGULAR_FILE, 0n) });
+        }
+        const status = wasi.start(instance as Parameters<WASI["start"]>[0]);
+        stages.push(status);
+        if (status !== 0) code = status;
+        if (!last) {
+          const bytes = new Uint8Array(pipeBytes);
+          let offset = 0;
+          for (const chunk of pipe) { bytes.set(chunk, offset); offset += chunk.length; }
+          input = new OpenFile(new File(bytes));
         }
       }
-      // Prevent fd_close in one instance from destroying a shared redirection.
-      const fds = [input, stdout, stderr, new PreopenDirectory("/", this.root.contents)];
-      const environment = Array.from(request.environment, ([key, value]) => `${key}=${value}`);
-      const wasi = new WASI(argv, environment, fds);
-      this.fixImports(wasi);
-      const cwd = encoder.encode(request.cwd);
-      const instance = new WebAssembly.Instance(this.module, {
-        wasi_snapshot_preview1: wasi.wasiImport,
-        parsh: {
-          cwd_len: () => cwd.length,
-          cwd_write: (ptr: number) => new Uint8Array(wasi.inst.exports.memory.buffer).set(cwd, ptr),
-        },
-      });
-      const status = wasi.start(instance as Parameters<WASI["start"]>[0]);
-      if (status !== 0) code = status;
-      if (!last) {
-        const bytes = new Uint8Array(pipeBytes);
-        let offset = 0;
-        for (const chunk of pipe) { bytes.set(chunk, offset); offset += chunk.length; }
-        input = new OpenFile(new File(bytes));
-      }
+    } catch (error) {
+      if (!(error instanceof HostFailure)) throw error;
+      return { code: error.code, stages, chunks, error: error.message };
     }
-    return { code, chunks };
+    return { code, stages, chunks };
   }
 
   private fixImports(wasi: WASI): void {

@@ -62,7 +62,7 @@ injection layer.
 Command results are values. A command used as a value captures stdout as UTF-8
 text with trailing newlines removed, binary output goes through redirection or
 pipelines, and the exit status is a `status` value. A nonzero status stops the
-current batch, but conditions may inspect it: failures are data, not exceptions.
+current batch, but conditions and explicit capture may inspect it. Complete results retain exit and signal information, and exceptions provide recovery.
 See [commands and composition](/parsh/en/docs/commands/).
 
 ## Value semantics and lexical scope
@@ -106,7 +106,7 @@ grammar and no quoting layers, so the script reads the way it runs. See
 
 The language says what it does not do yet. Pipeline stages accept external
 commands only; macros have no hygiene; nested quasiquotes are
-copied literally; background jobs and library imports are future work. Exit
+copied literally; library imports remain future work. Native background tasks use isolated interpreter threads. Exit
 codes and diagnostic positions are stable enough to depend on: language errors
 use `2`, a missing program `127`, permission denied `126`. See
 [errors and exit codes](/parsh/en/docs/diagnostics/).

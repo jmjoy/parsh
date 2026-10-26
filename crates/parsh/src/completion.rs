@@ -57,7 +57,16 @@ impl Frame {
             || (self.items == 1
                 && matches!(
                     self.head.as_deref(),
-                    Some("let" | "set" | "export" | "for" | "defn" | "defmacro" | "defstruct")
+                    Some(
+                        "let"
+                            | "set"
+                            | "export"
+                            | "for"
+                            | "defn"
+                            | "defmacro"
+                            | "defstruct"
+                            | "catch"
+                    )
                 ))
     }
 
@@ -105,7 +114,13 @@ impl Context {
             return None;
         } else if quote == Quote::None && prefix.starts_with('$') {
             Kind::Variable
-        } else if frame.items == 0 {
+        } else if frame.items == 0
+            || (frame.items == 1
+                && matches!(
+                    frame.head.as_deref(),
+                    Some("command" | "capture-call" | "spawn" | "apply")
+                ))
+        {
             Kind::Command
         } else if frame.head.as_deref() == Some("function") && frame.items == 1 {
             Kind::Function
@@ -295,14 +310,19 @@ impl Scanner<'_> {
                     if self.found {
                         return;
                     }
-                } else if self.peek().is_some_and(reader::variable_start)
+                } else if self.peek() == Some('?')
+                    || self.peek().is_some_and(reader::variable_start)
                     || (self.cursor == self.offset
                         && (self.peek().is_none()
                             || self.source[self.offset..].starts_with(delimiter)))
                 {
                     interpolated = true;
-                    while self.peek().is_some_and(reader::variable_continue) {
-                        self.offset += self.peek().unwrap().len_utf8();
+                    if self.peek() == Some('?') {
+                        self.offset += 1;
+                    } else {
+                        while self.peek().is_some_and(reader::variable_continue) {
+                            self.offset += self.peek().unwrap().len_utf8();
+                        }
                     }
                     if self.cursor > variable_start && self.cursor <= self.offset {
                         self.context(
