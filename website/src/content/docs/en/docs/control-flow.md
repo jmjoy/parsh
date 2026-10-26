@@ -36,10 +36,10 @@ and `set` can update an outer binding.
 
 ```parsh
 (let count #0)
-(while (< $count 5)
-  (set count (+ $count 1))
-  (if (= $count 2) (continue))
-  (if (= $count 4) (break (list stopped $count)))
+(while (< $count #5)
+  (set count (+ $count #1))
+  (if (= $count #2) (continue))
+  (if (= $count #4) (break (list stopped $count)))
   (echo iteration $count))
 ```
 
@@ -72,17 +72,17 @@ function or ordinary builtin as a value. Functions can be stored in collections,
 passed, returned, and called through expressions:
 
 ```parsh
-(let inc (fn (x) (+ $x 1)))
-($inc 2)
-((fn (x) (* $x 2)) 3)
+(let inc (fn (x) (+ $x #1)))
+($inc #2)
+((fn (x) (* $x #2)) #3)
 (let add (function +))
-(apply $add 1 [2 3])
+(apply $add #1 [#2 #3])
 
 (defn sum (first &optional (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
-(sum 1 2 3 4)
+(sum #1 #2 #3 #4)
 ```
 
 Parameters appear in this order: required, `&optional`, then `&rest name`.

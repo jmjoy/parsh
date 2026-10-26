@@ -321,3 +321,67 @@ fn literal_input_hides_hints_and_preserves_history_and_editing() {
     assert!(values(&execute(&mut repl, "#nil")).is_empty());
     succeeds("#1 (str next) #false", &["#1", r#""next""#, "#false"]);
 }
+
+#[test]
+fn numeric_operations_reject_text_in_direct_referenced_and_applied_calls() {
+    let mut repl = Repl::new();
+    execute(&mut repl, "(let text 1)");
+    for name in [
+        "+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">=", "abs", "min", "max", "floor", "ceil",
+        "round",
+    ] {
+        for text in ["1", "\"1\"", "$text", "(str #1)"] {
+            let arguments = if matches!(name, "=" | "!=" | "<" | "<=" | ">" | ">=") {
+                format!("#1 {text}")
+            } else {
+                text.into()
+            };
+            for source in [
+                format!("({name} {arguments})"),
+                format!("((function {name}) {arguments})"),
+                format!("(apply (function {name}) [{arguments}])"),
+            ] {
+                fails(
+                    &mut repl,
+                    &source,
+                    "expected a number (int or float), got text",
+                );
+            }
+        }
+    }
+    execute(&mut repl, "(let calls #0)");
+    fails(
+        &mut repl,
+        "(+ 1 (set calls #99))",
+        "int/float to convert text",
+    );
+    assert_eq!(values(&execute(&mut repl, "(get calls)")), ["#0"]);
+}
+
+#[test]
+fn integer_operations_and_indices_reject_text_and_integral_floats() {
+    let mut repl = Repl::new();
+    execute(&mut repl, "(let text 1)");
+    for (name, first) in [
+        ("quot", "#4"),
+        ("rem", "#4"),
+        ("lget", "[a b]"),
+        ("lslice", "[a b]"),
+        ("sget", "ab"),
+        ("sslice", "ab"),
+    ] {
+        for bad in ["1", "\"1\"", "$text", "(str #1)", "#1.0"] {
+            for source in [
+                format!("({name} {first} {bad})"),
+                format!("((function {name}) {first} {bad})"),
+                format!("(apply (function {name}) [{first} {bad}])"),
+            ] {
+                fails(&mut repl, &source, "expected an integer");
+            }
+        }
+    }
+    succeeds(
+        "(list (+ #1 #2.5) (= #1 #1.0) (eq #1 #1.0) (+ (int 001) #2) (+ (float 2.5) #0.5) (lget [a b] (int 1)) (sget ab (int 0)))",
+        &[r#"(#3.5 #true #false #3 #3.0 "b" "a")"#],
+    );
+}

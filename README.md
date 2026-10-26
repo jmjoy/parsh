@@ -22,8 +22,8 @@ what it says — the property that makes generated scripts easy to read, review,
 and repair.
 
 ```parsh
-(let count (+ (| (find . -name "*.rs") (wc -l)) 0))
-(echo "rust files: $count; doubled: $(* $count 2)")
+(let count (int (| (find . -name "*.rs") (wc -l))))
+(echo "rust files: $count; doubled: $(* $count #2)")
 ```
 
 Library imports are planned, so scripts will be able to reuse packaged code the
@@ -73,10 +73,10 @@ return new values; use `set` to replace an existing binding.
 (echo hello $name)
 (set name world)
 (echo "hello, $name")
-(echo "sum=$(+ 1 2)")
+(echo "sum=$(+ #1 #2)")
 (echo 'literal $name and $(pwd)\n')
 (echo """hello, "$name"
-sum=$(+ 1 2)""")
+sum=$(+ #1 #2)""")
 (echo '''literal '$name'
 $(pwd)\n''')
 (export EDITOR vim)
@@ -235,23 +235,24 @@ Results are `#1`, `#1.0`, `#false`, and `#100`.
 
 ## Arithmetic and comparisons
 
-Bare words remain text. Arithmetic operators `+`, `-`, `*`, `/` and comparison
-operators `=`, `!=`, `<`, `<=`, `>`, `>=` accept numbers or numeric text,
-including variables and captured command output. Arithmetic returns a
-number; ordinary text such as `00123` keeps its original spelling.
+Arithmetic operators `+`, `-`, `*`, `/` and numeric comparisons `=`, `!=`, `<`,
+`<=`, `>`, `>=` accept only int and float values. Bare words such as `1` and
+`00123` remain text and cause a type error as numeric operands. Use `#1` or
+explicit `int` / `float` conversion. Environment variables, script arguments,
+and captured command output are text; convert them at the input boundary.
 
 ```lisp
-(let count (+ 001 2))
-(+ $count 1)
-(/ 5 2)
+(let count (+ #001 #2))
+(+ $count #1)
+(/ #5 #2)
 (eq $count 3)
-(= $count 3.0)
+(= $count #3.0)
 (str 00123)
 ```
 
 After the binding, an interactive session displays `#4`, `#2.5`, `#false`, `#true`,
 and `"00123"`. `eq` compares types and values, so text, integers, and floats are
-distinct. `=` compares numeric values, including numeric text; it takes exactly
+distinct. `=` compares numeric values; it takes exactly
 two arguments and does not use a floating-point tolerance.
 
 `!=` tests numeric inequality; `<`, `<=`, `>`, and `>=` test numeric order.
@@ -259,11 +260,11 @@ Each comparison takes exactly two arguments and returns a boolean. Comparisons
 preserve integer precision even when comparing a large integer with a float.
 
 ```lisp
-(> 10 2)
-(>= 3 3.0)
-(< 9007199254740992.0 9007199254740993)
-(!= 1 1.5)
-(if (<= $count 3) (echo "at most three"))
+(> #10 #2)
+(>= #3 #3.0)
+(< #9007199254740992.0 #9007199254740993)
+(!= #1 #1.5)
+(if (<= $count #3) (echo "at most three"))
 ```
 
 Arguments are evaluated once, from left to right; arithmetic operations fold left.
@@ -271,12 +272,13 @@ Arguments are evaluated once, from left to right; arithmetic operations fold lef
 `(*)` returning integer `1`. `-` and `/` require at least one argument; one
 argument means negation or reciprocal. Division always returns a float.
 
-Numeric text is trimmed and parsed completely as signed decimal integers,
-decimal fractions, or scientific notation. Leading zeroes are decimal; integer
-text must fit in `i64`. Booleans, nil, lists, and maps are not numeric operands.
+Numeric literals support signed decimal integers, fractions, and scientific
+notation. Leading zeroes are decimal; integer literals must fit in `i64`.
+Only `int` and `float` parse numeric text. Booleans, nil, lists, and maps are not
+numeric operands. Integers and floats may still be mixed in arithmetic.
 Integer addition, subtraction, and multiplication are exact and check for
 overflow. Each operation involving a float uses `f64`, which can lose integer
-precision and has ordinary floating-point rounding: `(+ 0.1 0.2)` returns
+precision and has ordinary floating-point rounding: `(+ #0.1 #0.2)` returns
 `0.30000000000000004`. Invalid operands, division by zero, integer overflow,
 and non-finite floats are language errors with exit status `2`.
 Numbers display with `#`; floats retain a decimal point or exponent,
@@ -286,6 +288,9 @@ print results.
 
 ## Standard library
 
+`quot` and `rem`, and all list/text indices and slice bounds, require int values.
+Text indices and integral floats are errors; convert explicitly with `int`.
+
 `and/or` short-circuit from left to right, accept booleans or command statuses,
 and return booleans. `(and)` is true; `(or)` is false. List operations use an `l`
 prefix and text operations an `s` prefix; updates return new values:
@@ -294,9 +299,9 @@ prefix and text operations an `s` prefix; updates return new values:
 (let items (ssplit "a,b,c" ","))
 (lappend $items [d e])
 (lconcat $items [d e])
-(lget $items -1)
-(sjoin (lslice $items 1) " / ")
-(list (quot -7 3) (rem -7 3) (round 2.5) (round -2.5))
+(lget $items #-1)
+(sjoin (lslice $items #1) " / ")
+(list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5))
 (list (typeof 123) (typeof #123) (number? #123) (empty? []))
 ```
 
@@ -425,10 +430,10 @@ and `set` can update an outer binding.
 
 ```lisp
 (let count #0)
-(while (< $count 5)
-  (set count (+ $count 1))
-  (if (= $count 2) (continue))
-  (if (= $count 4) (break (list stopped $count)))
+(while (< $count #5)
+  (set count (+ $count #1))
+  (if (= $count #2) (continue))
+  (if (= $count #4) (break (list stopped $count)))
   (echo iteration $count))
 ```
 
@@ -468,17 +473,17 @@ function or ordinary builtin as a value. Functions can be stored in collections,
 passed, returned, and called through expressions:
 
 ```lisp
-(let inc (fn (x) (+ $x 1)))
-($inc 2)
-((fn (x) (* $x 2)) 3)
+(let inc (fn (x) (+ $x #1)))
+($inc #2)
+((fn (x) (* $x #2)) #3)
 (let add (function +))
-(apply $add 1 [2 3])
+(apply $add #1 [#2 #3])
 
 (defn sum (first &optional (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
-(sum 1 2 3 4)
+(sum #1 #2 #3 #4)
 ```
 
 Parameters appear in this order: required, `&optional`, then `&rest name`.

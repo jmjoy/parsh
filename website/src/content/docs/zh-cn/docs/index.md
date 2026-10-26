@@ -29,8 +29,8 @@ description: "一个围绕 S 表达式构建的 Linux Shell。"
 Shell 脚本常常把逻辑交给 `awk`、`sed` 或内联的解释器，每多一层就多一套引号规则要处理。parsh 把逻辑留在脚本里：算术、列表与映射、函数和循环像通用脚本语言一样可用，[外部命令](/parsh/zh-cn/docs/commands/)、管道与重定向则共用同一套语法。值不会被隐式拆词，也不会被悄悄做通配符展开，脚本写的是什么，执行的就是什么。
 
 ```parsh
-(let count (+ (| (find . -name "*.rs") (wc -l)) 0))
-(echo "rust files: $count; doubled: $(* $count 2)")
+(let count (int (| (find . -name "*.rs") (wc -l))))
+(echo "rust files: $count; doubled: $(* $count #2)")
 ```
 
 生成和检查都只需要记住一套语法、一套规则，这正是 parsh 脚本对 AI 友好的地方。后续计划支持引入库，届时脚本可以像 Python 模块那样复用现成的代码。

@@ -89,7 +89,7 @@ test("maps preserve insertion order, value types, and eager defaults in the brow
     (list (mkeys $config) (mget $config count) (mlen $config)
           (mhas $config missing) (mget $copy name))
     (let defaults #0)
-    (mget $config nested (do (set defaults (+ $defaults 1)) fallback))
+    (mget $config nested (do (set defaults (+ $defaults #1)) fallback))
     (list $defaults)
     (mget $config missing (do (set config (mset $config fallback added)) (mget $config fallback)))
     (mvals $config)
@@ -114,19 +114,19 @@ test("function values, optional and rest parameters, and the standard library sh
   await playground(page);
   await execute(page, `
     (defn counter (n)
-      (fn (&optional (step 1) &rest extra)
+      (fn (&optional (step #1) &rest extra)
         (set n (+ $n $step))
         (for amount $extra (set n (+ $n $amount)))
         (return $n)))
-    (let next (counter 10))
-    (list ($next) ($next 2 3) (apply $next []))
+    (let next (counter #10))
+    (list ($next) ($next #2 #3) (apply $next []))
     (let original (ssplit "a,b" ","))
     (list $original (lappend $original [c d]) (sjoin $original "/"))
-    (list (slen "中文") (sslice "中文abc" 1 3) (quot -7 3) (rem -7 3) (round -2.5))
+    (list (slen "中文") (sslice "中文abc" #1 #3) (quot #-7 #3) (rem #-7 #3) (round #-2.5))
     (defmacro when (condition &rest body) \`(if ,$condition (do ,@$body)))
     (defn find (items) (for item $items (when (eq $item b) (return $item))) (str missing))
     (find [a b c])
-    (list (apply (function max) [2 3 1]) (function? $next) (typeof #1))
+    (list (apply (function max) [#2 #3 #1]) (function? $next) (typeof #1))
   `);
   await expect(terminal(page)).toContainText("(#11 #16 #17)");
   await expect(terminal(page)).toContainText('(("a" "b") ("a" "b" ("c" "d")) "a/b")');
@@ -245,13 +245,13 @@ test("bindings, closures, conditions, loops and Unicode retain shared semantics"
 
 test("while and for share loop control, typed break values and fresh iteration scopes", async ({ page }) => {
   await playground(page);
-  await execute(page, `(let count 0)
+  await execute(page, `(let count #0)
 (let name outer)
-(while (< $count 5)
-  (set count (+ $count 1))
+(while (< $count #5)
+  (set count (+ $count #1))
   (let name (str $name $count))
-  (if (= $count 2) (continue))
-  (if (= $count 4) (break (list stopped $count $name)))
+  (if (= $count #2) (continue))
+  (if (= $count #4) (break (list stopped $count $name)))
   (str $name))
 (list $count $name)
 (for item (list first second third)
@@ -294,7 +294,7 @@ test("quoted strings share variable and expression interpolation semantics", asy
   await execute(page, String.raw`(let name parsh)
 (let 名字 世界)
 (defn name () (str called))
-(list "hello, $name" "$(get name)_suffix" "sum=$(+ 1 2)"
+(list "hello, $name" "$(get name)_suffix" "sum=$(+ #1 #2)"
   "$(name)" "nested=$(str "a" 'b')" "$名字")
 (eq '$name $(+ 1 2)\n' "\$name \$(+ 1 2)\\n")
 (str "capture=$(printf "line\n\n")")`);
@@ -314,11 +314,11 @@ test("quoted strings share variable and expression interpolation semantics", asy
 
 test("unfinished interpolations wait before executing the browser batch", async ({ page }) => {
   await playground(page);
-  await paste(page, '(str BEFORE_INTERPOLATION) (str "sum=$(+ 1');
+  await paste(page, '(str BEFORE_INTERPOLATION) (str "sum=$(+ #1');
   await page.locator("[data-terminal-host] textarea").focus();
   await page.keyboard.press("Enter");
   await expect(terminal(page)).not.toContainText('"BEFORE_INTERPOLATION"');
-  await page.keyboard.type(' 2)")');
+  await page.keyboard.type(' #2)")');
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"BEFORE_INTERPOLATION"');
   await expect(terminal(page)).toContainText('"sum=3"');
@@ -329,7 +329,7 @@ test("triple quoted strings preserve newlines and distinguish interpolation from
   await execute(page, String.raw`(let name parsh)
 (list """""" '''''')
 (str """hello, "$name"
-sum=$(+ 1 2)""")
+sum=$(+ #1 #2)""")
 (str '''literal '$missing'
 $(missing)\n''')
 (str """nested=$(str """inner "$name" text""" ''''literal' '' quotes''')""")
@@ -420,19 +420,19 @@ test("binding targets reject variable references and allow recovery", async ({
 
 test("numeric comparisons preserve precision and work in browser conditions", async ({ page }) => {
   await playground(page);
-  await execute(page, `(list (= 001 1.0) (!= 1 1.5) (< 2 10)
-    (<= 3 3.0) (> 10 2) (>= 2.5 3))
-(list (> 9007199254740993 9007199254740992.0)
-    (< 9223372036854775807 9223372036854775808.0) (>= -0.0 0))
-(let count (printf " 3\\n"))
-(if (>= $count 3.0) (str enough) (str missing))`);
+  await execute(page, `(list (= #001 #1.0) (!= #1 #1.5) (< #2 #10)
+    (<= #3 #3.0) (> #10 #2) (>= #2.5 #3))
+(list (> #9007199254740993 #9007199254740992.0)
+    (< #9223372036854775807 #9223372036854775808.0) (>= #-0.0 #0))
+(let count (int (printf " 3\\n")))
+(if (>= $count #3.0) (str enough) (str missing))`);
   await expect(terminal(page)).toContainText("(#true #true #true #true #true #false)");
   await expect(terminal(page)).toContainText("(#true #true #true)");
   await expect(terminal(page)).toContainText('"enough"');
-  await execute(page, "(> 1 invalid) (str skipped)");
-  await expect(terminal(page)).toContainText("invalid number");
+  await execute(page, "(> #1 invalid) (str skipped)");
+  await expect(terminal(page)).toContainText("expected a number");
   await expect(terminal(page)).not.toContainText('"skipped"');
-  await execute(page, "(if (< 1 2) (str recovered))");
+  await execute(page, "(if (< #1 #2) (str recovered))");
   await expect(terminal(page)).toContainText('"recovered"');
 });
 
@@ -942,4 +942,20 @@ test("scalar literals hide prompt parentheses and share strict conversions and m
   await expect(terminal(page)).toContainText("expected a boolean or true/false text");
   await execute(page, '(#1 (echo never-called))');
   await expect(terminal(page)).toContainText("int is not callable");
+});
+
+test("numeric operations and indices require typed values at text boundaries", async ({ page }) => {
+  await playground(page);
+  for (const [source, message] of [
+    ["(+ 1 #2)", "expected a number (int or float), got text"],
+    ["(+ (printf 1) #2)", "expected a number (int or float), got text"],
+    ["(lget [a b] 1)", "expected an integer, got text"],
+    ["(sget ab #1.0)", "expected an integer, got float"],
+  ] as const) {
+    await execute(page, `${source} (str skipped-numeric)`);
+    await expect(terminal(page)).toContainText(message);
+    await expect(terminal(page)).not.toContainText('"skipped-numeric"');
+  }
+  await execute(page, '(list (+ (int (printf 1)) #2) (lget [a b] (int 1)) (+ #1 #2.5))');
+  await expect(terminal(page)).toContainText('(#3 "b" #3.5)');
 });

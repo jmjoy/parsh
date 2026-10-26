@@ -1018,7 +1018,7 @@ mod syntax_tests {
             (let name parsh)
             (let _名字2 世界)
             (defn name () (str called))
-            (list "$name" "$(get name)_suffix" "sum=$(+ 1 2)"
+            (list "$name" "$(get name)_suffix" "sum=$(+ #1 #2)"
                 "$(name)" "nested=$(str "a" (str 'b'))" "$_名字2$name" "" '')
             (list (eq '$name $(+ 1 2)\n' "\$name \$(+ 1 2)\\n")
                 (eq '${name}' "${name}") (eq '$1 $!' "$1 $!"))
@@ -1044,16 +1044,16 @@ mod syntax_tests {
             &mut Repl::new(),
             r#"
             (let name 世界)
-            (let count 0)
+            (let count #0)
             (list """""" '''''')
             (str """
   hello, "$name"
-  sum=$(+ 1 2)
+  sum=$(+ #1 #2)
 """)
             (str '''
   '$missing' $(missing)\n
 ''')
-            (str """$(do (set count (+ $count 1)) $count)$(do (set count (+ $count 1)) $count)""")
+            (str """$(do (set count (+ $count #1)) $count)$(do (set count (+ $count #1)) $count)""")
             (get count)
             (str """nested=$(str """inner "$name" text""" ''''literal' '' quotes''')""")
             (; """$undefined $(missing) ')'""")
@@ -1112,7 +1112,7 @@ mod syntax_tests {
             (let count #0)
             (let name before)
             (defn show () (str "$name"))
-            (str "$(do (set count (+ $count 1)) $count)$(do (set count (+ $count 1)) $count)")
+            (str "$(do (set count (+ $count #1)) $count)$(do (set count (+ $count #1)) $count)")
             (get count)
             (set name after)
             (show)
@@ -1131,7 +1131,7 @@ mod syntax_tests {
                 "interactive:1:10:",
             ),
             (
-                "(str \"sum=$(/ 1\n 0)\")",
+                "(str \"sum=$(/ #1\n #0)\")",
                 "division by zero",
                 "interactive:2:2:",
             ),
@@ -1151,7 +1151,7 @@ mod syntax_tests {
                 "interactive:2:3:",
             ),
             (
-                "(str \"\"\"sum=$(/ 1\n 0)\"\"\")",
+                "(str \"\"\"sum=$(/ #1\n #0)\"\"\")",
                 "division by zero",
                 "interactive:2:2:",
             ),
@@ -1171,7 +1171,7 @@ mod syntax_tests {
         for (source, message) in [
             ("(get)", "expected 1 arguments"),
             ("(get a b)", "expected 1 arguments"),
-            ("(get (+ 1))", "get expects a text variable name"),
+            ("(get (+ #1))", "get expects a text variable name"),
             ("(get bad-name)", "invalid variable name"),
             ("(get missing)", "undefined variable $missing"),
             ("(defn get () (str invalid))", "function name is reserved"),
@@ -1187,11 +1187,11 @@ mod syntax_tests {
     #[test]
     fn unfinished_interpolations_wait_for_the_whole_batch() {
         let mut repl = Repl::new();
-        repl.paste("(str before) (str \"$(+ 1");
+        repl.paste("(str before) (str \"$(+ #1");
         let events = repl.input(Key::Enter);
         assert!(values(&events).is_empty());
         assert!(diagnostics(&events).is_empty());
-        type_text(&mut repl, " 2)\")");
+        type_text(&mut repl, " #2)\")");
         assert_eq!(values(&repl.input(Key::Enter)), [r#""before""#, r#""3""#]);
 
         repl.paste("(str 'line");
@@ -1250,37 +1250,37 @@ mod syntax_tests {
     }
 
     #[test]
-    fn arithmetic_parses_text_and_preserves_integer_and_float_results() {
+    fn arithmetic_requires_numbers_and_preserves_integer_and_float_results() {
         for (source, expected) in [
             ("(+)", "#0"),
             ("(*)", "#1"),
-            ("(+ 123 2)", "#125"),
-            (r#"(+ "1.5" 2)"#, "#3.5"),
-            ("(- 10 3 2)", "#5"),
-            ("(- 5)", "#-5"),
-            ("(- -3.5)", "#3.5"),
-            ("(* 2 3 4)", "#24"),
-            ("(/ 20 2 4)", "#2.5"),
-            ("(/ 5 2)", "#2.5"),
-            ("(/ 8 2)", "#4.0"),
-            ("(/ 4)", "#0.25"),
-            ("(+ 1 2.0 3)", "#6.0"),
-            ("(+ 1.0)", "#1.0"),
-            ("(* -2)", "#-2"),
-            (r#"(+ "\n +00123 \t")"#, "#123"),
-            ("(+ .5 1.)", "#1.5"),
-            ("(+ 2.5e1 -5)", "#20.0"),
-            ("(+ 1E-2)", "#0.01"),
-            ("(+ 0.1 0.2)", "#0.30000000000000004"),
-            ("(+ -0.0)", "#-0.0"),
-            ("(+ 9007199254740992 1)", "#9007199254740993"),
-            ("(+ 9223372036854775807)", "#9223372036854775807"),
-            ("(+ -9223372036854775808)", "#-9223372036854775808"),
-            ("(- -9223372036854775808 -1)", "#-9223372036854775807"),
+            ("(+ #123 #2)", "#125"),
+            (r#"(+ (float "1.5") #2)"#, "#3.5"),
+            ("(- #10 #3 #2)", "#5"),
+            ("(- #5)", "#-5"),
+            ("(- #-3.5)", "#3.5"),
+            ("(* #2 #3 #4)", "#24"),
+            ("(/ #20 #2 #4)", "#2.5"),
+            ("(/ #5 #2)", "#2.5"),
+            ("(/ #8 #2)", "#4.0"),
+            ("(/ #4)", "#0.25"),
+            ("(+ #1 #2.0 #3)", "#6.0"),
+            ("(+ #1.0)", "#1.0"),
+            ("(* #-2)", "#-2"),
+            (r#"(+ (int "\n +00123 \t"))"#, "#123"),
+            ("(+ #.5 #1.)", "#1.5"),
+            ("(+ #2.5e1 #-5)", "#20.0"),
+            ("(+ #1E-2)", "#0.01"),
+            ("(+ #0.1 #0.2)", "#0.30000000000000004"),
+            ("(+ #-0.0)", "#-0.0"),
+            ("(+ #9007199254740992 #1)", "#9007199254740993"),
+            ("(+ #9223372036854775807)", "#9223372036854775807"),
+            ("(+ #-9223372036854775808)", "#-9223372036854775808"),
+            ("(- #-9223372036854775808 #-1)", "#-9223372036854775807"),
             ("(str 00123)", r#""00123""#),
-            ("(str (/ 8 2))", r#""4.0""#),
+            ("(str (/ #8 #2))", r#""4.0""#),
             (
-                "(list 123 00123 (+ 1 2) (/ 8 2))",
+                "(list 123 00123 (+ #1 #2) (/ #8 #2))",
                 r#"("123" "00123" #3 #4.0)"#,
             ),
         ] {
@@ -1294,22 +1294,22 @@ mod syntax_tests {
     fn numeric_equality_is_distinct_from_typed_equality() {
         for (source, expected) in [
             ("(eq 001 1)", "#false"),
-            ("(= 001 1.0)", "#true"),
-            ("(eq (+ 1 2) 3)", "#false"),
-            ("(eq (+ 1 2) (+ 3))", "#true"),
-            ("(eq (+ 1 2) (+ 3.0))", "#false"),
-            ("(eq (list (+ 3)) (list 3))", "#false"),
-            ("(eq (+ 1.0) (+ 1e0))", "#true"),
-            ("(= (+ 1 2) 3.0)", "#true"),
-            ("(= 3.0 (+ 1 2))", "#true"),
-            ("(= 1 1.5)", "#false"),
-            ("(= -0.0 0)", "#true"),
-            ("(= (+ 0.1 0.2) 0.3)", "#false"),
-            ("(= 9007199254740993 9007199254740992.0)", "#false"),
-            ("(= 9007199254740992.0 9007199254740993)", "#false"),
-            ("(= 9007199254740993 9007199254740993)", "#true"),
-            ("(= 9223372036854775807 9223372036854775808.0)", "#false"),
-            ("(= -9223372036854775808 -9223372036854775808.0)", "#true"),
+            ("(= #001 #1.0)", "#true"),
+            ("(eq (+ #1 #2) 3)", "#false"),
+            ("(eq (+ #1 #2) (+ #3))", "#true"),
+            ("(eq (+ #1 #2) (+ #3.0))", "#false"),
+            ("(eq (list (+ #3)) (list 3))", "#false"),
+            ("(eq (+ #1.0) (+ #1e0))", "#true"),
+            ("(= (+ #1 #2) #3.0)", "#true"),
+            ("(= #3.0 (+ #1 #2))", "#true"),
+            ("(= #1 #1.5)", "#false"),
+            ("(= #-0.0 #0)", "#true"),
+            ("(= (+ #0.1 #0.2) #0.3)", "#false"),
+            ("(= #9007199254740993 #9007199254740992.0)", "#false"),
+            ("(= #9007199254740992.0 #9007199254740993)", "#false"),
+            ("(= #9007199254740993 #9007199254740993)", "#true"),
+            ("(= #9223372036854775807 #9223372036854775808.0)", "#false"),
+            ("(= #-9223372036854775808 #-9223372036854775808.0)", "#true"),
         ] {
             let events = execute(&mut Repl::new(), source);
             assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
@@ -1318,40 +1318,43 @@ mod syntax_tests {
     }
 
     #[test]
-    fn numeric_comparisons_return_booleans_for_numbers_and_numeric_text() {
+    fn numeric_comparisons_return_booleans_for_numbers_and_explicit_conversions() {
         for (source, expected) in [
-            ("(< 2 10)", "#true"),
-            ("(< 10 2)", "#false"),
-            ("(< 2 2.0)", "#false"),
-            ("(<= 2 2.0)", "#true"),
-            ("(<= 1.5 2)", "#true"),
-            ("(<= 2 1.5)", "#false"),
-            ("(> 10 2)", "#true"),
-            ("(> 2 10)", "#false"),
-            ("(> 2.0 2)", "#false"),
-            ("(>= 2.0 2)", "#true"),
-            ("(>= 2 1.5)", "#true"),
-            ("(>= 1.5 2)", "#false"),
-            ("(!= 001 1.0)", "#false"),
-            ("(!= 1 1.5)", "#true"),
-            ("(< -2 -1.5)", "#true"),
-            ("(> -1 -1.5)", "#true"),
-            ("(< 0 .5)", "#true"),
-            ("(> 0 -.5)", "#true"),
-            ("(>= -0.0 0)", "#true"),
-            (r#"(< " +001 " "2e0")"#, "#true"),
-            ("(> (+ 1 2) (/ 5 2))", "#true"),
-            ("(< 1e308 1.1e308)", "#true"),
-            ("(> 9007199254740993 9007199254740992.0)", "#true"),
-            ("(< 9007199254740992.0 9007199254740993)", "#true"),
-            ("(> -9007199254740992.0 -9007199254740993)", "#true"),
-            ("(< -9007199254740993 -9007199254740992.0)", "#true"),
-            ("(< 9223372036854775807 9223372036854775808.0)", "#true"),
-            ("(> -9223372036854775808 -1e19)", "#true"),
-            ("(<= -9223372036854775808 -9223372036854775808.0)", "#true"),
-            ("(!= 9223372036854775807 9223372036854775808.0)", "#true"),
-            ("(if (> 3 2) (str yes) (unavailable))", r#""yes""#),
-            ("(if (< 3 2) (unavailable) (str no))", r#""no""#),
+            ("(< #2 #10)", "#true"),
+            ("(< #10 #2)", "#false"),
+            ("(< #2 #2.0)", "#false"),
+            ("(<= #2 #2.0)", "#true"),
+            ("(<= #1.5 #2)", "#true"),
+            ("(<= #2 #1.5)", "#false"),
+            ("(> #10 #2)", "#true"),
+            ("(> #2 #10)", "#false"),
+            ("(> #2.0 #2)", "#false"),
+            ("(>= #2.0 #2)", "#true"),
+            ("(>= #2 #1.5)", "#true"),
+            ("(>= #1.5 #2)", "#false"),
+            ("(!= #001 #1.0)", "#false"),
+            ("(!= #1 #1.5)", "#true"),
+            ("(< #-2 #-1.5)", "#true"),
+            ("(> #-1 #-1.5)", "#true"),
+            ("(< #0 #.5)", "#true"),
+            ("(> #0 #-.5)", "#true"),
+            ("(>= #-0.0 #0)", "#true"),
+            (r#"(< (int " +001 ") (float "2e0"))"#, "#true"),
+            ("(> (+ #1 #2) (/ #5 #2))", "#true"),
+            ("(< #1e308 #1.1e308)", "#true"),
+            ("(> #9007199254740993 #9007199254740992.0)", "#true"),
+            ("(< #9007199254740992.0 #9007199254740993)", "#true"),
+            ("(> #-9007199254740992.0 #-9007199254740993)", "#true"),
+            ("(< #-9007199254740993 #-9007199254740992.0)", "#true"),
+            ("(< #9223372036854775807 #9223372036854775808.0)", "#true"),
+            ("(> #-9223372036854775808 #-1e19)", "#true"),
+            (
+                "(<= #-9223372036854775808 #-9223372036854775808.0)",
+                "#true",
+            ),
+            ("(!= #9223372036854775807 #9223372036854775808.0)", "#true"),
+            ("(if (> #3 #2) (str yes) (unavailable))", r#""yes""#),
+            ("(if (< #3 #2) (unavailable) (str no))", r#""no""#),
         ] {
             let events = execute(&mut Repl::new(), source);
             assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
@@ -1365,7 +1368,7 @@ mod syntax_tests {
             &mut Repl::new(),
             r#"
             (let count #0)
-            (defn next () (set count (+ $count 1)) $count)
+            (defn next () (set count (+ $count #1)) $count)
             (defn increasing (a b) (< $a $b))
             (list (< (next) (next)) $count
                   (<= (next) (next)) $count
@@ -1397,15 +1400,15 @@ mod syntax_tests {
                 assert!(values(&events).is_empty(), "{source}: {events:?}");
             }
             for (operand, message) in [
-                ("invalid", "invalid number"),
-                ("(eq a a)", "expected a number or numeric text"),
-                ("(list 1)", "expected a number or numeric text"),
-                ("(do)", "expected a number or numeric text"),
-                ("9223372036854775808", "integer out of range for i64"),
-                ("1e309", "number must be finite"),
+                ("invalid", "expected a number"),
+                ("(eq a a)", "expected a number"),
+                ("(list 1)", "expected a number"),
+                ("(do)", "expected a number"),
+                ("9223372036854775808", "expected a number"),
+                ("1e309", "expected a number"),
             ] {
                 let mut repl = Repl::new();
-                let source = format!("({operator} 1\n {operand}) (str skipped)");
+                let source = format!("({operator} #1\n {operand}) (str skipped)");
                 let events = execute(&mut repl, &source);
                 let errors = diagnostics(&events);
                 assert_eq!(errors.len(), 1, "{source}: {events:?}");
@@ -1428,13 +1431,13 @@ mod syntax_tests {
         let events = execute(
             &mut Repl::new(),
             r#"
-            (let n (+ 1 2))
-            (defn increment (n) (+ $n 1))
+            (let n (+ #1 #2))
+            (defn increment (n) (+ $n #1))
             (set n (increment $n))
-            (list $n (increment $n) (str $n) (= $n 4.0))
-            (if (= $n 4) (increment $n) (unavailable))
+            (list $n (increment $n) (str $n) (= $n #4.0))
+            (if (= $n #4) (increment $n) (unavailable))
             (let count #0)
-            (defn next () (set count (+ $count 1)) $count)
+            (defn next () (set count (+ $count #1)) $count)
             (list (+ (next) (next)) $count
                   (- (next) (next)) $count
                   (* (next) (next)) $count
@@ -1456,41 +1459,41 @@ mod syntax_tests {
     #[test]
     fn numeric_errors_reject_invalid_types_ranges_and_results() {
         for (source, message) in [
-            (r#"(+ "")"#, "invalid number"),
-            (r#"(+ "1 2")"#, "invalid number"),
-            ("(+ 12tail)", "invalid number"),
-            ("(+ 0x10)", "invalid number"),
-            ("(+ 1_000)", "invalid number"),
-            ("(+ 1.2.3)", "invalid number"),
-            ("(+ NaN)", "invalid number"),
-            ("(+ inf)", "invalid number"),
-            ("(+ 9223372036854775808)", "integer out of range for i64"),
-            ("(+ -9223372036854775809)", "integer out of range for i64"),
-            ("(+ 1e309)", "number must be finite"),
-            ("(* 1e308 1e308)", "number must be finite"),
-            ("(+ 1e308 1e308)", "number must be finite"),
-            ("(- -1e308 1e308)", "number must be finite"),
-            ("(/ 1e308 1e-308)", "number must be finite"),
-            ("(+ (eq a a))", "expected a number or numeric text"),
-            ("(+ (list 1))", "expected a number or numeric text"),
-            ("(+ (do))", "expected a number or numeric text"),
-            ("(= 1 (eq a a))", "expected a number or numeric text"),
-            ("(= 1 no-number)", "invalid number"),
-            ("(/ 0)", "division by zero"),
-            ("(/ 1 -0.0)", "division by zero"),
-            ("(/ -0.0)", "division by zero"),
-            ("(+ 9223372036854775807 1)", "integer overflow"),
-            ("(- -9223372036854775808 1)", "integer overflow"),
-            ("(* 9223372036854775807 2)", "integer overflow"),
-            ("(- -9223372036854775808)", "integer overflow"),
-            ("(+ 9223372036854775807 1 0.0)", "integer overflow"),
+            (r#"(int "")"#, "invalid number"),
+            (r#"(int "1 2")"#, "invalid number"),
+            ("(int 12tail)", "invalid number"),
+            ("(int 0x10)", "invalid number"),
+            ("(int 1_000)", "invalid number"),
+            ("(int 1.2.3)", "invalid number"),
+            ("(+ #NaN)", "invalid number"),
+            ("(+ #inf)", "invalid number"),
+            ("(+ #9223372036854775808)", "integer out of range for i64"),
+            ("(+ #-9223372036854775809)", "integer out of range for i64"),
+            ("(+ #1e309)", "number must be finite"),
+            ("(* #1e308 #1e308)", "number must be finite"),
+            ("(+ #1e308 #1e308)", "number must be finite"),
+            ("(- #-1e308 #1e308)", "number must be finite"),
+            ("(/ #1e308 #1e-308)", "number must be finite"),
+            ("(+ (eq a a))", "expected a number"),
+            ("(+ (list 1))", "expected a number"),
+            ("(+ (do))", "expected a number"),
+            ("(= #1 (eq a a))", "expected a number"),
+            ("(= #1 no-number)", "expected a number"),
+            ("(/ #0)", "division by zero"),
+            ("(/ #1 #-0.0)", "division by zero"),
+            ("(/ #-0.0)", "division by zero"),
+            ("(+ #9223372036854775807 #1)", "integer overflow"),
+            ("(- #-9223372036854775808 #1)", "integer overflow"),
+            ("(* #9223372036854775807 #2)", "integer overflow"),
+            ("(- #-9223372036854775808)", "integer overflow"),
+            ("(+ #9223372036854775807 #1 #0.0)", "integer overflow"),
             ("(-)", "expected at least 1 arguments"),
             ("(/)", "expected at least 1 arguments"),
             ("(=)", "expected 2 arguments"),
-            ("(= 1)", "expected 2 arguments"),
-            ("(= 1 1 1)", "expected 2 arguments"),
+            ("(= #1)", "expected 2 arguments"),
+            ("(= #1 #1 #1)", "expected 2 arguments"),
             (
-                "(if (+ 0) (str yes))",
+                "(if (+ #0) (str yes))",
                 "a condition must be a boolean or command status",
             ),
         ] {
@@ -1512,13 +1515,13 @@ mod syntax_tests {
     #[test]
     fn numeric_diagnostics_locate_the_operand_and_halt_only_the_current_batch() {
         let mut repl = Repl::new();
-        let events = execute(&mut repl, "(str before)\n(+ 1\n bad)\n(str skipped)");
+        let events = execute(&mut repl, "(str before)\n(+ #1\n bad)\n(str skipped)");
         assert_eq!(values(&events), [r#""before""#]);
         let errors = diagnostics(&events);
         assert_eq!(errors.len(), 1, "{events:?}");
         assert!(errors[0].starts_with("interactive:3:2:"), "{errors:?}");
-        assert!(errors[0].contains("invalid number"), "{errors:?}");
-        assert_eq!(values(&execute(&mut repl, "(+ 2 3)")), ["#5"]);
+        assert!(errors[0].contains("expected a number"), "{errors:?}");
+        assert_eq!(values(&execute(&mut repl, "(+ #2 #3)")), ["#5"]);
     }
 
     #[test]

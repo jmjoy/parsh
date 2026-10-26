@@ -42,8 +42,8 @@ fn boolean_composition_short_circuits_and_requires_real_conditions() {
             r#"
         (let calls #0)
         (list (and) (or)
-              (and (eq a b) (set calls (+ $calls 1)))
-              (or (eq a a) (set calls (+ $calls 1)))
+              (and (eq a b) (set calls (+ $calls #1)))
+              (or (eq a a) (set calls (+ $calls #1)))
               (and (eq a a) (eq b b))
               (or (eq a b) (eq b b)) $calls)
     "#
@@ -51,7 +51,7 @@ fn boolean_composition_short_circuits_and_requires_real_conditions() {
         ["(#true #false #false #true #true #true #0)"]
     );
     fails("(and true)", "a condition must be a boolean");
-    fails("(or (+ 1))", "a condition must be a boolean");
+    fails("(or (+ #1))", "a condition must be a boolean");
     fails("(and (eq a a) $missing)", "undefined variable");
 }
 
@@ -66,10 +66,10 @@ fn list_updates_preserve_nested_values_and_all_existing_copies() {
         (list $original $alias $appended)
         (list (lconcat [a] [b c]) (lconcat) (lappend []))
         (list (llen $appended) (lfirst $original) (lrest $original)
-              (lget $appended -1) (lget $appended -2)
-              (lfirst [] fallback) (lrest []) (lget [] 1 #nil))
-        (list (lslice $appended 1 -1) (lslice $original -99 99)
-              (lslice $original 2 1) (lslice $original -1))
+              (lget $appended #-1) (lget $appended #-2)
+              (lfirst [] fallback) (lrest []) (lget [] #1 #nil))
+        (list (lslice $appended #1 #-1) (lslice $original #-99 #99)
+              (lslice $original #2 #1) (lslice $original #-1))
     "#
         ),
         [
@@ -79,11 +79,11 @@ fn list_updates_preserve_nested_values_and_all_existing_copies() {
             r#"(((map "nested" ("b")) ("c" "d")) ("a" (map "nested" ("b"))) () ((map "nested" ("b"))))"#,
         ]
     );
-    for source in ["(lfirst [])", "(lget [a] -2)", "(lget [] 0)"] {
+    for source in ["(lfirst [])", "(lget [a] #-2)", "(lget [] #0)"] {
         fails(source, "index out of range");
     }
     fails("(lconcat [a] text)", "expected a list");
-    fails("(lslice [a] 0.0)", "expected an integer");
+    fails("(lslice [a] #0.0)", "expected an integer");
 }
 
 #[test]
@@ -101,9 +101,9 @@ fn explicit_defaults_are_eager_once_in_all_call_forms() {
         (set trace (str))
         (list (apply $getter [(mark m $m) (mark k present) (mark d fallback)]) $trace)
         (set trace (str))
-        (list (lget [found] 0 (mark a fallback))
+        (list (lget [found] #0 (mark a fallback))
               ((function lfirst) [found] (mark b fallback))
-              (apply (function sget) [abc 0 (mark c fallback)]) $trace)
+              (apply (function sget) [abc #0 (mark c fallback)]) $trace)
     "#
         ),
         [
@@ -117,9 +117,9 @@ fn explicit_defaults_are_eager_once_in_all_call_forms() {
         "(mget {key value} key $undefined)",
         "((function mget) {key value} key $undefined)",
         "(apply (function mget) [{key value} key $undefined])",
-        "(lget [a] 0 $undefined)",
+        "(lget [a] #0 $undefined)",
         "(lfirst [a] $undefined)",
-        "(sget abc 0 $undefined)",
+        "(sget abc #0 $undefined)",
     ] {
         fails(source, "undefined variable");
     }
@@ -141,13 +141,13 @@ fn text_operations_count_chars_and_preserve_literal_patterns() {
         evaluated(
             r#"
         (let text "中é👩‍💻")
-        (list (slen $text) (sget $text 0) (sget $text -1)
-              (sslice $text 1 3) (sslice $text -3)
-              (sslice $text -99 99) (sslice $text 4 1))
+        (list (slen $text) (sget $text #0) (sget $text #-1)
+              (sslice $text #1 #3) (sslice $text #-3)
+              (sslice $text #-99 #99) (sslice $text #4 #1))
         (list (ssplit "a,,b," ",") (ssplit "中a" "")
               (sjoin [a 中 b] "::") (slines "a\r\nb\n")
               (strim "　 a \n") (sreplace "a.a" "." "$")
-              (scontains "a.a" ".") (sget "" 0 #nil))
+              (scontains "a.a" ".") (sget "" #0 #nil))
         (list (ssplit "" ",") (sjoin [] ",") (slines ""))
     "#
         ),
@@ -157,7 +157,7 @@ fn text_operations_count_chars_and_preserve_literal_patterns() {
             r#"(("") "" ())"#,
         ]
     );
-    fails("(sget abc 3)", "index out of range");
+    fails("(sget abc #3)", "index out of range");
     fails("(slen #3)", "expected text");
     fails("(sjoin [a #3] ,)", "a list of text");
 }
@@ -191,13 +191,13 @@ fn numeric_helpers_handle_signs_precision_rounding_and_integer_limits() {
     assert_eq!(
         evaluated(
             r#"
-        (list (quot -7 3) (rem -7 3) (quot 7 -3) (rem 7 -3)
-              (abs -4) (abs -4.0) (floor -1.2) (ceil -1.2)
-              (round 2.5) (round -2.5) (round 2.49))
-        (list (min 9007199254740993 9007199254740992.0)
-              (max 9007199254740993 9007199254740992.0)
-              (typeof (min 1 1.0)) (typeof (max 1.0 1))
-              (round 9223372036854775807) (floor -9223372036854775808.0))
+        (list (quot #-7 #3) (rem #-7 #3) (quot #7 #-3) (rem #7 #-3)
+              (abs #-4) (abs #-4.0) (floor #-1.2) (ceil #-1.2)
+              (round #2.5) (round #-2.5) (round #2.49))
+        (list (min #9007199254740993 #9007199254740992.0)
+              (max #9007199254740993 #9007199254740992.0)
+              (typeof (min #1 #1.0)) (typeof (max #1.0 #1))
+              (round #9223372036854775807) (floor #-9223372036854775808.0))
     "#
         ),
         [
@@ -205,24 +205,24 @@ fn numeric_helpers_handle_signs_precision_rounding_and_integer_limits() {
             r#"(#9007199254740992.0 #9007199254740993 "int" "float" #9223372036854775807 #-9223372036854775808)"#
         ]
     );
-    for source in ["(quot 1 0)", "(rem 1 0)"] {
+    for source in ["(quot #1 #0)", "(rem #1 #0)"] {
         fails(source, "division by zero");
     }
     for source in [
-        "(quot -9223372036854775808 -1)",
-        "(rem -9223372036854775808 -1)",
-        "(abs -9223372036854775808)",
+        "(quot #-9223372036854775808 #-1)",
+        "(rem #-9223372036854775808 #-1)",
+        "(abs #-9223372036854775808)",
     ] {
         fails(source, "overflow");
     }
     for source in [
-        "(round 9223372036854775808.0)",
-        "(ceil 1e100)",
-        "(floor -1e100)",
+        "(round #9223372036854775808.0)",
+        "(ceil #1e100)",
+        "(floor #-1e100)",
     ] {
         fails(source, "out of range");
     }
-    fails("(quot 3.0 2)", "expected an integer");
+    fails("(quot #3.0 #2)", "expected an integer");
     fails("(min)", "arguments");
 }
 
@@ -232,12 +232,12 @@ fn independent_closures_can_be_returned_passed_and_stored() {
         evaluated(
             r#"
         (defn counter (start)
-          (fn (&optional (step 1)) (set start (+ $start $step)) $start))
-        (let first (counter 0))
-        (let second (counter 10))
+          (fn (&optional (step #1)) (set start (+ $start $step)) $start))
+        (let first (counter #0))
+        (let second (counter #10))
         (defn invoke (f x) ($f $x))
-        (list ($first) ($first 2) (invoke $second 5) ($first)
-              ((lget [$second] 0)) ((mget {fn $first} fn)))
+        (list ($first) ($first #2) (invoke $second #5) ($first)
+              ((lget [$second] #0)) ((mget {fn $first} fn)))
         (let alias $first)
         (list (eq $first $alias) (eq $first $second)
               (eq (function +) (function +))
@@ -258,8 +258,8 @@ fn function_references_retain_definitions_and_can_recurse() {
         (let old (function named))
         (defn named () (str new))
         (list ($old) (named) (eq $old (function named)))
-        (let factorial (fn (n) (if (<= $n 1) #1 (* $n ($factorial (- $n 1))))))
-        ($factorial 5)
+        (let factorial (fn (n) (if (<= $n #1) #1 (* $n ($factorial (- $n #1))))))
+        ($factorial #5)
         (let command str)
         ($command preserved)
     "#
@@ -287,19 +287,19 @@ fn function_references_retain_definitions_and_can_recurse() {
 #[test]
 fn direct_referenced_and_applied_builtins_share_typed_operations() {
     for (name, arguments, expected) in [
-        ("+", "1 2 3", "#6"),
-        ("/", "5 2", "#2.5"),
-        ("<", "9007199254740992.0 9007199254740993", "#true"),
+        ("+", "#1 #2 #3", "#6"),
+        ("/", "#5 #2", "#2.5"),
+        ("<", "#9007199254740992.0 #9007199254740993", "#true"),
         ("not", "(eq a b)", "#true"),
         ("eq", "#3 3", "#false"),
         ("map", "key [a b]", r#"(map "key" ("a" "b"))"#),
         ("mset", "{a b} c [d]", r#"(map "a" "b" "c" ("d"))"#),
         ("lappend", "[a] [b c]", r#"("a" ("b" "c"))"#),
-        ("lslice", "[a b c] 1 -1", r#"("b")"#),
-        ("sslice", "中abc 1 -1", r#""ab""#),
+        ("lslice", "[a b c] #1 #-1", r#"("b")"#),
+        ("sslice", "中abc #1 #-1", r#""ab""#),
         ("sreplace", "a.a . '$'", r#""a\$a""#),
-        ("quot", "-7 3", "#-2"),
-        ("round", "2.5", "#3"),
+        ("quot", "#-7 #3", "#-2"),
+        ("round", "#2.5", "#3"),
         ("typeof", "#2", r#""int""#),
         ("nil?", "#nil", "#true"),
     ] {
@@ -312,12 +312,12 @@ fn direct_referenced_and_applied_builtins_share_typed_operations() {
             "{source}"
         );
     }
-    assert_eq!(evaluated("(apply (function +) 1 2 [3 4])"), ["#10"]);
+    assert_eq!(evaluated("(apply (function +) #1 #2 [#3 #4])"), ["#10"]);
     assert_eq!(
         evaluated("(let name value) (apply (function get) [name])"),
         [r#""value""#]
     );
-    fails("(apply + [1])", "a function value");
+    fails("(apply + [#1])", "a function value");
     fails("(apply (function +) 1)", "a final list");
 }
 
@@ -327,7 +327,7 @@ fn optional_defaults_are_per_call_and_rest_keeps_each_argument_whole() {
         evaluated(
             r#"
         (let calls #0)
-        (defn collect (x &optional y (z (do (set calls (+ $calls 1)) $x)) &rest tail)
+        (defn collect (x &optional y (z (do (set calls (+ $calls #1)) $x)) &rest tail)
           (list $x $y $z $tail))
         (collect first)
         (collect first second)
@@ -379,13 +379,13 @@ fn macros_bind_optional_and_rest_forms_without_evaluating_arguments() {
         evaluated(
             r#"
         (defmacro block (&rest body) `(do ,@$body))
-        (block (+ 1) (+ 2))
-        (defmacro choose (condition &optional (yes (quote (+ 7))) &rest no)
+        (block (+ #1) (+ #2))
+        (defmacro choose (condition &optional (yes (quote (+ #7))) &rest no)
           `(if ,$condition ,$yes (do ,@$no)))
         (choose (eq a a))
-        (choose (eq a b) $undefined (+ 2) (+ 3))
+        (choose (eq a b) $undefined (+ #2) (+ #3))
         (defmacro same (x &optional (y $x)) $y)
-        (same (+ 9))
+        (same (+ #9))
         (defmacro absent (&optional x)
           (if (nil? $x) (quote (str absent)) $x))
         (absent)
@@ -438,7 +438,7 @@ fn macros_have_their_own_return_boundary_and_preserve_expanded_jumps() {
         evaluated(
             r#"
         (defmacro block (&rest body) (return `(do ,@$body)) $undefined)
-        (block (+ 1) (+ 2))
+        (block (+ #1) (+ #2))
         (defmacro early (value) `(return ,$value))
         (defn caller () (block (early [from macro])) $undefined)
         (caller)
@@ -446,7 +446,7 @@ fn macros_have_their_own_return_boundary_and_preserve_expanded_jumps() {
         (while #true (stop done))
         (let count #0)
         (defmacro again () (quote (continue)))
-        (while (< $count 2) (set count (+ $count 1)) (again) $undefined)
+        (while (< $count #2) (set count (+ $count #1)) (again) $undefined)
         (list $count)
     "#
         ),

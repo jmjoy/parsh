@@ -35,10 +35,10 @@ description: "词法函数、条件分支、顺序求值与循环。"
 
 ```parsh
 (let count #0)
-(while (< $count 5)
-  (set count (+ $count 1))
-  (if (= $count 2) (continue))
-  (if (= $count 4) (break (list stopped $count)))
+(while (< $count #5)
+  (set count (+ $count #1))
+  (if (= $count #2) (continue))
+  (if (= $count #4) (break (list stopped $count)))
   (echo iteration $count))
 ```
 
@@ -63,17 +63,17 @@ description: "词法函数、条件分支、顺序求值与循环。"
 函数值可以保存在集合中、传参或返回，并支持表达式作为调用头：
 
 ```parsh
-(let inc (fn (x) (+ $x 1)))
-($inc 2)
-((fn (x) (* $x 2)) 3)
+(let inc (fn (x) (+ $x #1)))
+($inc #2)
+((fn (x) (* $x #2)) #3)
 (let add (function +))
-(apply $add 1 [2 3])
+(apply $add #1 [#2 #3])
 
 (defn sum (first &optional (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
-(sum 1 2 3 4)
+(sum #1 #2 #3 #4)
 ```
 
 参数顺序为必选参数、`&optional`、`&rest name`。可选参数可以只写名字，缺省为 nil；

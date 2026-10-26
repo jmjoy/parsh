@@ -325,7 +325,7 @@ fn interpolated_strings_capture_commands_without_splitting_arguments() {
     let output = run(r#"
         (let name "a b")
         (defn greet () (str "$name!"))
-        (printf "<%s>\n" "$name $(+ 1 2)" '$name\n'
+        (printf "<%s>\n" "$name $(+ #1 #2)" '$name\n'
             "text=$(printf "x\n\n")" "$(greet)" "nested=$(str "a" 'b')"
             "$(sh -c 'printf captured; printf warning >&2')")
     "#);
@@ -345,7 +345,7 @@ fn triple_quoted_strings_keep_multiline_command_arguments_intact() {
     let output = run(r#"
         (let name "a b")
         (printf "<%s>\n" """hello "$name"
-sum=$(+ 1 2)
+sum=$(+ #1 #2)
 capture=$(printf "x\n\n")""" ''''$missing' $(missing)\n
 literal''')
     "#);
@@ -371,9 +371,9 @@ fn interpolated_command_names_pipelines_and_redirection_paths_work() {
         (let name "a b")
         (let command printf)
         ("$command" "<%s>\n" "$(get name)")
-        (| ("$(get command)" %s "sum=$(+ 1 2)") (cat))
+        (| ("$(get command)" %s "sum=$(+ #1 #2)") (cat))
         (let path {})
-        (|> "$path" (printf %s "file=$(+ 2 3)"))
+        (|> "$path" (printf %s "file=$(+ #2 #3)"))
         (cat "$path")
     "#,
         quote(path.to_str().unwrap())
@@ -389,17 +389,17 @@ fn interpolated_command_names_pipelines_and_redirection_paths_work() {
 #[test]
 fn arithmetic_composes_with_command_capture_functions_arguments_and_environment() {
     let output = run(r#"
-        (let count (+ (printf "  0012 \n") 3))
-        (defn twice (n) (* $n 2))
-        (set count (+ $count 1))
-        (printf "<%s>\n" $count (twice $count) (/ $count 2)
-            (list (+ 1 2) (/ 5 2)) (str result= (/ 8 2)) 00123)
-        (export PARSH_NUMBER (/ 8 2))
+        (let count (+ (int (printf "  0012 \n")) #3))
+        (defn twice (n) (* $n #2))
+        (set count (+ $count #1))
+        (printf "<%s>\n" $count (twice $count) (/ $count #2)
+            (list (+ #1 #2) (/ #5 #2)) (str result= (/ #8 #2)) 00123)
+        (export PARSH_NUMBER (/ #8 #2))
         (printf "<%s>\n" $PARSH_NUMBER)
         (sh -c "printf '<%s>\\n' \"\$PARSH_NUMBER\"")
-        (set PARSH_NUMBER (+ 1 2))
+        (set PARSH_NUMBER (+ #1 #2))
         (sh -c "printf '<%s>\\n' \"\$PARSH_NUMBER\"")
-        (if (= $count 16.0) (printf equal))
+        (if (= $count #16.0) (printf equal))
         "#);
     success(&output);
     assert_eq!(
@@ -409,15 +409,15 @@ fn arithmetic_composes_with_command_capture_functions_arguments_and_environment(
 }
 
 #[test]
-fn numeric_comparisons_accept_captured_output_and_drive_conditions() {
+fn numeric_comparisons_explicitly_convert_captured_output_and_drive_conditions() {
     let output = run(r#"
-        (let count (+ (printf "  0012 \n") 3))
-        (defn enough (n) (>= $n 15.0))
-        (printf "%s\n" (< (printf 2) (printf 10))
-            (<= $count 15) (> $count 14.5) (enough $count)
-            (!= $count 15.0) (> 9007199254740993 9007199254740992.0))
-        (if (> $count 10) (printf larger) (echo skipped))
-        (if (< $count 10) (echo skipped) (printf smaller))
+        (let count (+ (int (printf "  0012 \n")) #3))
+        (defn enough (n) (>= $n #15.0))
+        (printf "%s\n" (< (int (printf 2)) (int (printf 10)))
+            (<= $count #15) (> $count #14.5) (enough $count)
+            (!= $count #15.0) (> #9007199254740993 #9007199254740992.0))
+        (if (> $count #10) (printf larger) (echo skipped))
+        (if (< $count #10) (echo skipped) (printf smaller))
         "#);
     success(&output);
     assert_eq!(
@@ -428,7 +428,8 @@ fn numeric_comparisons_accept_captured_output_and_drive_conditions() {
 
 #[test]
 fn numeric_results_are_not_implicitly_printed_in_scripts() {
-    let output = run("(+ 1 2) (/ 8 2) (= 001 1) (!= 1 2) (< 1 2) (<= 2 2) (> 2 1) (>= 2 2)");
+    let output =
+        run("(+ #1 #2) (/ #8 #2) (= #001 #1) (!= #1 #2) (< #1 #2) (<= #2 #2) (> #2 #1) (>= #2 #2)");
     success(&output);
     assert!(output.stdout.is_empty());
 }
@@ -436,23 +437,23 @@ fn numeric_results_are_not_implicitly_printed_in_scripts() {
 #[test]
 fn numeric_failures_have_language_error_status_and_stop_the_script() {
     for (source, message) in [
-        ("(printf %s (+ 1 invalid))", "invalid number"),
-        ("(/ 1 0)", "division by zero"),
-        ("(+ 9223372036854775807 1)", "integer overflow"),
-        ("(+ 9223372036854775808)", "integer out of range for i64"),
-        ("(* 1e308 1e308)", "number must be finite"),
-        ("(= 1 (list 1))", "expected a number or numeric text"),
-        ("(< 1 invalid)", "invalid number"),
-        ("(<= 1)", "expected 2 arguments"),
-        ("(> 1 (list 2))", "expected a number or numeric text"),
-        ("(>= 1 1e309)", "number must be finite"),
-        ("(!= 1 2 3)", "expected 2 arguments"),
+        ("(printf %s (+ #1 invalid))", "expected a number"),
+        ("(/ #1 #0)", "division by zero"),
+        ("(+ #9223372036854775807 #1)", "integer overflow"),
+        ("(+ #9223372036854775808)", "integer out of range for i64"),
+        ("(* #1e308 #1e308)", "number must be finite"),
+        ("(= #1 (list 1))", "expected a number"),
+        ("(< #1 invalid)", "expected a number"),
+        ("(<= #1)", "expected 2 arguments"),
+        ("(> #1 (list 2))", "expected a number"),
+        ("(>= #1 #1e309)", "number must be finite"),
+        ("(!= #1 #2 #3)", "expected 2 arguments"),
         (
-            "(| (+ 1 2) (cat))",
+            "(| (+ #1 #2) (cat))",
             "pipeline stages must be external commands",
         ),
         (
-            "(| (> 2 1) (cat))",
+            "(| (> #2 #1) (cat))",
             "pipeline stages must be external commands",
         ),
     ] {
@@ -470,7 +471,7 @@ fn numeric_failures_have_language_error_status_and_stop_the_script() {
             stderr(&output)
         );
     }
-    let output = run("(+ 1\n invalid)");
+    let output = run("(+ #1\n invalid)");
     assert!(
         stderr(&output).starts_with("-c:2:2:"),
         "{}",
@@ -546,7 +547,7 @@ fn while_command_conditions_and_loop_values_capture_complete_stdout() {
         (printf "<%s>\n"
           (while (test $n -lt 3)
             (printf "[%s]" $n)
-            (set n (+ $n 1))
+            (set n (+ $n #1))
             (printf .)))
         (while (false) (echo skipped))
         (while (| (false) (true)) (echo skipped))
@@ -1056,9 +1057,9 @@ fn function_values_capture_command_output_and_return_across_redirections() {
 fn eager_defaults_fail_even_when_the_requested_entry_exists() {
     for source in [
         "(mget {key value} key (sh -c 'exit 7')) (echo wrong)",
-        "(lget [value] 0 (sh -c 'exit 7')) (echo wrong)",
+        "(lget [value] #0 (sh -c 'exit 7')) (echo wrong)",
         "((function mget) {key value} key (sh -c 'exit 7')) (echo wrong)",
-        "(apply (function lget) [[value] 0 (sh -c 'exit 7')]) (echo wrong)",
+        "(apply (function lget) [[value] #0 (sh -c 'exit 7')]) (echo wrong)",
     ] {
         let output = run(source);
         assert_eq!(
@@ -1105,4 +1106,28 @@ fn scalar_literals_and_conversions_preserve_external_text_and_failure_status() {
         );
         assert!(output.stdout.is_empty());
     }
+}
+
+#[test]
+fn numeric_text_from_commands_environment_and_arguments_requires_conversion() {
+    for source in [
+        "(+ (printf 1) #1)",
+        "(export NUMBER_TEXT 1) (+ $NUMBER_TEXT #1)",
+        "(lget [a b] (printf 0))",
+    ] {
+        let output = run(source);
+        assert_eq!(output.status.code(), Some(2), "{source}");
+        assert!(
+            stderr(&output).contains("got text"),
+            "{source}: {}",
+            stderr(&output)
+        );
+        assert!(output.stdout.is_empty());
+    }
+    let output = invoke(&["-c", "(+ (lfirst $args) #1)", "1"], "");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("int/float to convert text"));
+    let output = invoke(&["-c", "(printf %s (+ (int (lfirst $args)) #1))", "1"], "");
+    success(&output);
+    assert_eq!(stdout(&output), "2");
 }

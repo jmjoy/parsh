@@ -54,12 +54,12 @@ Results are `#1`, `#1.0`, `#false`, and `#100`.
 (let updated (lappend $original [c d]))
 (list $original $updated)
 (lconcat $original [c d])
-(lget $updated -1)
-(lslice $updated 1 -1)
+(lget $updated #-1)
+(lslice $updated #1 #-1)
 ```
 
-Indices start at zero. Negative indices count from the end; `-1` is the last
-item. Indices accept integers or integer text, not floats. Item reads outside
+Indices start at zero. Negative indices count from the end; `#-1` is the last
+item. Indices and slice bounds require int values. Text and integral floats are errors; use `int` explicitly when needed. Item reads outside
 the list require a default or raise an error. Slice bounds are clamped, and
 reversed ranges return an empty list.
 
@@ -78,7 +78,7 @@ reversed ranges return an empty list.
 | `(scontains text part)` | Boolean indicating a literal substring match |
 
 ```parsh
-(list (slen "中文") (sget "中文" -1) (sslice "中文abc" 1 3))
+(list (slen "中文") (sget "中文" #-1) (sslice "中文abc" #1 #3))
 (sjoin (ssplit "a,b,c" ",") " / ")
 (slines "a\r\nb\n")
 ```
@@ -100,7 +100,7 @@ propagates its errors:
 
 ```parsh
 (let calls #0)
-(mget {name parsh} name (do (set calls (+ $calls 1)) fallback))
+(mget {name parsh} name (do (set calls (+ $calls #1)) fallback))
 (list $calls)
 ```
 
@@ -133,10 +133,10 @@ captured as text. `type` continues to inspect command lookup.
 | `(round n)` | Nearest i64, with ties away from zero |
 
 ```parsh
-(list (quot -7 3) (rem -7 3) (round 2.5) (round -2.5))
+(list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5))
 ```
 
-The result is `(#-2 #-1 #3 #-3)`. `quot/rem` require integers or integer text; other
-numeric helpers accept numbers or numeric text. `min/max` retain the winning
+The result is `(#-2 #-1 #3 #-3)`. `quot/rem` require int values; other numeric helpers require int or float
+values. Text must be converted explicitly with `int` or `float`. `min/max` retain the winning
 number's type and preserve integer precision in mixed comparisons. Division by
 zero, integer overflow, rounding outside i64, and non-finite values are language errors.

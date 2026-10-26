@@ -29,8 +29,8 @@ The interactive result is `"hello, world"`. Scripts use exactly the same syntax;
 Shell scripts often push their logic into `awk`, `sed`, or an inline interpreter, and each layer brings its own quoting rules. parsh keeps it all in the script: arithmetic, lists and maps, functions, and loops behave as in a general-purpose language, while [external commands](/parsh/en/docs/commands/), pipelines, and redirections share the same syntax. Values are never split or globbed implicitly, so a script means exactly what it says.
 
 ```parsh
-(let count (+ (| (find . -name "*.rs") (wc -l)) 0))
-(echo "rust files: $count; doubled: $(* $count 2)")
+(let count (int (| (find . -name "*.rs") (wc -l))))
+(echo "rust files: $count; doubled: $(* $count #2)")
 ```
 
 One grammar and one set of rules to generate against and to check: that is what makes parsh scripts a good fit for AI-assisted work. Library imports are planned, so scripts will also reuse packaged code the way Python modules do.

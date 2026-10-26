@@ -25,12 +25,12 @@ balancing, instead of a line comment that ends at a newline. See
 
 Bare words are text. `123` is the text `123`, and `true`, `false`, and `nil`
 have no literal meaning in value positions. Explicit literals such as `#123`,
-`#false`, and `#nil` create typed values. Arithmetic and numeric comparisons also
-parse numeric text; `int`, `float`, and `bool` convert runtime values explicitly:
+`#false`, and `#nil` create typed values. Arithmetic and numeric comparisons accept only numbers;
+`int`, `float`, and `bool` convert runtime values explicitly:
 
 ```parsh
 (eq 001 1)
-(= 001 1)
+(= #001 #1)
 (let mode fast)
 (if (eq $mode fast) (echo fast))
 ```

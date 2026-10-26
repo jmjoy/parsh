@@ -85,7 +85,7 @@ fn collection_errors_preserve_source_positions_and_skip_invalid_values() {
             "alternating keys and values",
         ),
         ("{key first key (set trace wrong)}", 12, "duplicate map key"),
-        ("{(+ 1) (set trace wrong)}", 2, "map keys must be text"),
+        ("{(+ #1) (set trace wrong)}", 2, "map keys must be text"),
         ("{[a] (set trace wrong)}", 2, "map keys must be text"),
         ("[甲 $missing]", 4, "undefined variable $missing"),
     ] {

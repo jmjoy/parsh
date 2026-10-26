@@ -140,8 +140,8 @@ fn defaults_are_eager_but_only_returned_for_missing_keys() {
         r#"
         (let m (map present #nil))
         (let calls #0)
-        (list (mget $m present (set calls (+ $calls 100)))
-              (mget $m absent (do (set calls (+ $calls 1)) (list fallback)))
+        (list (mget $m present (set calls (+ $calls #100)))
+              (mget $m absent (do (set calls (+ $calls #1)) (list fallback)))
               $calls)
         (mget $m added (do (set m (mset $m added installed)) (mget $m added)))
         (mget $m added fallback)
@@ -253,7 +253,7 @@ fn construction_errors_stop_before_invalid_values_and_locate_the_key() {
     assert!(diagnostics(&events)[0].contains("alternating keys and values"));
     assert_eq!(values(&execute(&mut repl, "(get trace)")), [r#""kvd""#]);
 
-    for key in ["(+ 1)", "(eq a a)", "(do)", "(list a)", "(map)"] {
+    for key in ["(+ #1)", "(eq a a)", "(do)", "(list a)", "(map)"] {
         let events = execute(&mut repl, &format!("(map {key} (set trace wrong))"));
         assert!(diagnostics(&events)[0].contains("map keys must be text"));
         assert!(diagnostics(&events)[0].starts_with("interactive:1:6:"));
@@ -284,7 +284,7 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
             ("missing", "expected a map"),
             ("$missing", "undefined variable $missing"),
             ("$text", "expected a map"),
-            ("(+ 1)", "expected a map"),
+            ("(+ #1)", "expected a map"),
             ("(eq a a)", "expected a map"),
             ("(do)", "expected a map"),
             ("[]", "expected a map"),
@@ -308,7 +308,7 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
         }
         for source in [
             format!("({command})"),
-            format!("({command} (set calls (+ $calls 1)) {tail} extra extra)"),
+            format!("({command} (set calls (+ $calls #1)) {tail} extra extra)"),
         ] {
             let events = execute(&mut repl, &source);
             assert!(
@@ -317,8 +317,8 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
             );
         }
         let effects = match command {
-            "mset" => " (set calls (+ $calls 1)) (set calls (+ $calls 1))",
-            "mget" | "mdel" | "mhas" => " (set calls (+ $calls 1))",
+            "mset" => " (set calls (+ $calls #1)) (set calls (+ $calls #1))",
+            "mget" | "mdel" | "mhas" => " (set calls (+ $calls #1))",
             _ => "",
         };
         let source = format!("({command} scalar{effects})");
@@ -354,9 +354,9 @@ fn missing_and_invalid_keys_report_errors_without_overwriting_or_evaluating_valu
         assert!(diagnostics(&events)[0].starts_with("interactive:1:17:"));
     }
     for command in ["mget", "mset", "mdel", "mhas"] {
-        for key in ["(+ 1)", "(eq a a)", "(do)", "(list)", "(map)"] {
+        for key in ["(+ #1)", "(eq a a)", "(do)", "(list)", "(map)"] {
             let tail = if command == "mset" {
-                " (set calls (+ $calls 1))"
+                " (set calls (+ $calls #1))"
             } else {
                 ""
             };
@@ -371,7 +371,7 @@ fn missing_and_invalid_keys_report_errors_without_overwriting_or_evaluating_valu
         values(&execute(&mut repl, "(list $calls $m)")),
         [r#"(#0 (map "key" "value"))"#]
     );
-    let events = execute(&mut repl, "(mget $missing key (set calls (+ $calls 1)))");
+    let events = execute(&mut repl, "(mget $missing key (set calls (+ $calls #1)))");
     assert!(diagnostics(&events)[0].contains("undefined variable $missing"));
     assert_eq!(values(&execute(&mut repl, "(get calls)")), ["#0"]);
 }

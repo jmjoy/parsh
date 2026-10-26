@@ -32,12 +32,12 @@ fn while_checks_the_condition_once_per_iteration_and_returns_the_last_body_value
         r#"
         (let checks #0)
         (let count #0)
-        (list (while (do (set checks (+ $checks 1)) (< $count 3))
-                (set count (+ $count 1))
+        (list (while (do (set checks (+ $checks #1)) (< $count #3))
+                (set count (+ $count #1))
                 (list $count $checks))
               $count $checks)
         (list (while #false $undefined))
-        (while (< $count 1000) (set count (+ $count 1)) $count)
+        (while (< $count #1000) (set count (+ $count #1)) $count)
         "#,
         &["((#3 #3) #3 #4)", "(#nil)", "#1000"],
     );
@@ -51,11 +51,11 @@ fn while_iterations_have_fresh_lexical_scopes_retained_by_closures() {
         r#"
         (let name outer)
         (let count #0)
-        (while (< $count 2)
-          (set count (+ $count 1))
+        (while (< $count #2)
+          (set count (+ $count #1))
           (let copy $name)
           (let name (str $copy $count))
-          (if (= $count 1)
+          (if (= $count #1)
               (defn first () (list $copy $name))
               (defn second () (list $copy $name)))
           $name)
@@ -89,15 +89,15 @@ fn break_and_continue_preserve_the_last_complete_iteration_or_nil() {
             r#""first""#,
         ),
         (
-            "(let n #0) (while (< $n 3) (set n (+ $n 1)) (if (= $n 2) (break)) (str $n))",
+            "(let n #0) (while (< $n #3) (set n (+ $n #1)) (if (= $n #2) (break)) (str $n))",
             r#""1""#,
         ),
         (
-            "(let n #0) (while (< $n 3) (set n (+ $n 1)) (if (> $n 1) (continue)) (str $n))",
+            "(let n #0) (while (< $n #3) (set n (+ $n #1)) (if (> $n #1) (continue)) (str $n))",
             r#""1""#,
         ),
         (
-            "(let n #0) (list (while (< $n 3) (set n (+ $n 1)) (continue)))",
+            "(let n #0) (list (while (< $n #3) (set n (+ $n #1)) (continue)))",
             "(#nil)",
         ),
     ] {
@@ -107,18 +107,17 @@ fn break_and_continue_preserve_the_last_complete_iteration_or_nil() {
 
 #[test]
 fn break_values_preserve_types_and_are_evaluated_exactly_once() {
-    for header in ["while (< $n 3)", "for item (list a b c)"] {
+    for header in ["while (< $n #3)", "for item (list a b c)"] {
         for (value, expected) in [
-            ("(+ 7)", "(#7 #2)"),
-            ("(list a (+ 2))", r#"(("a" #2) #2)"#),
+            ("(+ #7)", "(#7 #2)"),
+            ("(list a (+ #2))", r#"(("a" #2) #2)"#),
             ("(eq a a)", "(#true #2)"),
             ("(do)", "(#nil #2)"),
             ("text", r#"("text" #2)"#),
-            ("(do (set n (+ $n 10)) (list $n))", "((#12) #12)"),
+            ("(do (set n (+ $n #10)) (list $n))", "((#12) #12)"),
         ] {
             let source = format!(
-                "(let n #0) (list ({header} (set n (+ $n 1)) \
-                 (if (= $n 2) (break {value})) (str completed)) $n)"
+                "(let n #0) (list ({header} (set n (+ $n #1)) (if (= $n #2) (break {value})) (str completed)) $n)"
             );
             assert_values(&source, &[expected]);
         }
@@ -127,20 +126,20 @@ fn break_values_preserve_types_and_are_evaluated_exactly_once() {
 
 #[test]
 fn mixed_nested_loops_target_only_the_nearest_loop() {
-    for outer in ["while (< $round 3)", "for outer_item (list a b c)"] {
-        for inner in ["while (< $n 5)", "for inner_item (list a b c d e)"] {
+    for outer in ["while (< $round #3)", "for outer_item (list a b c)"] {
+        for inner in ["while (< $n #5)", "for inner_item (list a b c d e)"] {
             let source = format!(
                 "(let round #0) (let visits #0) (let after #0)
                  ({outer}
-                   (set round (+ $round 1))
+                   (set round (+ $round #1))
                    (let n #0)
                    ({inner}
-                     (set n (+ $n 1))
-                     (if (= $n 2) (continue))
-                     (if (= $n 4) (break (list inner-done)))
-                     (set visits (+ $visits 1)))
-                   (if (= $round 2) (continue))
-                   (set after (+ $after 1)))
+                     (set n (+ $n #1))
+                     (if (= $n #2) (continue))
+                     (if (= $n #4) (break (list inner-done)))
+                     (set visits (+ $visits #1)))
+                   (if (= $round #2) (continue))
+                   (set after (+ $after #1)))
                  (list $visits $after $round)"
             );
             assert_values(&source, &["(#6 #2 #3)"]);
@@ -156,8 +155,8 @@ fn loop_jumps_unwind_nested_expressions_without_evaluating_the_rest() {
             format!("(if #true {jump} $undefined)"),
             format!("(str {jump} $undefined)"),
             format!("(list {jump} $undefined)"),
-            format!("(+ 1 {jump} $undefined)"),
-            format!("(= 1 {jump})"),
+            format!("(+ #1 {jump} $undefined)"),
+            format!("(= #1 {jump})"),
             format!("(not {jump})"),
             format!("(get {jump})"),
             format!("(let unused {jump})"),
@@ -168,7 +167,7 @@ fn loop_jumps_unwind_nested_expressions_without_evaluating_the_rest() {
             format!("(while {jump} $undefined)"),
             format!("(for item {jump} $undefined)"),
         ] {
-            let source = format!("(let n #0) (list (while (< $n 3) (set n (+ $n 1)) {body}) $n)");
+            let source = format!("(let n #0) (list (while (< $n #3) (set n (+ $n #1)) {body}) $n)");
             let expected = if jump.starts_with("(break") {
                 r#"("returned" #1)"#
             } else {
@@ -195,14 +194,14 @@ fn functions_isolate_loop_control_but_arguments_use_the_callers_loop() {
             diagnostics(&events)[0].contains("outside a loop body"),
             "{events:?}"
         );
-        assert_eq!(values(&execute(&mut repl, "(+ 1 2)")), ["#3"]);
+        assert_eq!(values(&execute(&mut repl, "(+ #1 #2)")), ["#3"]);
     }
     assert_values(
         "(defn inner () (for item (list a b) (break (list $item))))
          (let n #0)
-         (while (< $n 3)
-           (set n (+ $n 1)) (inner)
-           (if (= $n 1) (continue))
+         (while (< $n #3)
+           (set n (+ $n #1)) (inner)
+           (if (= $n #1) (continue))
            (break $n))
          (defn unused (arg) (unavailable))
          (while #true (unused (break from-argument)))",
@@ -221,7 +220,7 @@ fn invalid_loops_and_jumps_report_positions_without_evaluating_arguments() {
             "2:2",
         ),
         (
-            "(while\n (+ 1)\n (unavailable))",
+            "(while\n (+ #1)\n (unavailable))",
             "a condition must be a boolean or command status",
             "2:2",
         ),
@@ -261,7 +260,7 @@ fn invalid_loops_and_jumps_report_positions_without_evaluating_arguments() {
             "continue used outside a loop body",
             "2:2",
         ),
-        ("(while #true\n (+ 1 invalid))", "invalid number", "2:7"),
+        ("(while #true\n (+ #1 invalid))", "expected a number", "2:8"),
     ] {
         let mut repl = Repl::new();
         execute(&mut repl, "(let sentinel retained)");
@@ -325,5 +324,5 @@ fn exit_and_interrupts_unwind_loop_context_and_allow_later_execution() {
     assert!(!error.exit);
     let error = shell.execute(&form("(break)")).unwrap_err();
     assert!(error.message.contains("outside a loop body"));
-    assert_eq!(shell.execute(&form("(+ 1 2)")).unwrap().display(), "#3");
+    assert_eq!(shell.execute(&form("(+ #1 #2)")).unwrap().display(), "#3");
 }

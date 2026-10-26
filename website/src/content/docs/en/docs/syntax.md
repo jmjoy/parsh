@@ -100,7 +100,7 @@ continue on a new line. The gray closing delimiter is only a display hint until 
 (let name parsh)
 (str "hello, $name")
 (str "$(get name)_suffix")
-(str "sum=$(+ 1 2)")
+(str "sum=$(+ #1 #2)")
 (str "nested=$(str "a" 'b')")
 (str "cwd=$(pwd)")
 (str '$name $(+ 1 2)\n')
@@ -137,7 +137,7 @@ escapes as ordinary double quotes; `'''...'''` preserves all content literally:
 
 ```parsh
 (str """hello, "$name"
-sum=$(+ 1 2)""")
+sum=$(+ #1 #2)""")
 (str '''literal '$name'
 $(pwd)\n''')
 ```
@@ -150,38 +150,40 @@ empty string. Adjacent strings remain separate expressions.
 
 ## Arithmetic and numeric comparisons
 
-`123` is text until a numeric operation parses it. Arithmetic operators `+`, `-`,
-`*`, `/` and comparison operators `=`, `!=`, `<`, `<=`, `>`, `>=` accept runtime
-numbers or numeric text. Variables and captured command output
-follow the same rule as bare words and quoted strings.
+`123` is text, while `#123` is an integer. Arithmetic operators `+`, `-`, `*`,
+`/` and numeric comparisons `=`, `!=`, `<`, `<=`, `>`, `>=` accept only runtime
+int or float values, including mixed numeric types. Text is never parsed by an
+operator: `(+ 1 #2)` is a type error; `(+ (int 1) #2)` returns `#3`.
+Convert environment variables, script arguments, and captured command output
+explicitly with `int` or `float` before using them as numbers.
 
 | Expression | Interactive result |
 | --- | --- |
-| `(+ 123 2)` | `#125` |
-| `(+ "1.5" 2)` | `#3.5` |
-| `(/ 5 2)` | `#2.5` |
-| `(/ 8 2)` | `#4.0` |
+| `(+ #123 #2)` | `#125` |
+| `(+ (float "1.5") #2)` | `#3.5` |
+| `(/ #5 #2)` | `#2.5` |
+| `(/ #8 #2)` | `#4.0` |
 | `(str 00123)` | `"00123"` |
-| `(eq (+ 1 2) 3)` | `#false` |
+| `(eq (+ #1 #2) 3)` | `#false` |
 | `(eq #3 #3.0)` | `#false` |
-| `(= (+ 1 2) 3)` | `#true` |
-| `(= 001 1.0)` | `#true` |
-| `(!= 1 1.5)` | `#true` |
-| `(< 2 10)` | `#true` |
-| `(<= 3 3.0)` | `#true` |
-| `(> 10 2)` | `#true` |
-| `(>= 2.5 3)` | `#false` |
+| `(= (+ #1 #2) #3)` | `#true` |
+| `(= #001 #1.0)` | `#true` |
+| `(!= #1 #1.5)` | `#true` |
+| `(< #2 #10)` | `#true` |
+| `(<= #3 #3.0)` | `#true` |
+| `(> #10 #2)` | `#true` |
+| `(>= #2.5 #3)` | `#false` |
 
-Text is trimmed and must parse completely. Supported forms include `+001`,
-`-12`, `.5`, `1.`, and `2.5e1`. Integers use `i64`; a decimal point or exponent
-selects `f64`. Leading zeroes are decimal, not octal. Out-of-range integer text
-is an error rather than being converted to a float. Booleans, nil, lists, and maps
-cannot be used as numbers.
+Literal forms include `#+001`, `#-12`, `#.5`, `#1.`, and `#2.5e1`. Integers
+use `i64`; a decimal point or exponent selects `f64`. Leading zeroes are decimal,
+not octal. Out-of-range integer literals are errors, not floats. For runtime
+text, `int` and `float` trim and parse completely; numeric operators do not.
+Booleans, nil, lists, and maps cannot be used as numbers.
 
 Arguments are evaluated once from left to right; arithmetic operations fold left.
 `+` and `*` accept any number of arguments, with `(+)` returning integer `0`
 and `(*)` returning integer `1`. `-` and `/` need at least one argument;
-`(- 5)` returns `-5` and `(/ 4)` returns `0.25`. Integer addition, subtraction,
+`(- #5)` returns `-5` and `(/ #4)` returns `0.25`. Integer addition, subtraction,
 and multiplication check for overflow. Each step involving a float uses `f64`;
 division always returns a float. A later float does not prevent an earlier
 integer step from overflowing.
@@ -189,16 +191,16 @@ integer step from overflowing.
 `eq` compares types and values, including elements inside lists and maps; map insertion order does not affect equality. Numeric `=`
 tests equality and `!=` tests inequality; `<`, `<=`, `>`, and `>=` test order.
 Each numeric comparison takes exactly two arguments and returns a boolean.
-Comparisons accept numeric text and compare integers and floats by value,
+Comparisons require int or float values and compare them by value,
 preserving integer precision even for large mixed operands:
-`(> 9007199254740993 9007199254740992.0)` is `true`.
-Float comparisons are exact, with no tolerance: `(= (+ 0.1 0.2) 0.3)` is
+`(> #9007199254740993 #9007199254740992.0)` is `true`.
+Float comparisons are exact, with no tolerance: `(= (+ #0.1 #0.2) #0.3)` is
 `false` because `f64` has binary rounding error. Arithmetic involving floats
 can also lose large integer precision.
 
 ```parsh
-(let count (+ 1 2))
-(if (>= $count 3) (str "at least three") (str fewer))
+(let count (+ #1 #2))
+(if (>= $count #3) (str "at least three") (str fewer))
 ```
 
 Numbers display with `#`, and floats retain a decimal point or exponent,

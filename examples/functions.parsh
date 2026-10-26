@@ -2,10 +2,10 @@
 (; Run with: cargo run -- examples/functions.parsh )
 
 (defn factorial (n)
-  (if (<= $n 1)
+  (if (<= $n #1)
       #1
-      (* $n (factorial (- $n 1)))))
-(echo "6! = $(factorial 6)")
+      (* $n (factorial (- $n #1)))))
+(echo "6! = $(factorial #6)")
 
 (; A function reads the lexical scope where it was defined. )
 (let greeting hello)

@@ -17,8 +17,8 @@ parsh 把逻辑留在脚本里：算术、列表与映射、函数和循环像�
 脚本写的是什么，执行的就是什么 —— 这正是生成的脚本容易读、容易审阅、容易修的原因。
 
 ```parsh
-(let count (+ (| (find . -name "*.rs") (wc -l)) 0))
-(echo "rust files: $count; doubled: $(* $count 2)")
+(let count (int (| (find . -name "*.rs") (wc -l))))
+(echo "rust files: $count; doubled: $(* $count #2)")
 ```
 
 后续计划支持引入库，届时脚本可以像 Python 模块那样复用现成的代码。
@@ -59,10 +59,10 @@ cargo run -- examples/hello.parsh world
 (echo hello $name)
 (set name world)
 (echo "hello, $name")
-(echo "sum=$(+ 1 2)")
+(echo "sum=$(+ #1 #2)")
 (echo 'literal $name and $(pwd)\n')
 (echo """hello, "$name"
-sum=$(+ 1 2)""")
+sum=$(+ #1 #2)""")
 (echo '''literal '$name'
 $(pwd)\n''')
 (export EDITOR vim)
@@ -196,47 +196,51 @@ $(pwd)\n''')
 
 ## 四则运算与比较
 
-裸词继续表示文本。算术运算符 `+`、`-`、`*`、`/` 和比较运算符
-`=`、`!=`、`<`、`<=`、`>`、`>=` 接受数值或数值文本，
-包括变量和捕获的命令输出。算术返回数值；普通文本 `00123` 仍保留原样。
+算术运算符 `+`、`-`、`*`、`/` 和数值比较 `=`、`!=`、`<`、`<=`、`>`、`>=`
+只接受 int 或 float。裸词 `1`、`00123` 仍是文本，作为数值操作数会报类型错误；
+请使用 `#1` 或显式调用 `int`／`float`。环境变量、脚本参数和捕获的命令输出都是文本，
+应在输入边界转换一次。
 
 ```lisp
-(let count (+ 001 2))
-(+ $count 1)
-(/ 5 2)
+(let count (+ #001 #2))
+(+ $count #1)
+(/ #5 #2)
 (eq $count 3)
-(= $count 3.0)
+(= $count #3.0)
 (str 00123)
 ```
 
 绑定之后，交互环境依次显示 `#4`、`#2.5`、`#false`、`#true` 和 `"00123"`。
 `eq` 比较类型和值，文本、整数和浮点数互不相同。
-`=` 比较数值，包括数值文本；它恰好接受两个参数，不引入浮点比较容差。
+`=` 比较数值；它恰好接受两个参数，不引入浮点比较容差。
 
 `!=` 判断数值不相等；`<`、`<=`、`>`、`>=` 分别判断小于、小于等于、大于、大于等于。
 每个比较运算符恰好接受两个参数，返回布尔值。即使大整数与浮点数混合比较，也保留整数精度。
 
 ```lisp
-(> 10 2)
-(>= 3 3.0)
-(< 9007199254740992.0 9007199254740993)
-(!= 1 1.5)
-(if (<= $count 3) (echo "at most three"))
+(> #10 #2)
+(>= #3 #3.0)
+(< #9007199254740992.0 #9007199254740993)
+(!= #1 #1.5)
+(if (<= $count #3) (echo "at most three"))
 ```
 
 参数从左到右各求值一次，算术运算左结合。`+`、`*` 支持任意数量的参数，
 `(+)` 返回整数 `0`，`(*)` 返回整数 `1`。
 `-`、`/` 至少接受一个参数，单参数分别表示取负和取倒数。除法始终返回浮点数。
 
-数值文本去掉首尾空白后完整解析，支持正负号、十进制整数、小数和科学计数法。
-前导零按十进制处理，整数文本必须在 `i64` 范围内。布尔值、nil、列表和映射不能参与运算。
+数值字面值支持正负号、十进制整数、小数和科学计数法；前导零按十进制处理，
+整数必须在 `i64` 范围内。只有 `int`、`float` 负责解析数值文本。
+整数和浮点数可以混合运算，布尔值、nil、列表和映射不能参与运算。
 整数加减乘保持精确并检查溢出；每步运算遇到浮点数时使用 `f64`，
-可能损失大整数精度，也有普通浮点舍入误差，例如 `(+ 0.1 0.2)` 返回
+可能损失大整数精度，也有普通浮点舍入误差，例如 `(+ #0.1 #0.2)` 返回
 `0.30000000000000004`。非法操作数、除零、整数溢出和非有限浮点数均为语言错误，退出码为 `2`。
 数值显示带 `#`，浮点数保留小数点或指数，例如 `#4.0`。
 `str`、命令参数和环境变量使用不带 `#` 的数值文本。文件和 `-c` 脚本需要用 `echo` 等命令显式打印结果。
 
 ## 基础库
+
+`quot`、`rem`、列表及字符串索引和切片边界只接受 int；文本和整值浮点数也需先显式调用 `int`。
 
 `and/or` 从左到右短路，仅接受布尔值或命令状态并返回布尔值；`(and)` 为真，`(or)` 为假。
 列表操作使用 `l` 前缀，字符串操作使用 `s` 前缀，均返回新值：
@@ -245,9 +249,9 @@ $(pwd)\n''')
 (let items (ssplit "a,b,c" ","))
 (lappend $items [d e])
 (lconcat $items [d e])
-(lget $items -1)
-(sjoin (lslice $items 1) " / ")
-(list (quot -7 3) (rem -7 3) (round 2.5) (round -2.5))
+(lget $items #-1)
+(sjoin (lslice $items #1) " / ")
+(list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5))
 (list (typeof 123) (typeof #123) (number? #123) (empty? []))
 ```
 
@@ -369,10 +373,10 @@ $(pwd)\n''')
 
 ```lisp
 (let count #0)
-(while (< $count 5)
-  (set count (+ $count 1))
-  (if (= $count 2) (continue))
-  (if (= $count 4) (break (list stopped $count)))
+(while (< $count #5)
+  (set count (+ $count #1))
+  (if (= $count #2) (continue))
+  (if (= $count #4) (break (list stopped $count)))
   (echo iteration $count))
 ```
 
@@ -403,17 +407,17 @@ $(pwd)\n''')
 函数值可以保存在集合中、传参或返回，并支持表达式作为调用头：
 
 ```lisp
-(let inc (fn (x) (+ $x 1)))
-($inc 2)
-((fn (x) (* $x 2)) 3)
+(let inc (fn (x) (+ $x #1)))
+($inc #2)
+((fn (x) (* $x #2)) #3)
 (let add (function +))
-(apply $add 1 [2 3])
+(apply $add #1 [#2 #3])
 
 (defn sum (first &optional (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
-(sum 1 2 3 4)
+(sum #1 #2 #3 #4)
 ```
 
 参数顺序为必选参数、`&optional`、`&rest name`。可选参数可以只写名字，缺省为 nil；

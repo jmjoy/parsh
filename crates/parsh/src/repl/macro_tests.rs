@@ -55,8 +55,8 @@ fn quasiquote_substitutes_unquoted_values() {
         r#"
         (let name world)
         (list `(str "hello " ,$name))
-        (quasiquote (list 1 ,(+ 1 2)))
-        (list `(a ,(+ 1 2)))
+        (quasiquote (list 1 ,(+ #1 #2)))
+        (list `(a ,(+ #1 #2)))
         "#,
         &[r#"((str "hello " "world"))"#, "(list 1 #3)", "((a #3))"],
     );

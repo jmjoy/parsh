@@ -12,7 +12,7 @@
 
 (; Triple quotes preserve newlines and allow individual quotes inside. )
 (printf "multiline: <%s>\n" """hello, "$name"
-sum=$(+ 1 2)""")
+sum=$(+ #1 #2)""")
 (printf "raw multiline: <%s>\n" '''literal '$name'
 $(pwd)\n''')
 

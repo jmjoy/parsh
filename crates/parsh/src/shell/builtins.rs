@@ -160,10 +160,21 @@ impl Arguments<'_> {
     ) -> EvalResult<Number> {
         match self.value(shell, index, env, io)? {
             Value::Number(number) => Ok(number),
-            Value::Text(text) => {
-                Ok(Number::parse(&text).map_err(|m| Error::new(self.at(expr, index), m))?)
+            value => {
+                let hint = if matches!(value, Value::Text(_)) {
+                    "; use a # literal or int/float to convert text"
+                } else {
+                    ""
+                };
+                Err(Error::new(
+                    self.at(expr, index),
+                    format!(
+                        "expected a number (int or float), got {}{hint}",
+                        value.type_name()
+                    ),
+                )
+                .into())
             }
-            _ => Err(Error::new(self.at(expr, index), "expected a number or numeric text").into()),
         }
     }
 
@@ -175,10 +186,19 @@ impl Arguments<'_> {
         env: &Env,
         io: &Io,
     ) -> EvalResult<i64> {
-        match self.number(shell, expr, index, env, io)? {
-            Number::Int(value) => Ok(value),
-            _ => {
-                Err(Error::new(self.at(expr, index), "expected an integer or integer text").into())
+        match self.value(shell, index, env, io)? {
+            Value::Number(Number::Int(value)) => Ok(value),
+            value => {
+                let hint = if matches!(value, Value::Text(_)) {
+                    "; use a # integer literal or int to convert text"
+                } else {
+                    ""
+                };
+                Err(Error::new(
+                    self.at(expr, index),
+                    format!("expected an integer, got {}{hint}", value.type_name()),
+                )
+                .into())
             }
         }
     }

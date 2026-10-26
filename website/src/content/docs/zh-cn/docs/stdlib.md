@@ -50,12 +50,12 @@ description: "不可变列表、Unicode 字符串、类型判断和数值函数�
 (let updated (lappend $original [c d]))
 (list $original $updated)
 (lconcat $original [c d])
-(lget $updated -1)
-(lslice $updated 1 -1)
+(lget $updated #-1)
+(lslice $updated #1 #-1)
 ```
 
-索引从 0 开始；负数从末尾计算，`-1` 为最后一项。
-索引只接受整数或整数字符串，不接受浮点数。单项读取越界时报错，除非提供默认值。
+索引从 0 开始；负数从末尾计算，`#-1` 为最后一项。
+索引和切片边界只接受 int；文本和整值 float 都会报错，需要时显式使用 `int`。单项读取越界时报错，除非提供默认值。
 切片边界越界时截断，开始位置大于结束位置时返回空列表。
 
 ## 字符串
@@ -73,7 +73,7 @@ description: "不可变列表、Unicode 字符串、类型判断和数值函数�
 | `(scontains text part)` | 是否包含字面子串，返回布尔值 |
 
 ```parsh
-(list (slen "中文") (sget "中文" -1) (sslice "中文abc" 1 3))
+(list (slen "中文") (sget "中文" #-1) (sslice "中文abc" #1 #3))
 (sjoin (ssplit "a,b,c" ",") " / ")
 (slines "a\r\nb\n")
 ```
@@ -92,7 +92,7 @@ description: "不可变列表、Unicode 字符串、类型判断和数值函数�
 
 ```parsh
 (let calls #0)
-(mget {name parsh} name (do (set calls (+ $calls 1)) fallback))
+(mget {name parsh} name (do (set calls (+ $calls #1)) fallback))
 (list $calls)
 ```
 
@@ -122,9 +122,9 @@ description: "不可变列表、Unicode 字符串、类型判断和数值函数�
 | `(round n)` | 最接近的 i64，中点远离零 |
 
 ```parsh
-(list (quot -7 3) (rem -7 3) (round 2.5) (round -2.5))
+(list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5))
 ```
 
-结果为 `(#-2 #-1 #3 #-3)`。`quot/rem` 仅接受整数或整数字符串，其他数值函数接受数值或数值文本。
+结果为 `(#-2 #-1 #3 #-3)`。`quot/rem` 仅接受 int，其他数值函数只接受 int 或 float；文本应先用 `int`、`float` 显式转换。
 `min/max` 保留胜出数值的类型，并保留大整数与浮点混合比较的精度。
 除零、整数溢出、取整结果超出 i64 和非有限数值仍是语言错误。
