@@ -15,6 +15,15 @@
   `(do ,@$body))
 (begin ((echo one) (echo two)))
 
+(; Optional macro parameters run their defaults during expansion, while rest
+   collects the remaining forms for unquote-splicing. )
+(defmacro when-labeled
+  (condition &optional (label (quote "when-labeled")) &rest body)
+  `(if ,$condition
+       (do (echo ,$label) ,@$body)))
+(when-labeled #true)
+(when-labeled #true custom (echo three) (echo four))
+
 (; Expansion happens in the caller scope, so templates can refer to it. )
 (defmacro greet (who)
   `(echo hello ,$who))

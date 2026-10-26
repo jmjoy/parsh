@@ -29,7 +29,7 @@ results explicitly.
 | [pipelines.parsh](pipelines.parsh) | Streaming pipelines, captured output, and arithmetic on command output |
 | [files.parsh](files.parsh) | Working directories, globbing, file redirection, handled command failures, and cleanup |
 | [structs.parsh](structs.parsh) | Struct definitions, constructors, accessors, predicates, nesting, and value equality |
-| [macros.parsh](macros.parsh) | Quote templates, macro expansion, unquote splicing, and caller scope |
+| [macros.parsh](macros.parsh) | Quote templates, `&optional`/`&rest` macro parameters, macro expansion, unquote splicing, and caller scope |
 
 The examples use standard Linux coreutils commands. `files.parsh` creates a
 temporary directory with `mktemp -d`, writes its example files there, and removes
