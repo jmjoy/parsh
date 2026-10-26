@@ -78,9 +78,12 @@ Collection updates return new values instead of mutating old ones:
 Copies of a function retain its identity and captured environment; ordinary
 data updates still return new values.
 
-Functions capture their defining scope, and loops create a fresh scope per
-iteration. This removes a class of questions about where a value was changed,
-and it lets structs and macros compose without aliasing surprises.
+Every parenthesized expression creates a fresh lexical scope. `let` binds in
+that expression's enclosing scope, rejects duplicate names there, and `set` updates
+the nearest existing binding while returning `nil`. Functions capture their defining
+scope, and loops create a fresh scope per iteration. This removes a class of questions
+about where a value was changed, and it lets structs and macros compose without aliasing
+surprises.
 
 ## Structure before convention
 

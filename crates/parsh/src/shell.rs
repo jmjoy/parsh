@@ -221,6 +221,26 @@ impl Scope {
         }))
     }
 
+    fn parent(env: &Env) -> Option<Env> {
+        env.borrow().parent.clone()
+    }
+
+    fn contains_local(env: &Env, name: &str) -> bool {
+        env.borrow().variables.contains_key(name)
+    }
+
+    fn find(env: &Env, name: &str) -> Option<Env> {
+        let scope = env.borrow();
+        if scope.variables.contains_key(name) {
+            Some(env.clone())
+        } else {
+            scope
+                .parent
+                .as_ref()
+                .and_then(|parent| Self::find(parent, name))
+        }
+    }
+
     fn get(env: &Env, name: &str) -> Option<Value> {
         let scope = env.borrow();
         scope.variables.get(name).cloned().or_else(|| {
@@ -742,7 +762,14 @@ impl Shell {
             return Err(Error::new(expr, "evaluation nesting exceeds 128 levels").into());
         }
         self.depth += 1;
-        let result = self.eval_inner(expr, env, mode, io);
+        // Every parenthesized expression gets an expression scope. Declaration
+        // forms such as `let` deliberately bind into its parent scope.
+        let local = if matches!(expr.kind, Kind::List(_)) {
+            self.child_scope(env)
+        } else {
+            env.clone()
+        };
+        let result = self.eval_inner(expr, &local, mode, io);
         self.depth -= 1;
         result
     }
@@ -822,21 +849,42 @@ impl Shell {
             "let" | "set" => {
                 Self::arity(expr, args, 2, 2)?;
                 let variable = Self::binding(&args[0])?;
-                let value = self.value(&args[1], env, io)?;
                 if name == "let" {
-                    env.borrow_mut().variables.insert(variable.into(), value);
-                } else if !Scope::set(env, variable, &value) {
-                    if self.environment.contains_key(&OsString::from(variable)) {
-                        self.environment.insert(
-                            variable.into(),
-                            value.text().map_err(|m| Error::new(expr, m))?.into(),
-                        );
-                    } else {
+                    // `env` is the fresh scope of this list; declarations belong
+                    // to the surrounding expression scope so they remain visible
+                    // to later siblings and to the top-level session.
+                    let target = Scope::parent(env).unwrap_or_else(|| env.clone());
+                    if Scope::contains_local(&target, variable) {
+                        return Err(Error::new(
+                            &args[0],
+                            format!("variable {variable} is already bound in this scope"),
+                        )
+                        .into());
+                    }
+                    let value = self.value(&args[1], env, io)?;
+                    target.borrow_mut().variables.insert(variable.into(), value);
+                } else {
+                    // Resolve the destination before evaluating the right-hand side.
+                    // This both avoids side effects for an undefined name and keeps a
+                    // nested `let` in the RHS from changing which binding is updated.
+                    let target = Scope::find(env, variable);
+                    let environment = target.is_none()
+                        && self.environment.contains_key(&OsString::from(variable));
+                    if target.is_none() && !environment {
                         return Err(Error::new(
                             &args[0],
                             format!("cannot set undefined variable {variable}"),
                         )
                         .into());
+                    }
+                    let value = self.value(&args[1], env, io)?;
+                    if let Some(target) = target {
+                        target.borrow_mut().variables.insert(variable.into(), value);
+                    } else {
+                        self.environment.insert(
+                            variable.into(),
+                            value.text().map_err(|m| Error::new(expr, m))?.into(),
+                        );
                     }
                 }
                 Ok(Value::Nil)

@@ -24,8 +24,11 @@ description: "Lexical functions, branching, sequencing, and iteration."
 
 `if` evaluates only the selected branch. A condition must produce a boolean
 (from `eq`, a numeric comparison, or `not`) or a command status; zero status is true. Text and
-numbers are not implicitly booleans. `do` runs expressions in sequence in the current scope.
-`for` evaluates a list and creates a fresh lexical binding for each iteration.
+numbers are not implicitly booleans. Every parenthesized expression creates a fresh
+lexical scope, so a `let` in a branch does not leak outside the `if`. `do` creates
+a scope and runs its body expressions in sequence; bindings declared directly in
+its body stay in that scope. `for` evaluates its list outside the loop, then creates
+a fresh lexical scope and loop binding for each iteration.
 
 `while` checks its condition before each iteration. Both loop forms accept one or
 more body expressions and create a fresh scope per iteration: `let` stays local,
@@ -56,8 +59,9 @@ runs outside its own body, so jumps there target an existing outer loop. A comma
 failure in a `while` body stops execution, including when the loop is used as a condition.
 
 Function names and parameter declarations use bare names. Read parameter and
-local variable values with `$name`. Functions capture their defining lexical
-scope and return the last expression's value. Argument expressions are evaluated
+local variable values with `$name`. Each function call creates a fresh call scope;
+`let` in the body stays in that scope, and repeating `let` in the same scope is an
+error. Functions capture their defining lexical scope and return the last expression's value. Argument expressions are evaluated
 before parameters are bound. Functions can return numbers, lists, maps, and booleans as well as
 command output.
 When called as a value, stdout is captured throughout the function body: if the

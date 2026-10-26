@@ -29,11 +29,19 @@ return new values; use `set` to replace an existing binding.
 (export EDITOR vim)
 ```
 
-`let` binds in the current lexical scope. `set` updates the nearest existing
-binding, or an existing environment entry, and errors if the name is undefined.
-Lookups fall back to the inherited environment. `export` sets the environment for
-subsequent children and updates an existing local binding of the same name.
-Environment and working directory changes belong to this parsh session.
+Every parenthesized expression creates a fresh lexical scope. `let` is a
+declaration form: it binds in the scope surrounding the current parenthesized
+expression. A duplicate name in that same scope is an error, checked before the
+right-hand side is evaluated; nested scopes may shadow outer bindings. A top-level
+`(let name value)` therefore binds in the session scope, while `let` inside `do`, a
+function, or a loop stays in that enclosing body scope.
+`let` and `set` both return `nil` after a successful update. `set` first checks for the
+nearest existing binding or environment entry; an undefined name errors before the
+right-hand side is evaluated. It then evaluates the right-hand side and updates the
+binding. Lookups fall back to the inherited environment.
+`export` sets the environment for subsequent children and updates an existing local
+binding of the same name. Environment and working directory changes belong to this
+parsh session.
 
 `get` takes exactly one text variable name, which can itself be an expression,
 and returns the original value using the same lookup rules as `$name`:

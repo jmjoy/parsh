@@ -117,8 +117,9 @@ All existing expressions are supported, including nested calls, control flow,
 and structured comments. Inner strings use normal parsh syntax without extra
 escaping for the outer string. The `pwd` example needs a command execution host.
 
-Parts evaluate once from left to right, in the current scope, with the same
-effects and errors as ordinary calls. Scalars convert as `str` does: numbers and
+Parts evaluate once from left to right. Each parenthesized part has its own
+lexical scope, while `let` binds in the surrounding expression scope; side effects
+and errors otherwise match ordinary calls. Scalars convert as `str` does: numbers and
 booleans become text, nil becomes empty text, and lists and maps are errors. External
 commands capture UTF-8 stdout and remove trailing LF characters; stderr keeps
 its destination. Errors stop the current batch. The resulting text stays one

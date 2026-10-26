@@ -35,6 +35,26 @@ fn fails(source: &str, message: &str) {
     );
 }
 
+fn values(events: &[Event]) -> Vec<&str> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Value(value) => Some(value.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn diagnostics(events: &[Event]) -> Vec<&str> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Diagnostic(message) => Some(message.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn boolean_composition_short_circuits_and_requires_real_conditions() {
     assert_eq!(
@@ -459,5 +479,100 @@ fn macros_have_their_own_return_boundary_and_preserve_expanded_jumps() {
     fails(
         "(defmacro early () (quote (return))) (early)",
         "return used outside",
+    );
+}
+
+#[test]
+fn list_forms_have_scopes_and_bindings_return_nil() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (let root outer)
+        (list (let local inner) $local)
+        (str (let text value) $text)
+        (list (set root changed) $root)
+        (do (let block scoped) $block)
+        "#,
+        ),
+        [
+            r#"(#nil "inner")"#,
+            r#""value""#,
+            r#"(#nil "changed")"#,
+            r#""scoped""#,
+        ],
+    );
+
+    let mut repl = Repl::new();
+    let events = execute(&mut repl, "(do (let local value) $local)");
+    assert!(diagnostics(&events).is_empty(), "{events:?}");
+    assert_eq!(values(&events), [r#""value""#]);
+    assert!(diagnostics(&execute(&mut repl, "(get local)"))[0].contains("undefined variable"));
+}
+
+#[test]
+fn let_rejects_duplicate_bindings_before_evaluating_the_rhs() {
+    let mut repl = Repl::new();
+    let events = execute(
+        &mut repl,
+        r#"
+        (let trace before)
+        (let value original)
+        (let value (set trace changed))
+        "#,
+    );
+    assert_eq!(diagnostics(&events).len(), 1, "{events:?}");
+    assert!(diagnostics(&events)[0].contains("already bound in this scope"));
+    assert!(values(&events).is_empty(), "{events:?}");
+    assert_eq!(
+        values(&execute(&mut repl, "(list $trace $value)")),
+        [r#"("before" "original")"#]
+    );
+}
+
+#[test]
+fn nested_list_scopes_allow_shadowing_without_leaking_bindings() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (do
+          (let name outer)
+          (list (do (let name inner) $name) $name))
+        "#,
+        ),
+        [r#"("inner" "outer")"#],
+    );
+
+    fails(
+        "(do (if #true (let branch value)) (get branch))",
+        "undefined variable",
+    );
+}
+
+#[test]
+fn set_rejects_undefined_names_before_evaluating_the_rhs() {
+    let mut repl = Repl::new();
+    let events = execute(
+        &mut repl,
+        r#"
+        (let trace before)
+        (set missing (set trace changed))
+        "#,
+    );
+    assert_eq!(diagnostics(&events).len(), 1, "{events:?}");
+    assert!(diagnostics(&events)[0].contains("cannot set undefined variable missing"));
+    assert!(values(&events).is_empty(), "{events:?}");
+    assert_eq!(values(&execute(&mut repl, "(get trace)")), [r#""before""#]);
+}
+
+#[test]
+fn set_resolves_its_destination_before_evaluating_the_rhs() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (let value outer)
+        (list (set value (let value inner)) $value)
+        "#,
+        ),
+        ["(#nil #nil)"],
     );
 }
