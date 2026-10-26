@@ -72,7 +72,7 @@ Collection updates return new values instead of mutating old ones:
 
 ```parsh
 (let config {mode fast})
-(set config (mset $config mode slow))
+(set config (map/set $config mode slow))
 ```
 
 Copies of a function retain its identity and captured environment; ordinary

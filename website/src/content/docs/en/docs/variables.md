@@ -85,12 +85,12 @@ before evaluating that key's value.
 
 ```parsh
 (let config (map name parsh version #1 nested (map enabled #true)))
-(let updated (mset $config name new-name))
-(mget $config name)
-(mget $updated name)
-(mget $config missing fallback)
-(mkeys $config)
-(set config (mdel $updated version))
+(let updated (map/set $config name new-name))
+(map/get $config name)
+(map/get $updated name)
+(map/get $config missing fallback)
+(map/keys $config)
+(set config (map/del $updated version))
 ```
 
 Every `m` command takes a map value as its first argument: `$config`, a map literal,
@@ -100,46 +100,46 @@ its old value until the final `set`.
 
 | Command | Result |
 | --- | --- |
-| `(mget $config key)` | Original value; a missing key is an error |
-| `(mget $config key default)` | Always evaluate `default`; return it if the key is missing |
-| `(mset $config key value)` | New map with the value inserted or replaced |
-| `(mdel $config key)` | New map without the key; a missing key is an error |
-| `(mhas $config key)` | Boolean indicating whether the key exists |
-| `(mkeys $config)` | Text keys in insertion order, as a list |
-| `(mvals $config)` | Values in the same order, as a list |
-| `(mlen $config)` | Integer entry count |
+| `(map/get $config key)` | Original value; a missing key is an error |
+| `(map/get $config key default)` | Always evaluate `default`; return it if the key is missing |
+| `(map/set $config key value)` | New map with the value inserted or replaced |
+| `(map/del $config key)` | New map without the key; a missing key is an error |
+| `(map/has $config key)` | Boolean indicating whether the key exists |
+| `(map/keys $config)` | Text keys in insertion order, as a list |
+| `(map/vals $config)` | Values in the same order, as a list |
+| `(map/len $config)` | Integer entry count |
 
 An existing key with a nil value is still present and returns nil; an explicit
 default is still evaluated.
 The default does not handle undefined variables or non-map arguments.
 After checking argument count, arguments evaluate once from left to right.
-`mget` evaluates all explicit arguments before checking the map and choosing a
+`map/get` evaluates all explicit arguments before checking the map and choosing a
 result. Other map operations check the map before evaluating keys and values.
 The operation uses that independent map value, even if later expressions change
-the source variable. In map construction and `mset`, invalid keys stop evaluation
+the source variable. In map construction and `map/set`, invalid keys stop evaluation
 before the value expression.
 
 Operations compose directly, without binding intermediate maps:
 
 ```parsh
-(mset {name parsh} version v1)
-(mget (mset $config name other) name)
-(mset (mset $config name other) version v2)
+(map/set {name parsh} version v1)
+(map/get (map/set $config name other) name)
+(map/set (map/set $config name other) version v2)
 ```
 
 Updating a key keeps its position. New keys append; deleting preserves the order
 of remaining keys, and reinserting appends. Maps display in insertion order as
 `(map "name" "parsh")`; `eq` compares contents regardless of that order.
 
-`mset` and `mdel` return new maps without modifying their inputs. For example,
-after `(let copy $config)`, `(set config (mset $config name changed))` updates only
+`map/set` and `map/del` return new maps without modifying their inputs. For example,
+after `(let copy $config)`, `(set config (map/set $config name changed))` updates only
 `config`; `copy` retains its previous value, including nested data.
 Functions can use `set` to update captured outer bindings, while a parameter with
 the same name is a separate binding. A function returning an updated map affects
 its caller's variable only when the caller explicitly assigns that result.
-`mget` and `mvals` also return independent values.
+`map/get` and `map/vals` also return independent values.
 Maps cannot implicitly become text: `str`, string interpolation, external command
-arguments, and environment values reject maps. Use `mkeys` or `mvals` explicitly
+arguments, and environment values reject maps. Use `map/keys` or `map/vals` explicitly
 when a list is needed for iteration or command arguments.
 
 

@@ -60,7 +60,7 @@ parsh 没有正式的宣言。下面这些是实现在反复回归的原则，�
 
 ```parsh
 (let config {mode fast})
-(set config (mset $config mode slow))
+(set config (map/set $config mode slow))
 ```
 
 函数值的副本保留相同身份和捕获环境；普通数据的集合更新仍返回新值。

@@ -7,6 +7,21 @@ description: "不可变列表、Unicode 字符串、类型判断和数值函数�
 集合更新返回新值，需要更新绑定时显式使用 `set`。
 下列表格中的方括号表示可选参数，`...` 表示可重复参数。
 
+## 模块命名空间
+
+字符串、列表和映射操作使用 `模块/成员` 名称，例如 `str/join`、`list/append` 和 `map/get`。
+它们都是普通内置函数：
+
+```parsh
+(str/join [a b] ",")
+(list/append [a] b)
+(map/get {name parsh} name)
+(apply (function str/join) [[a b] ","])
+```
+
+构造器 `str`、`list`、`map` 保留原名。旧的字母前缀操作名已移除，脚本需要改用模块名称。
+内置命名空间可以直接使用，无需导入；目前尚不支持用户模块声明和文件导入。
+
 ## 标量转换
 
 每个转换函数恰好接受一个参数，先检查参数个数，再求值一次。
@@ -37,21 +52,21 @@ description: "不可变列表、Unicode 字符串、类型判断和数值函数�
 
 | 调用 | 返回值 |
 | --- | --- |
-| `(llen xs)` | 整数长度 |
-| `(lfirst xs [default])` | 首项；空列表时使用默认值或报错 |
-| `(lrest xs)` | 去掉首项的新列表，空列表仍返回空列表 |
-| `(lget xs index [default])` | 索引处的值；越界时使用默认值或报错 |
-| `(lappend xs value...)` | 追加各个元素后的新列表，列表元素保留嵌套 |
-| `(lconcat xs...)` | 将列表依次拼接；零参数返回空列表 |
-| `(lslice xs start [end])` | 不包含 end 的切片，省略 end 表示到末尾 |
+| `(list/len xs)` | 整数长度 |
+| `(list/first xs [default])` | 首项；空列表时使用默认值或报错 |
+| `(list/rest xs)` | 去掉首项的新列表，空列表仍返回空列表 |
+| `(list/get xs index [default])` | 索引处的值；越界时使用默认值或报错 |
+| `(list/append xs value...)` | 追加各个元素后的新列表，列表元素保留嵌套 |
+| `(list/concat xs...)` | 将列表依次拼接；零参数返回空列表 |
+| `(list/slice xs start [end])` | 不包含 end 的切片，省略 end 表示到末尾 |
 
 ```parsh
 (let original [a b])
-(let updated (lappend $original [c d]))
+(let updated (list/append $original [c d]))
 (list $original $updated)
-(lconcat $original [c d])
-(lget $updated #-1)
-(lslice $updated #1 #-1)
+(list/concat $original [c d])
+(list/get $updated #-1)
+(list/slice $updated #1 #-1)
 ```
 
 索引从 0 开始；负数从末尾计算，`#-1` 为最后一项。
@@ -62,37 +77,37 @@ description: "不可变列表、Unicode 字符串、类型判断和数值函数�
 
 | 调用 | 返回值 |
 | --- | --- |
-| `(slen text)` | 按 Rust `chars()` 计算的整数长度 |
-| `(sget text index [default])` | 一个字符的文本；越界时使用默认值或报错 |
-| `(sslice text start [end])` | 按相同字符单位计算的切片 |
-| `(ssplit text separator)` | 按字面分隔符拆分得到的文本列表 |
-| `(sjoin texts separator)` | 用分隔符连接文本列表 |
-| `(slines text)` | 行列表，移除 LF 或 CRLF，不保留末尾换行产生的空行 |
-| `(strim text)` | 去掉两端 Unicode 空白 |
-| `(sreplace text from to)` | 将所有不重叠的字面匹配替换为 to |
-| `(scontains text part)` | 是否包含字面子串，返回布尔值 |
+| `(str/len text)` | 按 Rust `chars()` 计算的整数长度 |
+| `(str/get text index [default])` | 一个字符的文本；越界时使用默认值或报错 |
+| `(str/slice text start [end])` | 按相同字符单位计算的切片 |
+| `(str/split text separator)` | 按字面分隔符拆分得到的文本列表 |
+| `(str/join texts separator)` | 用分隔符连接文本列表 |
+| `(str/lines text)` | 行列表，移除 LF 或 CRLF，不保留末尾换行产生的空行 |
+| `(str/trim text)` | 去掉两端 Unicode 空白 |
+| `(str/replace text from to)` | 将所有不重叠的字面匹配替换为 to |
+| `(str/contains text part)` | 是否包含字面子串，返回布尔值 |
 
 ```parsh
-(list (slen "中文") (sget "中文" #-1) (sslice "中文abc" #1 #3))
-(sjoin (ssplit "a,b,c" ",") " / ")
-(slines "a\r\nb\n")
+(list (str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3))
+(str/join (str/split "a,b,c" ",") " / ")
+(str/lines "a\r\nb\n")
 ```
 
 字符串索引和切片与列表共用负数、越界和默认值规则。
 计数单位是 Unicode 标量值：组合重音或组合 emoji 可能占多个字符。
-所有文本参数都要求文本；`sjoin` 只接受文本元素，需要转换时显式使用 `str`。
+所有文本参数都要求文本；`str/join` 只接受文本元素，需要转换时显式使用 `str`。
 分割保留中间和末尾的空字段；空分隔符沿用 Rust `split("")` 的规则，包含两端空字段。
 替换使用 Rust `replace` 的规则，空模式会在字符之间及两端插入替换文本。
 
 ## 显式默认值严格求值
 
-`mget`、`lget`、`lfirst`、`sget` 的显式默认值是普通实参。
+`map/get`、`list/get`、`list/first`、`str/get` 的显式默认值是普通实参。
 参数个数合法后，实参从左到右各求值一次，再读取并选择结果。
 即使命中已有条目，默认值中的副作用也会发生，错误也会终止调用：
 
 ```parsh
 (let calls #0)
-(mget {name parsh} name (do (set calls (+ $calls #1)) fallback))
+(map/get {name parsh} name (do (set calls (+ $calls #1)) fallback))
 (list $calls)
 ```
 

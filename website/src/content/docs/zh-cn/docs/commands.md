@@ -14,7 +14,7 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 
 调用头接受文本命令名、函数值或显式 `command` 引用；数值、布尔和 nil 即使来自变量也不可调用。需要文本命令名时显式使用 `str`。`int`、`float`、`bool` 是保留内建命令。
 
-`map` 用于构造映射；内置操作包括 `mget`、`mset`、`mdel`、`mhas`、`mkeys`、`mvals` 和 `mlen`，
+`map` 用于构造映射；内置操作包括 `map/get`、`map/set`、`map/del`、`map/has`、`map/keys`、`map/vals` 和 `map/len`，
 首参均为映射值，例如 `$config` 或 `{name parsh}`。更新操作返回新映射，
 使用 `set` 显式赋回才会更新变量。命令签名与示例见[映射](/parsh/zh-cn/docs/variables/#映射)。
 

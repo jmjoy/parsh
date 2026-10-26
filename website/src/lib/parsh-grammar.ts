@@ -44,7 +44,7 @@ export default {
     {
       name: "keyword.control.parsh",
       match:
-        "(?<=\\()(?:capture-call|stdout-text|stderr-text|exit-code|job-status|callable\\?|command\\?|bytes\\?|finally|command|signal|cancel|spawn|throw|catch|check|wait|try|unquote-splicing|quasiquote|defstruct|scontains|function\\?|continue|function|defmacro|sreplace|unquote|lappend|lconcat|number\\?|struct\\?|status\\?|return|export|lfirst|lslice|sslice|ssplit|slines|typeof|float\\?|empty\\?|while|break|quote|mkeys|mvals|lrest|sjoin|strim|text\\?|bool\\?|list\\?|form\\?|floor|round|apply|defn|glob|exit|type|list|mget|mset|mdel|mhas|mlen|llen|lget|slen|sget|int\\?|map\\?|nil\\?|quot|ceil|float|bool|int|let|set|and|for|get|map|str|not|rem|abs|min|max|do|if|or|fn|cd|eq)(?=[\\s()\\[\\]{}\"'])",
+        "(?<=\\()(?:capture-call|stdout-text|stderr-text|exit-code|job-status|callable\\?|command\\?|bytes\\?|finally|command|signal|cancel|spawn|throw|catch|check|wait|try|unquote-splicing|quasiquote|defstruct|str/contains|function\\?|continue|function|defmacro|str/replace|unquote|list/append|list/concat|number\\?|struct\\?|status\\?|return|export|list/first|list/slice|str/slice|str/split|str/lines|typeof|float\\?|empty\\?|while|break|quote|map/keys|map/vals|list/rest|str/join|str/trim|text\\?|bool\\?|list\\?|form\\?|floor|round|apply|defn|glob|exit|type|list|map/get|map/set|map/del|map/has|map/len|list/len|list/get|str/len|str/get|int\\?|map\\?|nil\\?|quot|ceil|float|bool|int|let|set|and|for|get|map|str|not|rem|abs|min|max|do|if|or|fn|cd|eq)(?=[\\s()\\[\\]{}\"'])",
     },
     {
       name: "keyword.operator.parsh",

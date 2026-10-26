@@ -7,13 +7,13 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "get",
     "list",
     "map",
-    "mget",
-    "mset",
-    "mdel",
-    "mhas",
-    "mkeys",
-    "mvals",
-    "mlen",
+    "map/get",
+    "map/set",
+    "map/del",
+    "map/has",
+    "map/keys",
+    "map/vals",
+    "map/len",
     "str",
     "int",
     "float",
@@ -30,22 +30,22 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "<=",
     ">",
     ">=",
-    "llen",
-    "lfirst",
-    "lrest",
-    "lget",
-    "lappend",
-    "lconcat",
-    "lslice",
-    "slen",
-    "sget",
-    "sslice",
-    "ssplit",
-    "sjoin",
-    "slines",
-    "strim",
-    "sreplace",
-    "scontains",
+    "list/len",
+    "list/first",
+    "list/rest",
+    "list/get",
+    "list/append",
+    "list/concat",
+    "list/slice",
+    "str/len",
+    "str/get",
+    "str/slice",
+    "str/split",
+    "str/join",
+    "str/lines",
+    "str/trim",
+    "str/replace",
+    "str/contains",
     "typeof",
     "text?",
     "number?",
@@ -241,15 +241,15 @@ impl Value {
 
 fn arity(name: &str) -> (usize, usize) {
     match name {
-        "list" | "str" | "map" | "+" | "*" | "lconcat" => (0, usize::MAX),
-        "-" | "/" | "min" | "max" | "lappend" => (1, usize::MAX),
+        "list" | "str" | "map" | "+" | "*" | "list/concat" => (0, usize::MAX),
+        "-" | "/" | "min" | "max" | "list/append" => (1, usize::MAX),
         "apply" => (2, usize::MAX),
         "capture-call" | "spawn" => (1, usize::MAX),
-        "mget" | "lget" | "sget" | "lslice" | "sslice" => (2, 3),
-        "mset" | "sreplace" => (3, 3),
-        "eq" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "mdel" | "mhas" | "quot" | "rem"
-        | "ssplit" | "sjoin" | "scontains" => (2, 2),
-        "lfirst" => (1, 2),
+        "map/get" | "list/get" | "str/get" | "list/slice" | "str/slice" => (2, 3),
+        "map/set" | "str/replace" => (3, 3),
+        "eq" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "map/del" | "map/has" | "quot" | "rem"
+        | "str/split" | "str/join" | "str/contains" => (2, 2),
+        "list/first" => (1, 2),
         _ => (1, 1),
     }
 }
@@ -280,7 +280,7 @@ impl Shell {
             }
             "list" => Ok(Value::List(args.values(self, env, io)?)),
             "map" => self.construct_map(expr, args, env, io),
-            "mget" | "mset" | "mdel" | "mhas" | "mkeys" | "mvals" | "mlen" => {
+            "map/get" | "map/set" | "map/del" | "map/has" | "map/keys" | "map/vals" | "map/len" => {
                 self.map_command(expr, name, args, env, io)
             }
             "str" => {
@@ -404,21 +404,10 @@ impl Shell {
                 ) {
                     return self.numeric_builtin(expr, name, ready, env, io);
                 }
-                if name.starts_with('l') && !name.ends_with('?') {
+                if name.starts_with("list/") {
                     return self.list_builtin(expr, name, ready, env, io);
                 }
-                if matches!(
-                    name,
-                    "slen"
-                        | "sget"
-                        | "sslice"
-                        | "ssplit"
-                        | "sjoin"
-                        | "slines"
-                        | "strim"
-                        | "sreplace"
-                        | "scontains"
-                ) {
+                if name.starts_with("str/") {
                     return self.string_builtin(expr, name, ready, env, io);
                 }
                 let value = &values[0];
@@ -556,7 +545,7 @@ impl Shell {
         env: &Env,
         io: &Io,
     ) -> EvalResult<Value> {
-        if name == "lconcat" {
+        if name == "list/concat" {
             let mut result = Vec::new();
             for i in 0..args.len() {
                 let Value::List(items) = args.value(self, i, env, io)? else {
@@ -570,9 +559,9 @@ impl Shell {
             return Err(Error::new(args.at(expr, 0), "expected a list").into());
         };
         match name {
-            "llen" => Ok(Value::Number(Number::Int(items.len() as i64))),
-            "lfirst" | "lget" => {
-                let index = if name == "lfirst" {
+            "list/len" => Ok(Value::Number(Number::Int(items.len() as i64))),
+            "list/first" | "list/get" => {
+                let index = if name == "list/first" {
                     0
                 } else {
                     self.index(expr, args, 1, items.len(), env, io)?
@@ -580,25 +569,25 @@ impl Shell {
                 if index >= 0 && index < items.len() as i128 {
                     return Ok(items.remove(index as usize));
                 }
-                let default = if name == "lfirst" { 1 } else { 2 };
+                let default = if name == "list/first" { 1 } else { 2 };
                 if args.len() > default {
                     args.value(self, default, env, io)
                 } else {
                     Err(Error::new(
-                        args.at(expr, usize::from(name == "lget")),
+                        args.at(expr, usize::from(name == "list/get")),
                         "list index out of range",
                     )
                     .into())
                 }
             }
-            "lrest" => Ok(Value::List(items.into_iter().skip(1).collect())),
-            "lappend" => {
+            "list/rest" => Ok(Value::List(items.into_iter().skip(1).collect())),
+            "list/append" => {
                 for i in 1..args.len() {
                     items.push(args.value(self, i, env, io)?);
                 }
                 Ok(Value::List(items))
             }
-            "lslice" => {
+            "list/slice" => {
                 let (start, end) = self.slice_bounds(expr, args, items.len(), env, io)?;
                 Ok(Value::List(items.drain(start..end).collect()))
             }
@@ -614,10 +603,10 @@ impl Shell {
         env: &Env,
         io: &Io,
     ) -> EvalResult<Value> {
-        if name == "sjoin" {
+        if name == "str/join" {
             let Value::List(items) = args.value(self, 0, env, io)? else {
                 return Err(
-                    Error::new(args.at(expr, 0), "sjoin expects a list of text values").into(),
+                    Error::new(args.at(expr, 0), "str/join expects a list of text values").into(),
                 );
             };
             let mut texts = Vec::new();
@@ -625,7 +614,7 @@ impl Shell {
                 let Value::Text(text) = item else {
                     return Err(Error::new(
                         args.at(expr, 0),
-                        "sjoin expects a list of text values",
+                        "str/join expects a list of text values",
                     )
                     .into());
                 };
@@ -635,8 +624,8 @@ impl Shell {
         }
         let text = args.text(self, expr, 0, env, io)?;
         match name {
-            "slen" => Ok(Value::Number(Number::Int(text.chars().count() as i64))),
-            "sget" => {
+            "str/len" => Ok(Value::Number(Number::Int(text.chars().count() as i64))),
+            "str/get" => {
                 let len = text.chars().count();
                 let index = self.index(expr, args, 1, len, env, io)?;
                 if index >= 0 && index < len as i128 {
@@ -650,13 +639,13 @@ impl Shell {
                     Err(Error::new(args.at(expr, 1), "string index out of range").into())
                 }
             }
-            "sslice" => {
+            "str/slice" => {
                 let (start, end) = self.slice_bounds(expr, args, text.chars().count(), env, io)?;
                 Ok(Value::Text(
                     text.chars().skip(start).take(end - start).collect(),
                 ))
             }
-            "ssplit" => {
+            "str/split" => {
                 let separator = args.text(self, expr, 1, env, io)?;
                 Ok(Value::List(
                     text.split(&separator)
@@ -664,16 +653,16 @@ impl Shell {
                         .collect(),
                 ))
             }
-            "slines" => Ok(Value::List(
+            "str/lines" => Ok(Value::List(
                 text.lines().map(|line| Value::Text(line.into())).collect(),
             )),
-            "strim" => Ok(Value::Text(text.trim().into())),
-            "sreplace" => {
+            "str/trim" => Ok(Value::Text(text.trim().into())),
+            "str/replace" => {
                 let from = args.text(self, expr, 1, env, io)?;
                 let to = args.text(self, expr, 2, env, io)?;
                 Ok(Value::Text(text.replace(&from, &to)))
             }
-            "scontains" => Ok(Value::Bool(
+            "str/contains" => Ok(Value::Bool(
                 text.contains(&args.text(self, expr, 1, env, io)?),
             )),
             _ => unreachable!("unknown string builtin"),

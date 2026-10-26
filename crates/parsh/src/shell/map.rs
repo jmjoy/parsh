@@ -50,15 +50,15 @@ impl Shell {
         io: &Io,
     ) -> EvalResult<Value> {
         let (min, max) = match command {
-            "mget" => (2, 3),
-            "mset" => (3, 3),
-            "mdel" | "mhas" => (2, 2),
-            "mkeys" | "mvals" | "mlen" => (1, 1),
+            "map/get" => (2, 3),
+            "map/set" => (3, 3),
+            "map/del" | "map/has" => (2, 2),
+            "map/keys" | "map/vals" | "map/len" => (1, 1),
             _ => unreachable!("unknown map command"),
         };
         Self::arity_count(expr, args.len(), min, max)?;
         let evaluated;
-        let args = if command == "mget" {
+        let args = if command == "map/get" {
             evaluated = args.values(self, env, io)?;
             args.with_values(&evaluated)
         } else {
@@ -69,7 +69,7 @@ impl Shell {
             return Err(Error::new(target, "expected a map").into());
         };
         match command {
-            "mget" => {
+            "map/get" => {
                 let key = self.map_key(expr, args, 1, env, io)?;
                 if let Some(value) = values.get(&key).cloned() {
                     Ok(value)
@@ -79,26 +79,26 @@ impl Shell {
                     Err(Error::new(args.at(expr, 1), format!("map key {key:?} not found")).into())
                 }
             }
-            "mset" => {
+            "map/set" => {
                 let key = self.map_key(expr, args, 1, env, io)?;
                 let value = args.value(self, 2, env, io)?;
                 values.insert(key, value);
                 Ok(Value::Map(values))
             }
-            "mdel" => {
+            "map/del" => {
                 let key = self.map_key(expr, args, 1, env, io)?;
                 values.shift_remove(&key).ok_or_else(|| {
                     Error::new(args.at(expr, 1), format!("map key {key:?} not found"))
                 })?;
                 Ok(Value::Map(values))
             }
-            "mhas" => {
+            "map/has" => {
                 let key = self.map_key(expr, args, 1, env, io)?;
                 Ok(Value::Bool(values.contains_key(&key)))
             }
-            "mkeys" => Ok(Value::List(values.into_keys().map(Value::Text).collect())),
-            "mvals" => Ok(Value::List(values.into_values().collect())),
-            "mlen" => Ok(Value::Number(Number::Int(values.len() as i64))),
+            "map/keys" => Ok(Value::List(values.into_keys().map(Value::Text).collect())),
+            "map/vals" => Ok(Value::List(values.into_values().collect())),
+            "map/len" => Ok(Value::Number(Number::Int(values.len() as i64))),
             _ => unreachable!("unknown map command"),
         }
     }

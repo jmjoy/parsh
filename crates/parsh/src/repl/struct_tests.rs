@@ -88,7 +88,7 @@ fn structs_nest_and_live_inside_collections() {
         (Segment.end $segment)
         (Point.x (Segment.start $segment))
         (list (Point 1 2))
-        (mget (map point (Point 1 2)) point)
+        (map/get (map point (Point 1 2)) point)
         "#,
         &[
             r#"(Point "1" "1")"#,

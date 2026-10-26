@@ -365,10 +365,10 @@ fn integer_operations_and_indices_reject_text_and_integral_floats() {
     for (name, first) in [
         ("quot", "#4"),
         ("rem", "#4"),
-        ("lget", "[a b]"),
-        ("lslice", "[a b]"),
-        ("sget", "ab"),
-        ("sslice", "ab"),
+        ("list/get", "[a b]"),
+        ("list/slice", "[a b]"),
+        ("str/get", "ab"),
+        ("str/slice", "ab"),
     ] {
         for bad in ["1", "\"1\"", "$text", "(str #1)", "#1.0"] {
             for source in [
@@ -381,7 +381,7 @@ fn integer_operations_and_indices_reject_text_and_integral_floats() {
         }
     }
     succeeds(
-        "(list (+ #1 #2.5) (= #1 #1.0) (eq #1 #1.0) (+ (int 001) #2) (+ (float 2.5) #0.5) (lget [a b] (int 1)) (sget ab (int 0)))",
+        "(list (+ #1 #2.5) (= #1 #1.0) (eq #1 #1.0) (+ (int 001) #2) (+ (float 2.5) #0.5) (list/get [a b] (int 1)) (str/get ab (int 0)))",
         &[r#"(#3.5 #true #false #3 #3.0 "b" "a")"#],
     );
 }

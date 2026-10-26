@@ -80,20 +80,20 @@ test("maps preserve insertion order, value types, and eager defaults in the brow
   await execute(page, `
     (let config (map name parsh count #1 nested (map enabled #true)))
     (let copy $config)
-    (let updated (mset $config name changed-copy))
-    (let deleted (mdel $config count))
-    (list (mget $config name) (mget $updated name) (mhas $config count) (mhas $deleted count))
-    (set config (mset $config name updated))
-    (set config (mdel $config count))
-    (set config (mset $config count #2))
-    (list (mkeys $config) (mget $config count) (mlen $config)
-          (mhas $config missing) (mget $copy name))
+    (let updated (map/set $config name changed-copy))
+    (let deleted (map/del $config count))
+    (list (map/get $config name) (map/get $updated name) (map/has $config count) (map/has $deleted count))
+    (set config (map/set $config name updated))
+    (set config (map/del $config count))
+    (set config (map/set $config count #2))
+    (list (map/keys $config) (map/get $config count) (map/len $config)
+          (map/has $config missing) (map/get $copy name))
     (let defaults #0)
-    (mget $config nested (do (set defaults (+ $defaults #1)) fallback))
+    (map/get $config nested (do (set defaults (+ $defaults #1)) fallback))
     (list $defaults)
-    (mget $config missing (do (set config (mset $config fallback added)) (mget $config fallback)))
-    (mvals $config)
-    (mget (mset {name literal} name composed) name)
+    (map/get $config missing (do (set config (map/set $config fallback added)) (map/get $config fallback)))
+    (map/vals $config)
+    (map/get (map/set {name literal} name composed) name)
   `);
   await expect(terminal(page)).toContainText('("parsh" "changed-copy" #true #false)');
   await expect(terminal(page)).toContainText('(("name" "nested" "count") #2 #3 #false "parsh")');
@@ -105,7 +105,7 @@ test("maps preserve insertion order, value types, and eager defaults in the brow
 
   await execute(page, '(map duplicate first duplicate (exit 9))');
   await expect(terminal(page)).toContainText('duplicate map key "duplicate"');
-  await execute(page, '(str "recovered:" (mget $config name))');
+  await execute(page, '(str "recovered:" (map/get $config name))');
   await expect(terminal(page)).toContainText('"recovered:updated"');
   await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
 });
@@ -120,9 +120,9 @@ test("function values, optional and rest parameters, and the standard library sh
         (return $n)))
     (let next (counter #10))
     (list ($next) ($next #2 #3) (apply $next []))
-    (let original (ssplit "a,b" ","))
-    (list $original (lappend $original [c d]) (sjoin $original "/"))
-    (list (slen "中文") (sslice "中文abc" #1 #3) (quot #-7 #3) (rem #-7 #3) (round #-2.5))
+    (let original (str/split "a,b" ","))
+    (list $original (list/append $original [c d]) (str/join $original "/"))
+    (list (str/len "中文") (str/slice "中文abc" #1 #3) (quot #-7 #3) (rem #-7 #3) (round #-2.5))
     (defmacro when (condition &rest body) \`(if ,$condition (do ,@$body)))
     (defn find (items) (for item $items (when (eq $item b) (return $item))) (str missing))
     (find [a b c])
@@ -133,10 +133,48 @@ test("function values, optional and rest parameters, and the standard library sh
   await expect(terminal(page)).toContainText('(#2 "文a" #-2 #-1 #-3)');
   await expect(terminal(page)).toContainText('"b"');
   await expect(terminal(page)).toContainText('(#3 #true "int")');
-  await execute(page, '(mget {key value} key $undefined)');
+  await execute(page, '(map/get {key value} key $undefined)');
   await expect(terminal(page)).toContainText('undefined variable $undefined');
   await execute(page, '(str recovered-functions)');
   await expect(terminal(page)).toContainText('"recovered-functions"');
+});
+
+test("module names support function references, dynamic calls, completion, and legacy name reuse", async ({ page }) => {
+  await playground(page);
+  await execute(page, `
+    (let getter map/get)
+    (list ((function str/join) [a b] ",")
+          (apply (function list/append) [[a] b])
+          ($getter {name parsh} name))
+    (type -t str/join list/append map/get)
+  `);
+  await expect(terminal(page)).toContainText('("a,b" ("a" "b") "parsh")');
+  await expect.poll(async () =>
+    (await terminal(page).innerText()).split("\n").filter(line => line.trim() === "builtin"),
+  ).toEqual(["builtin", "builtin", "builtin"]);
+
+  await execute(page, "(function sjoin)");
+  await expect(terminal(page)).toContainText("sjoin is not a function");
+  await execute(page, `
+    (defn sjoin () (str legacy-string))
+    (defn lappend () (str legacy-list))
+    (defn mget () (str legacy-map))
+    (list (sjoin) (lappend) (mget))
+  `);
+  await expect(terminal(page)).toContainText('("legacy-string" "legacy-list" "legacy-map")');
+
+  for (const [prefix, completed, args, result] of [
+    ["str/jo", "str/join", '[a b] ","', '"a,b"'],
+    ["list/app", "list/append", "[a] b", '("a" "b")'],
+    ["function map/ge", "function map/get", "", "<function map/get>"],
+  ] as const) {
+    await page.keyboard.type(prefix);
+    await page.keyboard.press("Tab");
+    await expect(terminal(page)).toContainText(`(${completed}`);
+    await page.keyboard.type(args);
+    await page.keyboard.press("Enter");
+    await expect(terminal(page)).toContainText(result);
+  }
 });
 
 test("collection shorthand supports nested values, Enter submission, and history in the browser", async ({ page }) => {
@@ -144,7 +182,7 @@ test("collection shorthand supports nested values, Enter submission, and history
   await execute(page, `
     []{}
     (let config {name parsh items [one "two words"] nested {enabled #true}})
-    [(mget $config items) (mget $config nested)]
+    [(map/get $config items) (map/get $config nested)]
     (eq [one {key [two]}] (list one (map key (list two))))
   `);
   await expect(terminal(page)).toContainText('(("one" "two words") (map "enabled" #true))');
@@ -370,9 +408,9 @@ test("triple quoted completion preserves delimiters, variables, and raw dollar f
   await page.keyboard.type('"""');
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"value=retained"');
-  await page.keyboard.type('str """$(stri');
+  await page.keyboard.type('str """$(str/tr');
   await page.keyboard.press("Tab");
-  await expect(terminal(page)).toContainText('str """$(strim ');
+  await expect(terminal(page)).toContainText('str """$(str/trim ');
   await page.keyboard.type("'''inner''')!\"\"\"");
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"inner!"');
@@ -393,9 +431,9 @@ test("quoted completion handles interpolation and literal dollar filenames", asy
   await page.keyboard.type('"');
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"value=retained"');
-  await page.keyboard.type('str "$(stri');
+  await page.keyboard.type('str "$(str/tr');
   await page.keyboard.press("Tab");
-  await expect(terminal(page)).toContainText('str "$(strim ');
+  await expect(terminal(page)).toContainText('str "$(str/trim ');
   await page.keyboard.type('"inner")!"');
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"inner!"');
@@ -922,7 +960,7 @@ test("scalar literals hide prompt parentheses and share strict conversions and m
   await page.keyboard.press("Enter");
   await execute(page, `
     (let typed {count #3 enabled #false empty #nil})
-    (list (typeof (mget $typed count)) (mvals $typed))
+    (list (typeof (map/get $typed count)) (map/vals $typed))
     (list (int "1e2") (float #1) (bool " false ") (apply (function int) [#2.0]))
     (defmacro keep (value) \`(list ,$value ,(+ #1 #2) ,#nil))
     (keep #true)
@@ -949,14 +987,14 @@ test("numeric operations and indices require typed values at text boundaries", a
   for (const [source, message] of [
     ["(+ 1 #2)", "expected a number (int or float), got text"],
     ["(+ (printf 1) #2)", "expected a number (int or float), got text"],
-    ["(lget [a b] 1)", "expected an integer, got text"],
-    ["(sget ab #1.0)", "expected an integer, got float"],
+    ["(list/get [a b] 1)", "expected an integer, got text"],
+    ["(str/get ab #1.0)", "expected an integer, got float"],
   ] as const) {
     await execute(page, `${source} (str skipped-numeric)`);
     await expect(terminal(page)).toContainText(message);
     await expect(terminal(page)).not.toContainText('"skipped-numeric"');
   }
-  await execute(page, '(list (+ (int (printf 1)) #2) (lget [a b] (int 1)) (+ #1 #2.5))');
+  await execute(page, '(list (+ (int (printf 1)) #2) (list/get [a b] (int 1)) (+ #1 #2.5))');
   await expect(terminal(page)).toContainText('(#3 "b" #3.5)');
 });
 
@@ -968,7 +1006,7 @@ test("complete execution results, special variable, bytes, and exceptions share 
     (list (stdout-text $result) (exit-code $result) (signal $result)
           (bytes? (CallResult.stdout $result)) (eq $result $saved))
     (let failed (capture-call cat missing-result-file))
-    (list (exit-code $failed) (scontains (stderr-text $failed) missing-result-file))
+    (list (exit-code $failed) (str/contains (stderr-text $failed) missing-result-file))
     (let sorter (command sort))
     (stdout-text (capture-call (fn () (| (printf "b\na\n") ($sorter)))))
     (let binary (capture-call printf "\\377"))

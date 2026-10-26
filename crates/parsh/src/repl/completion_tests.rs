@@ -141,9 +141,9 @@ fn single_command_completes_without_running_or_changing_status_and_history() {
 #[test]
 fn syntax_only_completion_uses_available_builtins_and_current_functions() {
     let mut repl = Repl::new();
-    type_text(&mut repl, "sli");
+    type_text(&mut repl, "str/li");
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, "slines ");
+    assert_eq!(repl.session.input.body, "str/lines ");
     repl.input(Key::ClearInput);
     execute(&mut repl, "(defn tab-function () (str result))");
     type_text(&mut repl, "tab-f");
@@ -173,13 +173,13 @@ fn map_commands_complete_value_arguments_without_evaluating() {
     let mut repl = Repl::with_host(host.clone()).unwrap();
     execute(&mut repl, "(let config {key value})");
     for (prefix, command) in [
-        ("mg", "mget"),
-        ("ms", "mset"),
-        ("md", "mdel"),
-        ("mh", "mhas"),
-        ("mk", "mkeys"),
-        ("mv", "mvals"),
-        ("ml", "mlen"),
+        ("map/g", "map/get"),
+        ("map/s", "map/set"),
+        ("map/d", "map/del"),
+        ("map/h", "map/has"),
+        ("map/k", "map/keys"),
+        ("map/v", "map/vals"),
+        ("map/l", "map/len"),
     ] {
         repl.input(Key::ClearInput);
         type_text(&mut repl, prefix);
@@ -196,19 +196,67 @@ fn map_commands_complete_value_arguments_without_evaluating() {
 }
 
 #[test]
+fn module_prefixes_list_members_in_commands_and_function_references() {
+    let host = TestHost::default();
+    for mut repl in [Repl::new(), Repl::with_host(host.clone()).unwrap()] {
+        for (module, members) in [
+            (
+                "str",
+                vec![
+                    "contains", "get", "join", "len", "lines", "replace", "slice", "split", "trim",
+                ],
+            ),
+            (
+                "list",
+                vec!["append", "concat", "first", "get", "len", "rest", "slice"],
+            ),
+            (
+                "map",
+                vec!["del", "get", "has", "keys", "len", "set", "vals"],
+            ),
+        ] {
+            let expected: Vec<_> = members
+                .iter()
+                .map(|member| format!("{module}/{member}"))
+                .collect();
+            for context in ["", "function "] {
+                repl.input(Key::ClearInput);
+                let source = format!("{context}{module}/");
+                type_text(&mut repl, &source);
+                repl.input(Key::Tab);
+                assert_eq!(repl.session.input.body, source);
+                let events = repl.input(Key::Tab);
+                assert_eq!(listings(&events), [&expected]);
+            }
+        }
+        for old in ["sjoin", "lappend", "mget"] {
+            repl.input(Key::ClearInput);
+            type_text(&mut repl, old);
+            repl.input(Key::Tab);
+            assert_eq!(repl.session.input.body, old);
+        }
+        assert!(repl.session.history.entries.is_empty());
+    }
+    assert_eq!(host.runs.get(), 0);
+}
+
+#[test]
 fn new_functions_and_parameter_declarations_complete_without_execution() {
     let mut repl = Repl::new();
     execute(&mut repl, "(defn custom-fn () (str result))");
     for (source, completed) in [
-        ("lapp", "lappend "),
-        ("strim (spli", "strim (spli"),
+        ("list/app", "list/append "),
+        ("str/trim (str/spl", "str/trim (str/split "),
         ("function custom-f", "function custom-fn "),
-        ("function mge", "function mget "),
+        ("function map/ge", "function map/get "),
         ("function defma", "function defma"),
         ("fn (x &op", "fn (x &optional "),
         ("defmacro m (x &re", "defmacro m (x &rest "),
-        ("fn (&optional (x (sli", "fn (&optional (x (slines "),
-        ("defn f (&optional (x (sli", "defn f (&optional (x (slines "),
+        ("fn (&optional (x (str/li", "fn (&optional (x (str/lines "),
+        (
+            "defn f (&optional (x (str/li",
+            "defn f (&optional (x (str/lines ",
+        ),
     ] {
         repl.input(Key::ClearInput);
         type_text(&mut repl, source);
@@ -220,7 +268,13 @@ fn new_functions_and_parameter_declarations_complete_without_execution() {
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "ma");
     let events = repl.input(Key::Tab);
-    assert_eq!(listings(&events)[0], &["map", "map?", "max"]);
+    assert_eq!(
+        listings(&events)[0],
+        &[
+            "map", "map/del", "map/get", "map/has", "map/keys", "map/len", "map/set", "map/vals",
+            "map?", "max"
+        ]
+    );
 }
 
 #[test]
@@ -452,9 +506,9 @@ fn triple_quoted_completion_preserves_embedded_variables_and_calls() {
         r#"str """prefix "$TAB_NAME"#.len()
     );
     repl.input(Key::ClearInput);
-    type_text(&mut repl, r#"str """$(stri"#);
+    type_text(&mut repl, r#"str """$(str/tr"#);
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, r#"str """$(strim "#);
+    assert_eq!(repl.session.input.body, r#"str """$(str/trim "#);
     type_text(&mut repl, r#"'''inner''')!""""#);
     assert!(
         repl.input(Key::Enter)
@@ -487,9 +541,9 @@ fn quoted_variable_and_expression_completion_preserve_the_surrounding_text() {
     );
     assert_eq!(repl.session.input.cursor, r#"str "prefix $TAB_NAME"#.len());
     repl.input(Key::ClearInput);
-    type_text(&mut repl, r#"str "$(stri"#);
+    type_text(&mut repl, r#"str "$(str/tr"#);
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, r#"str "$(strim "#);
+    assert_eq!(repl.session.input.body, r#"str "$(str/trim "#);
     type_text(&mut repl, r#""inner")!""#);
     assert!(
         repl.input(Key::Enter)
@@ -627,9 +681,9 @@ fn host_lookup_failures_are_quiet_and_do_not_fall_back_to_native_capabilities() 
         assert_eq!(repl.session.input.body, text);
     }
     repl.input(Key::ClearInput);
-    type_text(&mut repl, "sli");
+    type_text(&mut repl, "str/li");
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, "slines ");
+    assert_eq!(repl.session.input.body, "str/lines ");
 }
 
 #[test]

@@ -15,8 +15,8 @@ its value is one program name, without implicit splitting into flags.
 
 Command heads accept text, function values, and explicit `command` references. Numeric, boolean, and nil heads are not callable, including values read from variables. Use `str` to explicitly construct a text command name. `int`, `float`, and `bool` are reserved builtins.
 
-`map` constructs a map. Its built-in operations are `mget`, `mset`, `mdel`, `mhas`,
-`mkeys`, `mvals`, and `mlen`; all take a map value first, such as `$config` or
+`map` constructs a map. Its built-in operations are `map/get`, `map/set`, `map/del`, `map/has`,
+`map/keys`, `map/vals`, and `map/len`; all take a map value first, such as `$config` or
 `{name parsh}`. Updates return new maps; use `set` to replace a variable's value.
 See [maps](/parsh/en/docs/variables/#maps) for signatures and examples.
 

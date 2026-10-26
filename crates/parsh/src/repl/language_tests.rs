@@ -82,14 +82,14 @@ fn list_updates_preserve_nested_values_and_all_existing_copies() {
             r#"
         (let original [a {nested [b]}])
         (let alias $original)
-        (let appended (lappend $original [c d] #true))
+        (let appended (list/append $original [c d] #true))
         (list $original $alias $appended)
-        (list (lconcat [a] [b c]) (lconcat) (lappend []))
-        (list (llen $appended) (lfirst $original) (lrest $original)
-              (lget $appended #-1) (lget $appended #-2)
-              (lfirst [] fallback) (lrest []) (lget [] #1 #nil))
-        (list (lslice $appended #1 #-1) (lslice $original #-99 #99)
-              (lslice $original #2 #1) (lslice $original #-1))
+        (list (list/concat [a] [b c]) (list/concat) (list/append []))
+        (list (list/len $appended) (list/first $original) (list/rest $original)
+              (list/get $appended #-1) (list/get $appended #-2)
+              (list/first [] fallback) (list/rest []) (list/get [] #1 #nil))
+        (list (list/slice $appended #1 #-1) (list/slice $original #-99 #99)
+              (list/slice $original #2 #1) (list/slice $original #-1))
     "#
         ),
         [
@@ -99,11 +99,11 @@ fn list_updates_preserve_nested_values_and_all_existing_copies() {
             r#"(((map "nested" ("b")) ("c" "d")) ("a" (map "nested" ("b"))) () ((map "nested" ("b"))))"#,
         ]
     );
-    for source in ["(lfirst [])", "(lget [a] #-2)", "(lget [] #0)"] {
+    for source in ["(list/first [])", "(list/get [a] #-2)", "(list/get [] #0)"] {
         fails(source, "index out of range");
     }
-    fails("(lconcat [a] text)", "expected a list");
-    fails("(lslice [a] #0.0)", "expected an integer");
+    fails("(list/concat [a] text)", "expected a list");
+    fails("(list/slice [a] #0.0)", "expected an integer");
 }
 
 #[test]
@@ -114,16 +114,16 @@ fn explicit_defaults_are_eager_once_in_all_call_forms() {
         (let trace (str))
         (defn mark (part value) (set trace (str $trace $part)) $value)
         (let m {present #nil})
-        (list (mget (mark m $m) (mark k present) (mark d fallback)) $trace)
+        (list (map/get (mark m $m) (mark k present) (mark d fallback)) $trace)
         (set trace (str))
-        (let getter (function mget))
+        (let getter (function map/get))
         (list ($getter (mark m $m) (mark k present) (mark d fallback)) $trace)
         (set trace (str))
         (list (apply $getter [(mark m $m) (mark k present) (mark d fallback)]) $trace)
         (set trace (str))
-        (list (lget [found] #0 (mark a fallback))
-              ((function lfirst) [found] (mark b fallback))
-              (apply (function sget) [abc #0 (mark c fallback)]) $trace)
+        (list (list/get [found] #0 (mark a fallback))
+              ((function list/first) [found] (mark b fallback))
+              (apply (function str/get) [abc #0 (mark c fallback)]) $trace)
     "#
         ),
         [
@@ -134,12 +134,12 @@ fn explicit_defaults_are_eager_once_in_all_call_forms() {
         ]
     );
     for source in [
-        "(mget {key value} key $undefined)",
-        "((function mget) {key value} key $undefined)",
-        "(apply (function mget) [{key value} key $undefined])",
-        "(lget [a] #0 $undefined)",
-        "(lfirst [a] $undefined)",
-        "(sget abc #0 $undefined)",
+        "(map/get {key value} key $undefined)",
+        "((function map/get) {key value} key $undefined)",
+        "(apply (function map/get) [{key value} key $undefined])",
+        "(list/get [a] #0 $undefined)",
+        "(list/first [a] $undefined)",
+        "(str/get abc #0 $undefined)",
     ] {
         fails(source, "undefined variable");
     }
@@ -147,8 +147,8 @@ fn explicit_defaults_are_eager_once_in_all_call_forms() {
         evaluated(
             r#"
         (let m {key original})
-        (mget $m key (do (set m {key changed}) fallback))
-        (mget $m key)
+        (map/get $m key (do (set m {key changed}) fallback))
+        (map/get $m key)
     "#
         ),
         [r#""original""#, r#""changed""#]
@@ -161,14 +161,14 @@ fn text_operations_count_chars_and_preserve_literal_patterns() {
         evaluated(
             r#"
         (let text "中é👩‍💻")
-        (list (slen $text) (sget $text #0) (sget $text #-1)
-              (sslice $text #1 #3) (sslice $text #-3)
-              (sslice $text #-99 #99) (sslice $text #4 #1))
-        (list (ssplit "a,,b," ",") (ssplit "中a" "")
-              (sjoin [a 中 b] "::") (slines "a\r\nb\n")
-              (strim "　 a \n") (sreplace "a.a" "." "$")
-              (scontains "a.a" ".") (sget "" #0 #nil))
-        (list (ssplit "" ",") (sjoin [] ",") (slines ""))
+        (list (str/len $text) (str/get $text #0) (str/get $text #-1)
+              (str/slice $text #1 #3) (str/slice $text #-3)
+              (str/slice $text #-99 #99) (str/slice $text #4 #1))
+        (list (str/split "a,,b," ",") (str/split "中a" "")
+              (str/join [a 中 b] "::") (str/lines "a\r\nb\n")
+              (str/trim "　 a \n") (str/replace "a.a" "." "$")
+              (str/contains "a.a" ".") (str/get "" #0 #nil))
+        (list (str/split "" ",") (str/join [] ",") (str/lines ""))
     "#
         ),
         [
@@ -177,9 +177,9 @@ fn text_operations_count_chars_and_preserve_literal_patterns() {
             r#"(("") "" ())"#,
         ]
     );
-    fails("(sget abc #3)", "index out of range");
-    fails("(slen #3)", "expected text");
-    fails("(sjoin [a #3] ,)", "a list of text");
+    fails("(str/get abc #3)", "index out of range");
+    fails("(str/len #3)", "expected text");
+    fails("(str/join [a #3] ,)", "a list of text");
 }
 
 #[test]
@@ -257,7 +257,7 @@ fn independent_closures_can_be_returned_passed_and_stored() {
         (let second (counter #10))
         (defn invoke (f x) ($f $x))
         (list ($first) ($first #2) (invoke $second #5) ($first)
-              ((lget [$second] #0)) ((mget {fn $first} fn)))
+              ((list/get [$second] #0)) ((map/get {fn $first} fn)))
         (let alias $first)
         (list (eq $first $alias) (eq $first $second)
               (eq (function +) (function +))
@@ -312,23 +312,44 @@ fn direct_referenced_and_applied_builtins_share_typed_operations() {
         ("<", "#9007199254740992.0 #9007199254740993", "#true"),
         ("not", "(eq a b)", "#true"),
         ("eq", "#3 3", "#false"),
+        ("str", "a #1", r#""a1""#),
+        ("list", "a #1", r#"("a" #1)"#),
         ("map", "key [a b]", r#"(map "key" ("a" "b"))"#),
-        ("mset", "{a b} c [d]", r#"(map "a" "b" "c" ("d"))"#),
-        ("lappend", "[a] [b c]", r#"("a" ("b" "c"))"#),
-        ("lslice", "[a b c] #1 #-1", r#"("b")"#),
-        ("sslice", "中abc #1 #-1", r#""ab""#),
-        ("sreplace", "a.a . '$'", r#""a\$a""#),
+        ("map/get", "{a b} a", r#""b""#),
+        ("map/set", "{a b} c [d]", r#"(map "a" "b" "c" ("d"))"#),
+        ("map/del", "{a b c d} a", r#"(map "c" "d")"#),
+        ("map/has", "{a b} a", "#true"),
+        ("map/keys", "{a b c d}", r#"("a" "c")"#),
+        ("map/vals", "{a b c d}", r#"("b" "d")"#),
+        ("map/len", "{a b}", "#1"),
+        ("list/len", "[a b]", "#2"),
+        ("list/first", "[a b]", r#""a""#),
+        ("list/rest", "[a b]", r#"("b")"#),
+        ("list/get", "[a b] #-1", r#""b""#),
+        ("list/append", "[a] [b c]", r#"("a" ("b" "c"))"#),
+        ("list/concat", "[a] [b c]", r#"("a" "b" "c")"#),
+        ("list/concat", "", "()"),
+        ("list/slice", "[a b c] #1 #-1", r#"("b")"#),
+        ("str/len", "中文", "#2"),
+        ("str/get", "中文 #-1", r#""文""#),
+        ("str/slice", "中abc #1 #-1", r#""ab""#),
+        ("str/split", "a,b ,", r#"("a" "b")"#),
+        ("str/join", "[a b] ,", r#""a,b""#),
+        ("str/lines", r#""a\r\nb\n""#, r#"("a" "b")"#),
+        ("str/trim", r#""　 a \n""#, r#""a""#),
+        ("str/replace", "a.a . '$'", r#""a\$a""#),
+        ("str/contains", "a.a .", "#true"),
         ("quot", "#-7 #3", "#-2"),
         ("round", "#2.5", "#3"),
         ("typeof", "#2", r#""int""#),
         ("nil?", "#nil", "#true"),
     ] {
         let source = format!(
-            "({name} {arguments}) ((function {name}) {arguments}) (apply (function {name}) [{arguments}])"
+            "({name} {arguments}) ((function {name}) {arguments}) (apply (function {name}) [{arguments}]) (let callee {name}) ($callee {arguments})"
         );
         assert_eq!(
             evaluated(&source),
-            [expected, expected, expected],
+            [expected, expected, expected, expected],
             "{source}"
         );
     }
@@ -339,6 +360,63 @@ fn direct_referenced_and_applied_builtins_share_typed_operations() {
     );
     assert_eq!(evaluated("(apply + [#1])"), ["#1"]);
     fails("(apply (function +) 1)", "a final list");
+}
+
+#[test]
+fn module_members_are_reserved_and_legacy_names_can_be_redefined() {
+    for (old, name) in [
+        ("slen", "str/len"),
+        ("sget", "str/get"),
+        ("sslice", "str/slice"),
+        ("ssplit", "str/split"),
+        ("sjoin", "str/join"),
+        ("slines", "str/lines"),
+        ("strim", "str/trim"),
+        ("sreplace", "str/replace"),
+        ("scontains", "str/contains"),
+        ("llen", "list/len"),
+        ("lfirst", "list/first"),
+        ("lrest", "list/rest"),
+        ("lget", "list/get"),
+        ("lappend", "list/append"),
+        ("lconcat", "list/concat"),
+        ("lslice", "list/slice"),
+        ("mget", "map/get"),
+        ("mset", "map/set"),
+        ("mdel", "map/del"),
+        ("mhas", "map/has"),
+        ("mkeys", "map/keys"),
+        ("mvals", "map/vals"),
+        ("mlen", "map/len"),
+    ] {
+        assert_eq!(
+            evaluated(&format!("(function {name}) (str (type -t {name}))")),
+            [format!("<function {name}>"), r#""builtin""#.into()],
+        );
+        fails(
+            &format!("(defn {name} () #nil)"),
+            "function name is reserved",
+        );
+        fails(
+            &format!("(defmacro {name} () #nil)"),
+            "macro name is reserved",
+        );
+        fails(
+            &format!("(defstruct {name} field)"),
+            "struct name is reserved",
+        );
+        fails(&format!("(function {old})"), "is not a function");
+        assert_eq!(
+            evaluated(&format!(
+                "(if (type -t {old}) #true #false) (defn {old} () #7) ({old})"
+            )),
+            ["#false", "#7"],
+        );
+    }
+    assert_eq!(
+        evaluated("(defn str/custom () (str custom)) (str/custom)"),
+        [r#""custom""#],
+    );
 }
 
 #[test]

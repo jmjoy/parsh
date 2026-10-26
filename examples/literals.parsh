@@ -4,7 +4,7 @@
 
 (let config {retries #3 timeout #1.5 enabled #false empty #nil})
 (printf "retries=%s timeout=%s enabled=%s\n"
-  (mget $config retries) (mget $config timeout) (mget $config enabled))
+  (map/get $config retries) (map/get $config timeout) (map/get $config enabled))
 (printf "literal=%s word=%s equal=%s\n" (typeof #1) (typeof 1) (eq #1 1))
 (printf "converted=%s,%s,%s\n" (int "1e2") (float #1) (bool " false "))
-(if (mget $config enabled) (echo enabled) (echo disabled))
+(if (map/get $config enabled) (echo enabled) (echo disabled))

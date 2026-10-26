@@ -35,8 +35,8 @@ fn maps_preserve_value_types_text_keys_and_display_order() {
         (let m (map $key #3 flag #true nothing #nil
                     items (list a b) nested (map x y) "" empty))
         (get m)
-        (list (mget $m dynamic) (mget $m flag) (mget $m nothing)
-              (mget $m items) (mget $m nested) (mget $m ""))
+        (list (map/get $m dynamic) (map/get $m flag) (map/get $m nothing)
+              (map/get $m items) (map/get $m nested) (map/get $m ""))
         (map 'a$b' 'x$y')
         "#,
         &[
@@ -53,19 +53,19 @@ fn updates_preserve_order_and_reinsertions_append() {
     assert_values(
         r#"
         (let m (map c third a first b second))
-        (set m (mset $m a updated))
-        (set m (mdel $m c))
-        (set m (mset $m d fourth))
-        (mkeys $m)
-        (mvals $m)
-        (list (mlen $m) (mhas $m a) (mhas $m c))
-        (set m (mset $m c restored))
-        (mkeys $m)
-        (set m (mdel $m a))
-        (set m (mdel $m b))
-        (set m (mdel $m d))
-        (set m (mdel $m c))
-        (list (mlen $m) (mkeys $m) (mvals $m) (get m))
+        (set m (map/set $m a updated))
+        (set m (map/del $m c))
+        (set m (map/set $m d fourth))
+        (map/keys $m)
+        (map/vals $m)
+        (list (map/len $m) (map/has $m a) (map/has $m c))
+        (set m (map/set $m c restored))
+        (map/keys $m)
+        (set m (map/del $m a))
+        (set m (map/del $m b))
+        (set m (map/del $m d))
+        (set m (map/del $m c))
+        (list (map/len $m) (map/keys $m) (map/vals $m) (get m))
         "#,
         &[
             r#"("a" "b" "d")"#,
@@ -82,21 +82,21 @@ fn map_commands_accept_values_and_updates_return_independent_maps() {
     assert_values(
         r#"
         (defn source () {first one second two})
-        (mget (source) first)
-        (mset {} key value)
-        (mdel {first one second two} first)
-        (mhas {first one} first)
-        (mkeys (mset (source) third three))
-        (mvals (mdel (source) first))
-        (mlen (mset (mset {} first one) second two))
-        (mget (mget {nested {key value}} nested) key)
+        (map/get (source) first)
+        (map/set {} key value)
+        (map/del {first one second two} first)
+        (map/has {first one} first)
+        (map/keys (map/set (source) third three))
+        (map/vals (map/del (source) first))
+        (map/len (map/set (map/set {} first one) second two))
+        (map/get (map/get {nested {key value}} nested) key)
         (let m (source))
-        (let updated (mset $m first changed))
-        (let deleted (mdel $m first))
+        (let updated (map/set $m first changed))
+        (let deleted (map/del $m first))
         (list $m $updated $deleted)
-        (mset $m first discarded)
-        (mdel $m first)
-        (mget $m first)
+        (map/set $m first discarded)
+        (map/del $m first)
+        (map/get $m first)
         "#,
         &[
             r#""one""#,
@@ -140,12 +140,12 @@ fn defaults_are_eager_but_only_returned_for_missing_keys() {
         r#"
         (let m (map present #nil))
         (let calls #0)
-        (list (mget $m present (set calls (+ $calls #100)))
-              (mget $m absent (do (set calls (+ $calls #1)) (list fallback)))
+        (list (map/get $m present (set calls (+ $calls #100)))
+              (map/get $m absent (do (set calls (+ $calls #1)) (list fallback)))
               $calls)
-        (mget $m added (do (set m (mset $m added installed)) (mget $m added)))
-        (mget $m added fallback)
-        (list (mget $m absent #nil))
+        (map/get $m added (do (set m (map/set $m added installed)) (map/get $m added)))
+        (map/get $m added fallback)
+        (list (map/get $m absent #nil))
         "#,
         &[
             r#"(#nil ("fallback") #101)"#,
@@ -162,24 +162,24 @@ fn map_updates_follow_lexical_scope_and_copies_are_independent() {
         r#"
         (let m (map k outer nested (map k original)))
         (let copy $m)
-        (defn update () (set m (mset $m k captured)))
-        (defn caller (m) (update) (mget $m k))
+        (defn update () (set m (map/set $m k captured)))
+        (defn caller (m) (update) (map/get $m k))
         (caller (map k argument))
-        (list (mget $m k) (mget $copy k))
-        (defn local (m) (set m (mdel (mset $m k local) nested)) $m)
+        (list (map/get $m k) (map/get $copy k))
+        (defn local (m) (set m (map/del (map/set $m k local) nested)) $m)
         (local $m)
-        (let nested (mget $m nested))
-        (set nested (mset $nested k changed))
-        (mget $m nested)
-        (set m (mset $m nested $nested))
-        (mget $copy nested)
-        (let enumerated (mvals $m))
+        (let nested (map/get $m nested))
+        (set nested (map/set $nested k changed))
+        (map/get $m nested)
+        (set m (map/set $m nested $nested))
+        (map/get $copy nested)
+        (let enumerated (map/vals $m))
         (defn replace (enumerated) (set enumerated (list replaced)))
         (replace $enumerated)
-        (mget $m nested)
-        (set nested (mset $nested k later))
-        (set m (mset $m nested $nested))
-        (list $enumerated (mget $m nested))
+        (map/get $m nested)
+        (set nested (map/set $nested k later))
+        (set m (map/set $m nested $nested))
+        (list $enumerated (map/get $m nested))
         "#,
         &[
             r#""argument""#,
@@ -200,19 +200,19 @@ fn operands_evaluate_once_in_order_and_use_the_initial_map_value() {
         (let trace (str))
         (let m {start original})
         (let result
-          (mset (do (set trace (str $trace m)) $m)
-                (do (set trace (str $trace k)) (set m (mset $m from_key key-side)) target)
-                (do (set trace (str $trace v)) (set m (mset $m from_value value-side)) stored)))
+          (map/set (do (set trace (str $trace m)) $m)
+                (do (set trace (str $trace k)) (set m (map/set $m from_key key-side)) target)
+                (do (set trace (str $trace v)) (set m (map/set $m from_value value-side)) stored)))
         (list $trace $result $m)
         (set m {found original})
-        (mget $m (do (set m (mset $m found changed)) found))
-        (mget $m found)
-        (mhas $m (do (set m (mset $m added value)) added))
-        (mhas $m added)
-        (mdel $m (do (set m scalar) found))
+        (map/get $m (do (set m (map/set $m found changed)) found))
+        (map/get $m found)
+        (map/has $m (do (set m (map/set $m added value)) added))
+        (map/has $m added)
+        (map/del $m (do (set m scalar) found))
         (get m)
         (set m {start original})
-        (mset $m key (do (set m replacement) value))
+        (map/set $m key (do (set m replacement) value))
         (get m)
         "#,
         &[
@@ -264,13 +264,13 @@ fn construction_errors_stop_before_invalid_values_and_locate_the_key() {
 #[test]
 fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
     for (command, tail) in [
-        ("mget", "key"),
-        ("mset", "key value"),
-        ("mdel", "key"),
-        ("mhas", "key"),
-        ("mkeys", ""),
-        ("mvals", ""),
-        ("mlen", ""),
+        ("map/get", "key"),
+        ("map/set", "key value"),
+        ("map/del", "key"),
+        ("map/has", "key"),
+        ("map/keys", ""),
+        ("map/vals", ""),
+        ("map/len", ""),
     ] {
         let mut repl = Repl::new();
         execute(
@@ -317,8 +317,8 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
             );
         }
         let effects = match command {
-            "mset" => " (set calls (+ $calls #1)) (set calls (+ $calls #1))",
-            "mget" | "mdel" | "mhas" => " (set calls (+ $calls #1))",
+            "map/set" => " (set calls (+ $calls #1)) (set calls (+ $calls #1))",
+            "map/get" | "map/del" | "map/has" => " (set calls (+ $calls #1))",
             _ => "",
         };
         let source = format!("({command} scalar{effects})");
@@ -329,7 +329,7 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
         );
         assert_eq!(
             values(&execute(&mut repl, "(get calls)")),
-            [if command == "mget" { "#1" } else { "#0" }]
+            [if command == "map/get" { "#1" } else { "#0" }]
         );
         let events = execute(
             &mut repl,
@@ -339,7 +339,10 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
             diagnostics(&events)[0].contains("expected a map"),
             "{events:?}"
         );
-        assert_eq!(values(&execute(&mut repl, "(mget $m key)")), [r#""value""#]);
+        assert_eq!(
+            values(&execute(&mut repl, "(map/get $m key)")),
+            [r#""value""#]
+        );
     }
 }
 
@@ -347,15 +350,18 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
 fn missing_and_invalid_keys_report_errors_without_overwriting_or_evaluating_values() {
     let mut repl = Repl::new();
     execute(&mut repl, "(let m (map key value)) (let calls #0)");
-    for command in ["mget", "mdel"] {
+    for command in ["map/get", "map/del"] {
         let source = format!("(set m ({command} $m missing))");
         let events = execute(&mut repl, &source);
         assert!(diagnostics(&events)[0].contains("map key \"missing\" not found"));
-        assert!(diagnostics(&events)[0].starts_with("interactive:1:17:"));
+        assert!(diagnostics(&events)[0].starts_with(&format!(
+            "interactive:1:{}:",
+            source.find("missing").unwrap() + 1
+        )));
     }
-    for command in ["mget", "mset", "mdel", "mhas"] {
+    for command in ["map/get", "map/set", "map/del", "map/has"] {
         for key in ["(+ #1)", "(eq a a)", "(do)", "(list)", "(map)"] {
-            let tail = if command == "mset" {
+            let tail = if command == "map/set" {
                 " (set calls (+ $calls #1))"
             } else {
                 ""
@@ -371,7 +377,10 @@ fn missing_and_invalid_keys_report_errors_without_overwriting_or_evaluating_valu
         values(&execute(&mut repl, "(list $calls $m)")),
         [r#"(#0 (map "key" "value"))"#]
     );
-    let events = execute(&mut repl, "(mget $missing key (set calls (+ $calls #1)))");
+    let events = execute(
+        &mut repl,
+        "(map/get $missing key (set calls (+ $calls #1)))",
+    );
     assert!(diagnostics(&events)[0].contains("undefined variable $missing"));
     assert_eq!(values(&execute(&mut repl, "(get calls)")), ["#0"]);
 }
@@ -399,7 +408,7 @@ fn maps_are_rejected_in_scalar_positions() {
 #[test]
 fn map_names_are_reserved_and_recognized_by_type() {
     for command in [
-        "map", "mget", "mset", "mdel", "mhas", "mkeys", "mvals", "mlen",
+        "map", "map/get", "map/set", "map/del", "map/has", "map/keys", "map/vals", "map/len",
     ] {
         let mut repl = Repl::new();
         let events = execute(&mut repl, &format!("(str (type -t {command}))"));

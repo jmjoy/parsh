@@ -1,12 +1,12 @@
 #!/usr/bin/env parsh
 (; Run with: cargo run -- examples/stdlib.parsh )
 
-(let names (ssplit "Ada,Grace,Linus" ","))
-(let extended (lappend $names "Margaret Hamilton"))
-(echo "original=$(sjoin $names ', ')")
-(echo "extended=$(sjoin $extended ', ')")
-(echo "last=$(lget $extended #-1); middle=$(sjoin (lslice $extended #1 #-1) ', ')")
-(echo "Unicode characters: $(slen '中文')")
+(let names (str/split "Ada,Grace,Linus" ","))
+(let extended (list/append $names "Margaret Hamilton"))
+(echo "original=$(str/join $names ', ')")
+(echo "extended=$(str/join $extended ', ')")
+(echo "last=$(list/get $extended #-1); middle=$(str/join (list/slice $extended #1 #-1) ', ')")
+(echo "Unicode characters: $(str/len '中文')")
 
 (defn accumulator (initial)
   (fn (&optional (step #1) &rest more)

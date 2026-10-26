@@ -88,15 +88,46 @@ fn success(output: &Output) {
 }
 
 #[test]
+fn module_names_preserve_external_path_lookup_and_explicit_command_calls() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("str")).unwrap();
+    for name in ["join", "custom"] {
+        let executable = directory.path().join("str").join(name);
+        fs::write(&executable, "#!/bin/sh\nprintf 'external:%s\\n' \"$1\"\n").unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+            (printf "%s\n" (str/join [a b] ,))
+            (./str/join relative)
+            (str/custom unregistered)
+            ((command str/join) explicit)
+            (type -t str/join ./str/join str/custom)
+            (printf "%s\n" (/ #8 #2))
+            "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "a,b\nexternal:relative\nexternal:unregistered\nexternal:explicit\nbuiltin\nfile\nfile\n4.0\n"
+    );
+}
+
+#[test]
 fn maps_capture_commands_and_expand_only_explicit_key_and_value_lists() {
     let output = run(r#"
         (let m (map (printf name) (printf 'parsh\n\n') count #2))
-        (set m (mset $m empty (printf '')))
-        (printf "<%s>\n" (mget $m name) (mget $m count) (mget $m empty))
-        (printf "key=%s\n" (mkeys $m))
-        (set m (mset $m name updated))
-        (set m (mdel $m empty))
-        (printf "value=%s\n" (mvals $m))
+        (set m (map/set $m empty (printf '')))
+        (printf "<%s>\n" (map/get $m name) (map/get $m count) (map/get $m empty))
+        (printf "key=%s\n" (map/keys $m))
+        (set m (map/set $m name updated))
+        (set m (map/del $m empty))
+        (printf "value=%s\n" (map/vals $m))
         "#);
     success(&output);
     assert_eq!(
@@ -116,7 +147,7 @@ fn collection_sugar_captures_commands_and_expands_list_arguments() {
     let output = run(r#"
         []{}
         (let config {(printf name) (printf 'parsh\n\n') items [(printf 'a b') second]})
-        (printf "<%s>\n" (mget $config name) (mget $config items))
+        (printf "<%s>\n" (map/get $config name) (map/get $config items))
         (if (eq [one {key [two]}] (list one (map key (list two))))
             (echo equivalent)
             (exit 9))
@@ -1034,8 +1065,8 @@ fn function_values_capture_command_output_and_return_across_redirections() {
         (printf "<%s>\n" (redirected))
         (apply (function cd) [.])
         (printf "<%s>\n" (apply (function glob) ['*.txt']))
-        (printf "<%s>\n" (apply (function type) [-t fn lget round]))
-        (printf "<%s>\n" (sjoin (slines (printf ' a\nb\n')) ','))
+        (printf "<%s>\n" (apply (function type) [-t fn list/get round]))
+        (printf "<%s>\n" (str/join (str/lines (printf ' a\nb\n')) ','))
     "#,
         ],
         "",
@@ -1056,10 +1087,10 @@ fn function_values_capture_command_output_and_return_across_redirections() {
 #[test]
 fn eager_defaults_fail_even_when_the_requested_entry_exists() {
     for source in [
-        "(mget {key value} key (sh -c 'exit 7')) (echo wrong)",
-        "(lget [value] #0 (sh -c 'exit 7')) (echo wrong)",
-        "((function mget) {key value} key (sh -c 'exit 7')) (echo wrong)",
-        "(apply (function lget) [[value] #0 (sh -c 'exit 7')]) (echo wrong)",
+        "(map/get {key value} key (sh -c 'exit 7')) (echo wrong)",
+        "(list/get [value] #0 (sh -c 'exit 7')) (echo wrong)",
+        "((function map/get) {key value} key (sh -c 'exit 7')) (echo wrong)",
+        "(apply (function list/get) [[value] #0 (sh -c 'exit 7')]) (echo wrong)",
     ] {
         let output = run(source);
         assert_eq!(
@@ -1113,7 +1144,7 @@ fn numeric_text_from_commands_environment_and_arguments_requires_conversion() {
     for source in [
         "(+ (printf 1) #1)",
         "(export NUMBER_TEXT 1) (+ $NUMBER_TEXT #1)",
-        "(lget [a b] (printf 0))",
+        "(list/get [a b] (printf 0))",
     ] {
         let output = run(source);
         assert_eq!(output.status.code(), Some(2), "{source}");
@@ -1124,10 +1155,13 @@ fn numeric_text_from_commands_environment_and_arguments_requires_conversion() {
         );
         assert!(output.stdout.is_empty());
     }
-    let output = invoke(&["-c", "(+ (lfirst $args) #1)", "1"], "");
+    let output = invoke(&["-c", "(+ (list/first $args) #1)", "1"], "");
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("int/float to convert text"));
-    let output = invoke(&["-c", "(printf %s (+ (int (lfirst $args)) #1))", "1"], "");
+    let output = invoke(
+        &["-c", "(printf %s (+ (int (list/first $args)) #1))", "1"],
+        "",
+    );
     success(&output);
     assert_eq!(stdout(&output), "2");
 }
@@ -1136,7 +1170,7 @@ fn numeric_text_from_commands_environment_and_arguments_requires_conversion() {
 fn complete_results_preserve_both_streams_status_and_last_result() {
     let output = run(r#"
         (let here (pwd)) (let saved $?)
-        (printf "%s/%s\n" (exit-code $saved) (eq $here (strim (stdout-text $saved))))
+        (printf "%s/%s\n" (exit-code $saved) (eq $here (str/trim (stdout-text $saved))))
         (let r (capture-call sh -c 'printf output; printf error >&2; exit 7'))
         (set saved $?)
         (printf "%s/%s/%s/%s/%s\n" (stdout-text $r) (stderr-text $r)
@@ -1167,7 +1201,7 @@ fn commands_through_apply_preserve_argument_values_and_run_once() {
     assert!(stderr(&output).contains("got a struct"));
     let output = run(r#"(defn echo (x) (str wrapped- $x))
         (printf "%s/%s" (CallResult.value (capture-call echo a))
-                (strim (stdout-text (capture-call (command echo) a))))"#);
+                (str/trim (stdout-text (capture-call (command echo) a))))"#);
     success(&output);
     assert_eq!(stdout(&output), "wrapped-a/a");
 }
@@ -1193,7 +1227,7 @@ fn raw_capture_accepts_binary_and_dual_streams_without_deadlocking() {
                 (eq (CallResult.stdout $binary) (CallResult.stdout (capture-call sh -c 'printf "\377"'))))
         (try (stdout-text $binary) (catch e (printf invalid)))
         (let large (capture-call sh -c 'head -c 1048576 /dev/zero; head -c 1048576 /dev/zero >&2'))
-        (printf "/%s/%s" (slen (stdout-text $large)) (slen (stderr-text $large)))
+        (printf "/%s/%s" (str/len (stdout-text $large)) (str/len (stderr-text $large)))
         "#);
     success(&output);
     assert_eq!(stdout(&output), "true/true/invalid/1048576/1048576");
@@ -1221,8 +1255,8 @@ fn capture_preserves_redirection_and_pipeline_stage_information() {
         (printf "%s/%s/" (nil? (CallResult.stdout $r)) (nil? (CallResult.stderr $r)))
         (cat out err)
         (set r (capture-call (fn () (| (sh -c 'exit 7') (sh -c 'exit 3') (cat)))))
-        (printf "/%s/%s/%s" (exit-code $r) (llen (CallResult.stages $r))
-          (Exited.code (StageResult.termination (lfirst (CallResult.stages $r)))))
+        (printf "/%s/%s/%s" (exit-code $r) (list/len (CallResult.stages $r))
+          (Exited.code (StageResult.termination (list/first (CallResult.stages $r)))))
         "#,
         ],
         "",
@@ -1407,7 +1441,7 @@ fn finally_and_skipped_iterations_cannot_replace_the_returned_command_metadata()
             (if (= $n #1) (do (printf skipped) (continue)))
             (printf completed)))))
         (printf "%s/%s" (stdout-text $next)
-          (lfirst (StageResult.argv (lfirst (CallResult.stages $next)))))
+          (list/first (StageResult.argv (list/first (CallResult.stages $next)))))
         "#);
     success(&output);
     assert_eq!(stdout(&output), "7/cleaned/completedskipped/printf");
