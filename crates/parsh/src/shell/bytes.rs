@@ -123,7 +123,7 @@ fn hex_decode(text: &str) -> Result<Vec<u8>, String> {
         return Err("hex input must contain an even number of digits".into());
     }
     let mut result = Vec::with_capacity(bytes.len() / 2);
-    for pair in bytes.chunks_exact(2) {
+    for pair in bytes.as_chunks::<2>().0 {
         let high =
             hex_digit(pair[0]).ok_or_else(|| "hex input contains an invalid digit".to_owned())?;
         let low =
