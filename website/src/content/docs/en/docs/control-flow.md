@@ -125,4 +125,6 @@ also return its expansion early; return in expanded code belongs to the caller.
 An interactive session displays `"hello, parsh"`, `("yes")`, and `"last"`. A loop returns the last body's result, rather than collecting every iteration. These examples work in the browser playground.
 
 
-`apply` also accepts external references from `command` and ordinary text names. Error handling uses `try/catch/finally` and `throw`; see [execution results and tasks](/parsh/en/docs/execution/).
+`apply` also accepts external references from `command` and ordinary text names,
+including quoted names such as `"str/join"`. Error handling uses
+`try/catch/finally` and `throw`; see [execution results and tasks](/parsh/en/docs/execution/).

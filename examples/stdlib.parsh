@@ -8,6 +8,12 @@
 (echo "last=$(list/get $extended #-1); middle=$(str/join (list/slice $extended #1 #-1) ', ')")
 (echo "Unicode characters: $(str/len '中文')")
 
+(defstruct Profile name enabled)
+(let encoded (json/encode (Profile parsh #true)))
+(echo "json=$encoded; decoded-name=$(map/get (json/decode $encoded) name)")
+(let marked (list/map (fn (value) (str $value "!")) $names))
+(echo "mapped=$(str/join $marked ', '); base64=$(bytes/base64-encode (bytes/from-text 'parsh'))")
+
 (defn accumulator (initial)
   (fn (&optional (step #1) &rest more)
     (set initial (+ $initial $step))

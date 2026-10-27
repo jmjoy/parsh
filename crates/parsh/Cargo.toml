@@ -11,7 +11,13 @@ categories = ["command-line-utilities"]
 
 [features]
 default = ["native"]
-native = ["dep:clap", "dep:crossterm", "dep:nix", "dep:signal-hook"]
+native = [
+    "dep:clap",
+    "dep:crossterm",
+    "dep:nix",
+    "dep:signal-hook",
+    "dep:ureq",
+]
 
 [[bin]]
 name = "parsh"
@@ -27,14 +33,17 @@ name = "terminal"
 required-features = ["native"]
 
 [dependencies]
+base64 = "0.23"
 clap = { version = "4", features = ["derive"], optional = true }
 crossterm = { version = "0.29", optional = true }
 glob = "0.3"
 indexmap = "2"
 nix = { version = "0.31", features = ["fs", "process", "signal", "term", "user"], optional = true }
+serde_json = { version = "1", features = ["preserve_order"] }
 signal-hook = { version = "0.3", optional = true }
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
+ureq = { version = "3", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

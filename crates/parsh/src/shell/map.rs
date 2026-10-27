@@ -3,6 +3,85 @@ use crate::{reader::Expr, streams::Io};
 use indexmap::IndexMap;
 
 impl Shell {
+    pub(super) fn map_transform(
+        &mut self,
+        expr: &Expr,
+        command: &str,
+        args: Arguments<'_>,
+        env: &Env,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        match command {
+            "map/merge" => {
+                let mut result = IndexMap::new();
+                for index in 0..args.len() {
+                    let Value::Map(values) = args.value(self, index, env, io)? else {
+                        return Err(
+                            Error::new(args.at(expr, index), "map/merge expects maps").into()
+                        );
+                    };
+                    for (key, value) in values {
+                        result.insert(key, value);
+                    }
+                }
+                Ok(Value::Map(result))
+            }
+            "map/entries" => {
+                let Value::Map(values) = args.value(self, 0, env, io)? else {
+                    return Err(Error::new(args.at(expr, 0), "map/entries expects a map").into());
+                };
+                Ok(Value::List(
+                    values
+                        .into_iter()
+                        .map(|(key, value)| Value::List(vec![Value::Text(key), value]))
+                        .collect(),
+                ))
+            }
+            "map/from-entries" => {
+                let Value::List(entries) = args.value(self, 0, env, io)? else {
+                    return Err(
+                        Error::new(args.at(expr, 0), "map/from-entries expects a list").into(),
+                    );
+                };
+                let mut result = IndexMap::new();
+                for entry in entries {
+                    let Value::List(mut pair) = entry else {
+                        return Err(Error::new(
+                            args.at(expr, 0),
+                            "map/from-entries expects pairs of [key value]",
+                        )
+                        .into());
+                    };
+                    if pair.len() != 2 {
+                        return Err(Error::new(
+                            args.at(expr, 0),
+                            "map/from-entries expects pairs of [key value]",
+                        )
+                        .into());
+                    }
+                    let value = pair.pop().unwrap();
+                    let Value::Text(key) = pair.pop().unwrap() else {
+                        return Err(Error::new(
+                            args.at(expr, 0),
+                            "map/from-entries keys must be text",
+                        )
+                        .into());
+                    };
+                    if result.contains_key(&key) {
+                        return Err(Error::new(
+                            args.at(expr, 0),
+                            format!("duplicate map key {key:?}"),
+                        )
+                        .into());
+                    }
+                    result.insert(key, value);
+                }
+                Ok(Value::Map(result))
+            }
+            _ => unreachable!("unknown map transform"),
+        }
+    }
+
     fn map_key(
         &mut self,
         expr: &Expr,

@@ -663,6 +663,8 @@ fn callable_names_and_explicit_command_references_are_first_class() {
         (list (command? (command echo)) (callable? (function +))
               (callable? (command echo)) (bytes? hello) (typeof (command echo)))
         (apply + #1 [#2 #3])
+        (apply "str/join" [[a b] ","])
+        (apply "map/get" [{name parsh} name])
         (let r (capture-call + #1 #2))
         (list (CallResult.value $r) (CallResult.termination $r)
               (bytes? (CallResult.stdout $r)) (stdout-text $r))
@@ -671,10 +673,13 @@ fn callable_names_and_explicit_command_references_are_first_class() {
         [
             r#"(#true #true #true #false "command")"#,
             "#6",
+            r#""a,b""#,
+            r#""parsh""#,
             r#"(#3 #nil #true "")"#
         ]
     );
     fails("(apply if [#true a b])", "not an ordinary callable");
+    fails("(apply \"if\" [#true a b])", "not an ordinary callable");
     fails("(command #1)", "nonempty text program name");
 }
 

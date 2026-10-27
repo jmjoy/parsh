@@ -2107,3 +2107,9 @@ mod map_tests;
 
 #[cfg(test)]
 mod struct_tests;
+
+#[cfg(test)]
+mod json_tests;
+
+#[cfg(test)]
+mod data_tests;

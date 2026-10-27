@@ -15,11 +15,19 @@ creates an explicit external reference, even if a function has the same name:
 (apply + [#1 #2])
 ```
 
-`apply` accepts a function, command reference, or text name. `function` continues to
-obtain only user functions and ordinary builtins. `command?` and `callable?` inspect
-references. Names follow ordinary lookup; macros and special forms such as `if`
-cannot be passed as ordinary callees. Arguments evaluate once from left to right,
-and values passed by `apply` are never reparsed as source.
+`apply` accepts a function, command reference, or text name. The text may be a
+quoted string, so namespace names can be selected dynamically:
+
+```parsh
+(apply "str/join" [[a b] ","])
+(apply "map/get" [{name parsh} name])
+```
+
+`function` continues to obtain only user functions and ordinary builtins.
+`command?` and `callable?` inspect references. Names follow ordinary lookup;
+macros and special forms such as `if` cannot be passed as ordinary callees.
+Arguments evaluate once from left to right, and values passed by `apply` are never
+reparsed as source.
 
 Ordinary calls keep their existing behavior: `(let here (pwd))` obtains stdout as
 UTF-8 text with trailing LF characters removed, while arithmetic and typed functions

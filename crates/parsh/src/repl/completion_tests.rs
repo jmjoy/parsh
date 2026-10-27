@@ -208,12 +208,42 @@ fn module_prefixes_list_members_in_commands_and_function_references() {
             ),
             (
                 "list",
-                vec!["append", "concat", "first", "get", "len", "rest", "slice"],
+                vec![
+                    "all", "any", "append", "concat", "contains", "filter", "first", "fold", "get",
+                    "len", "map", "rest", "reverse", "slice",
+                ],
             ),
             (
                 "map",
-                vec!["del", "get", "has", "keys", "len", "set", "vals"],
+                vec![
+                    "del",
+                    "entries",
+                    "from-entries",
+                    "get",
+                    "has",
+                    "keys",
+                    "len",
+                    "merge",
+                    "set",
+                    "vals",
+                ],
             ),
+            (
+                "bytes",
+                vec![
+                    "base64-decode",
+                    "base64-encode",
+                    "concat",
+                    "from-text",
+                    "hex-decode",
+                    "hex-encode",
+                    "len",
+                    "slice",
+                    "to-text",
+                ],
+            ),
+            ("json", vec!["decode", "encode"]),
+            ("http", vec!["body-text", "get", "post", "request"]),
         ] {
             let expected: Vec<_> = members
                 .iter()
@@ -271,8 +301,19 @@ fn new_functions_and_parameter_declarations_complete_without_execution() {
     assert_eq!(
         listings(&events)[0],
         &[
-            "map", "map/del", "map/get", "map/has", "map/keys", "map/len", "map/set", "map/vals",
-            "map?", "max"
+            "map",
+            "map/del",
+            "map/entries",
+            "map/from-entries",
+            "map/get",
+            "map/has",
+            "map/keys",
+            "map/len",
+            "map/merge",
+            "map/set",
+            "map/vals",
+            "map?",
+            "max",
         ]
     );
 }

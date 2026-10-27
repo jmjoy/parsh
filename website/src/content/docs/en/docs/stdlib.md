@@ -1,6 +1,6 @@
 ---
 title: "Standard library"
-description: "Immutable lists, Unicode text, type predicates, and numeric helpers."
+description: "Immutable collections, JSON helpers, native HTTP requests, and numeric helpers."
 ---
 
 These builtins share their implementation between native parsh and the browser.
@@ -18,12 +18,102 @@ Text, list, and map operations use `module/member` names, such as
 (list/append [a] b)
 (map/get {name parsh} name)
 (apply (function str/join) [[a b] ","])
+(apply "str/join" [[a b] ","])
 ```
 
 The constructors `str`, `list`, and `map` keep their names. The old prefixed
 operation names have been removed; scripts must use the module names.
-Builtin namespaces are available directly, without imports. User module
+Names such as `str/join` are ordinary names. The slash is just a character in a
+name or text value; it is a naming convention for grouping related functions,
+not import syntax or a module object. A standalone `/` remains the division
+builtin. Builtin namespaces are available directly, without imports. User module
 declarations and file imports are not yet supported.
+
+## JSON
+
+`json/encode` returns compact JSON text. It accepts scalars, lists, maps, and
+structs; struct fields become object properties. `json/decode` accepts UTF-8 text
+or bytes and returns the corresponding parsh value: objects become maps, arrays
+become lists, and `null` becomes nil.
+
+```parsh
+(defstruct User name admin)
+(let body (json/encode (User parsh #true)))
+(let value (json/decode body))
+(map/get $value name)
+```
+
+Functions, commands, forms, bytes when encoding, statuses, and non-finite
+numbers are rejected. JSON objects preserve input order; duplicate keys use the
+last value.
+
+## HTTP
+
+Native parsh provides synchronous HTTP requests through `http/`. The browser
+runtime currently reports an unsupported capability for these functions.
+
+```parsh
+(let response
+  (http/get "https://example.com/api"
+            (map "accept" ["application/json"])))
+(if (HttpResponse.ok $response)
+    (json/decode (HttpResponse.body $response))
+    (HttpResponse.status $response))
+```
+
+The available calls are:
+
+| Call | Result |
+| --- | --- |
+| `(http/request method url [body] [headers])` | An `HttpResponse`; use `#nil` when a custom method has headers but no body. |
+| `(http/get url [headers])` | A GET response. |
+| `(http/post url body [headers])` | A POST response. |
+| `(http/body-text response)` | Strict UTF-8 text from the response body. |
+
+Request bodies accept nil, text, or bytes. Headers are maps from text names to
+lists of text values. Response headers use lowercase names and preserve repeated
+values in their lists. `HttpResponse` contains `status`, `ok`, `headers`, `body`
+as bytes, and the final `url`. A 4xx or 5xx response is still returned as data;
+DNS, connection, protocol, and body-limit failures raise a language error.
+
+## Data transforms
+
+Higher-order list functions take the function first and return new values:
+
+```parsh
+(list/map (fn (value) (str $value "!")) [a b])
+(list/filter (fn (value) (eq $value yes)) [yes no yes])
+(list/fold (fn (total value) (+ $total $value)) #0 [#1 #2 #3])
+```
+
+Available operations also include `list/any`, `list/all`, `list/reverse`, and
+`list/contains`. Predicates must return booleans; `any` on an empty list is
+false and `all` on an empty list is true.
+
+Maps support shallow merging and ordered entry conversion:
+
+```parsh
+(map/merge {name parsh} {version #1})
+(map/entries {name parsh version #1})
+(map/from-entries [[name parsh] [version #1]])
+```
+
+Later maps overwrite earlier values while keeping the original key position;
+new keys are appended. `map/from-entries` rejects malformed pairs and duplicate
+keys.
+
+## Bytes
+
+`bytes/` functions operate on raw bytes returned by command capture and HTTP:
+
+| Call | Result |
+| --- | --- |
+| `(bytes/len value)` | Byte length. |
+| `(bytes/slice value start [end])` | Byte slice using list index rules. |
+| `(bytes/concat values...)` | Concatenated bytes. |
+| `(bytes/from-text text)` / `(bytes/to-text bytes)` | UTF-8 conversion; decoding is strict. |
+| `(bytes/base64-encode bytes)` / `(bytes/base64-decode text)` | Standard Base64 conversion. |
+| `(bytes/hex-encode bytes)` / `(bytes/hex-decode text)` | Lowercase hex encoding and strict decoding. |
 
 ## Scalar conversions
 
@@ -128,8 +218,8 @@ the same rule. Defaults declared with `&optional` run only when an argument is o
 ## Type predicates
 
 `typeof` returns a type name as text: `text`, `int`, `float`, `bool`, `list`,
-`map`, `form`, `struct`, `function`, `nil`, or `status`. Corresponding predicates
-are `text?`, `int?`, `float?`, `bool?`, `list?`, `map?`, `form?`, `struct?`,
+`map`, `form`, `struct`, `bytes`, `function`, `nil`, or `status`. Corresponding predicates
+are `text?`, `int?`, `float?`, `bool?`, `list?`, `map?`, `form?`, `struct?`, `bytes?`,
 `function?`, `nil?`, and `status?`. `number?` accepts both integers and floats.
 `empty?` accepts text, lists, and maps, and rejects other types.
 

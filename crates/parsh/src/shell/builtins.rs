@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use super::{Env, Error, EvalResult, Mode, Number, Shell, Value};
+use super::{Env, Error, EvalResult, Mode, Number, Shell, Value, bytes, http, json};
 use crate::{reader::Expr, streams::Io};
 
 pub(super) const VALUE_BUILTINS: &[&str] = &[
@@ -14,6 +14,15 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "map/keys",
     "map/vals",
     "map/len",
+    "map/merge",
+    "map/entries",
+    "map/from-entries",
+    "json/encode",
+    "json/decode",
+    "http/request",
+    "http/get",
+    "http/post",
+    "http/body-text",
     "str",
     "int",
     "float",
@@ -37,6 +46,22 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "list/append",
     "list/concat",
     "list/slice",
+    "list/map",
+    "list/filter",
+    "list/fold",
+    "list/any",
+    "list/all",
+    "list/reverse",
+    "list/contains",
+    "bytes/len",
+    "bytes/slice",
+    "bytes/concat",
+    "bytes/from-text",
+    "bytes/to-text",
+    "bytes/base64-encode",
+    "bytes/base64-decode",
+    "bytes/hex-encode",
+    "bytes/hex-decode",
     "str/len",
     "str/get",
     "str/slice",
@@ -247,6 +272,25 @@ fn arity(name: &str) -> (usize, usize) {
         "capture-call" | "spawn" => (1, usize::MAX),
         "map/get" | "list/get" | "str/get" | "list/slice" | "str/slice" => (2, 3),
         "map/set" | "str/replace" => (3, 3),
+        "map/merge" | "bytes/concat" => (0, usize::MAX),
+        "map/entries"
+        | "map/from-entries"
+        | "list/reverse"
+        | "bytes/len"
+        | "bytes/from-text"
+        | "bytes/to-text"
+        | "bytes/base64-encode"
+        | "bytes/base64-decode"
+        | "bytes/hex-encode"
+        | "bytes/hex-decode" => (1, 1),
+        "list/contains" => (2, 2),
+        "list/map" | "list/filter" | "list/any" | "list/all" => (2, 2),
+        "list/fold" => (3, 3),
+        "bytes/slice" => (2, 3),
+        "http/request" => (2, 4),
+        "http/get" => (1, 2),
+        "http/post" => (2, 3),
+        "json/encode" | "json/decode" | "http/body-text" => (1, 1),
         "eq" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "map/del" | "map/has" | "quot" | "rem"
         | "str/split" | "str/join" | "str/contains" => (2, 2),
         "list/first" => (1, 2),
@@ -267,6 +311,19 @@ impl Shell {
         let (min, max) = arity(name);
         Self::arity_count(expr, args.len(), min, max)?;
         match name {
+            "json/encode" | "json/decode" => json::call(self, expr, name, args, env, mode, io),
+            "bytes/len"
+            | "bytes/slice"
+            | "bytes/concat"
+            | "bytes/from-text"
+            | "bytes/to-text"
+            | "bytes/base64-encode"
+            | "bytes/base64-decode"
+            | "bytes/hex-encode"
+            | "bytes/hex-decode" => bytes::call(self, expr, name, args, env, mode, io),
+            "http/request" | "http/get" | "http/post" | "http/body-text" => {
+                http::call(self, expr, name, args, env, mode, io)
+            }
             "command" | "command?" | "callable?" | "bytes?" | "capture-call" | "spawn" | "wait"
             | "job-status" | "cancel" | "check" | "stdout-text" | "stderr-text" | "exit-code"
             | "signal" | "throw" => self.execution_builtin(expr, name, args, env, mode, io),
@@ -282,6 +339,9 @@ impl Shell {
             "map" => self.construct_map(expr, args, env, io),
             "map/get" | "map/set" | "map/del" | "map/has" | "map/keys" | "map/vals" | "map/len" => {
                 self.map_command(expr, name, args, env, io)
+            }
+            "map/merge" | "map/entries" | "map/from-entries" => {
+                self.map_transform(expr, name, args, env, io)
             }
             "str" => {
                 let mut result = String::new();
@@ -393,6 +453,8 @@ impl Shell {
                 values.extend(tail);
                 self.call_value(expr, callee, Arguments::Values(&values), env, mode, io)
             }
+            "list/map" | "list/filter" | "list/fold" | "list/any" | "list/all" | "list/reverse"
+            | "list/contains" => self.list_transform(expr, name, args, env, mode, io),
             _ => {
                 // New value operations evaluate explicit arguments in order before
                 // inspecting their types or choosing a fallback result.
@@ -592,6 +654,99 @@ impl Shell {
                 Ok(Value::List(items.drain(start..end).collect()))
             }
             _ => unreachable!("unknown list builtin"),
+        }
+    }
+
+    fn list_transform(
+        &mut self,
+        expr: &Expr,
+        name: &str,
+        args: Arguments<'_>,
+        env: &Env,
+        mode: Mode,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        match name {
+            "list/reverse" => {
+                let Value::List(mut values) = args.value(self, 0, env, io)? else {
+                    return Err(Error::new(args.at(expr, 0), "list/reverse expects a list").into());
+                };
+                values.reverse();
+                Ok(Value::List(values))
+            }
+            "list/contains" => {
+                let Value::List(values) = args.value(self, 0, env, io)? else {
+                    return Err(Error::new(args.at(expr, 0), "list/contains expects a list").into());
+                };
+                let needle = args.value(self, 1, env, io)?;
+                Ok(Value::Bool(values.iter().any(|value| value == &needle)))
+            }
+            "list/map" | "list/filter" | "list/any" | "list/all" => {
+                let callback = args.value(self, 0, env, io)?;
+                let Value::List(values) = args.value(self, 1, env, io)? else {
+                    return Err(
+                        Error::new(args.at(expr, 1), "list transform expects a list").into(),
+                    );
+                };
+                let mut mapped = Vec::with_capacity(values.len());
+                for value in values {
+                    let callback_args = [value.clone()];
+                    let result = self.call_value(
+                        expr,
+                        callback.clone(),
+                        Arguments::Values(&callback_args),
+                        env,
+                        mode,
+                        io,
+                    )?;
+                    match name {
+                        "list/map" => mapped.push(result),
+                        "list/filter" | "list/any" | "list/all" => {
+                            let Value::Bool(keep) = result else {
+                                return Err(Error::new(
+                                    args.at(expr, 0),
+                                    format!("{name} predicate must return bool"),
+                                )
+                                .into());
+                            };
+                            if name == "list/filter" && keep {
+                                mapped.push(value);
+                            } else if name == "list/any" && keep {
+                                return Ok(Value::Bool(true));
+                            } else if name == "list/all" && !keep {
+                                return Ok(Value::Bool(false));
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                Ok(match name {
+                    "list/map" | "list/filter" => Value::List(mapped),
+                    "list/any" => Value::Bool(false),
+                    "list/all" => Value::Bool(true),
+                    _ => unreachable!(),
+                })
+            }
+            "list/fold" => {
+                let callback = args.value(self, 0, env, io)?;
+                let mut accumulator = args.value(self, 1, env, io)?;
+                let Value::List(values) = args.value(self, 2, env, io)? else {
+                    return Err(Error::new(args.at(expr, 2), "list/fold expects a list").into());
+                };
+                for value in values {
+                    let callback_args = [accumulator, value];
+                    accumulator = self.call_value(
+                        expr,
+                        callback.clone(),
+                        Arguments::Values(&callback_args),
+                        env,
+                        mode,
+                        io,
+                    )?;
+                }
+                Ok(accumulator)
+            }
+            _ => unreachable!("unknown list transform"),
         }
     }
 

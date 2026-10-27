@@ -108,4 +108,5 @@ description: "词法函数、条件分支、顺序求值与循环。"
 交互环境依次显示 `"hello, parsh"`、`("yes")` 和 `"last"`。循环返回最后一次循环体的结果，不会收集每次迭代的值。这组示例可以直接在浏览器终端中运行。
 
 
-`apply` 也接受 `command` 创建的外部引用和普通文本名称。异常处理使用 `try/catch/finally` 和 `throw`，见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。
+`apply` 也接受 `command` 创建的外部引用和普通文本名称，包括 `"str/join"` 这样的引号名称。
+异常处理使用 `try/catch/finally` 和 `throw`，见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。

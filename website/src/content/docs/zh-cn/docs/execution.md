@@ -14,8 +14,15 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 (apply + [#1 #2])
 ```
 
-`apply` 接受函数值、命令引用或文本名称；`function` 仍只取得用户函数和普通内置。
-`command?`、`callable?` 用于检查引用。名称沿用普通查找规则，宏和 `if` 等特殊形式不能作为普通被调用对象。
+`apply` 接受函数值、命令引用或文本名称。文本名称可以是引号字符串，因此可以动态选择命名空间函数：
+
+```parsh
+(apply "str/join" [[a b] ","])
+(apply "map/get" [{name parsh} name])
+```
+
+`function` 仍只取得用户函数和普通内置。`command?`、`callable?` 用于检查引用。
+名称沿用普通查找规则，宏和 `if` 等特殊形式不能作为普通被调用对象。
 实参从左到右求值一次，`apply` 不将值重新解析成源码。
 
 普通调用保留原来的取值规则：`(let here (pwd))` 得到去掉尾部 LF 的 UTF-8 stdout 文本，

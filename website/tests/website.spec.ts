@@ -145,10 +145,12 @@ test("module names support function references, dynamic calls, completion, and l
     (let getter map/get)
     (list ((function str/join) [a b] ",")
           (apply (function list/append) [[a] b])
+          (apply "str/join" [[a b] ","])
+          (apply "map/get" [{name parsh} name])
           ($getter {name parsh} name))
     (type -t str/join list/append map/get)
   `);
-  await expect(terminal(page)).toContainText('("a,b" ("a" "b") "parsh")');
+  await expect(terminal(page)).toContainText('("a,b" ("a" "b") "a,b" "parsh" "parsh")');
   await expect.poll(async () =>
     (await terminal(page).innerText()).split("\n").filter(line => line.trim() === "builtin"),
   ).toEqual(["builtin", "builtin", "builtin"]);
@@ -175,6 +177,38 @@ test("module names support function references, dynamic calls, completion, and l
     await page.keyboard.press("Enter");
     await expect(terminal(page)).toContainText(result);
   }
+});
+
+test("JSON values work in the browser and HTTP reports its native-only capability", async ({ page }) => {
+  await playground(page);
+  await execute(page, `
+    (defstruct BrowserProfile name enabled)
+    (let encoded (json/encode (BrowserProfile parsh #true)))
+    (list $encoded (map/get (json/decode $encoded) name)
+          (json/decode "[true,null]"))
+  `);
+  await expect(terminal(page)).toContainText(
+    '("{\\"name\\":\\"parsh\\",\\"enabled\\":true}" "parsh" (#true #nil))',
+  );
+  await execute(page, '(http/get "https://example.com")');
+  await expect(terminal(page)).toContainText("requires native HTTP support");
+});
+
+test("list, map, and bytes data transforms share native semantics in the browser", async ({ page }) => {
+  await playground(page);
+  await execute(page, `
+    (defn keep-yes (value) (eq $value yes))
+    (list
+      (list/map (fn (value) (str $value "!")) [a b])
+      (list/filter keep-yes [yes no yes])
+      (list/fold (fn (total value) (+ $total $value)) #0 [#1 #2 #3])
+      (map/merge {a one b two} {b changed c three})
+      (map/entries {a one b two}))
+  `);
+  await expect(terminal(page)).toContainText('(("a!" "b!") ("yes" "yes") #6');
+  await expect(terminal(page)).toContainText('(map "a" "one" "b" "changed" "c" "three")');
+  await execute(page, '(bytes/base64-encode (bytes/from-text "hello"))');
+  await expect(terminal(page)).toContainText('"aGVsbG8="');
 });
 
 test("collection shorthand supports nested values, Enter submission, and history in the browser", async ({ page }) => {

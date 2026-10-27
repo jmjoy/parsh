@@ -1,6 +1,6 @@
 ---
 title: "基础库"
-description: "不可变列表、Unicode 字符串、类型判断和数值函数。"
+description: "不可变集合、JSON、原生 HTTP 请求、类型判断和数值函数。"
 ---
 
 这些内置函数在原生终端和浏览器中共用实现，都支持 `(function name)` 和 `apply`。
@@ -17,10 +17,90 @@ description: "不可变列表、Unicode 字符串、类型判断和数值函数�
 (list/append [a] b)
 (map/get {name parsh} name)
 (apply (function str/join) [[a b] ","])
+(apply "str/join" [[a b] ","])
 ```
 
 构造器 `str`、`list`、`map` 保留原名。旧的字母前缀操作名已移除，脚本需要改用模块名称。
-内置命名空间可以直接使用，无需导入；目前尚不支持用户模块声明和文件导入。
+`str/join` 这样的名称仍是普通名称；其中的 `/` 只是名称或文本值中的一个字符，约定用来归类相关函数，
+不是导入语法，也不是运行时的模块对象。单独的 `/` 仍然是除法内置。内置命名空间可以直接使用，无需导入；
+目前尚不支持用户模块声明和文件导入。
+
+## JSON
+
+`json/encode` 返回紧凑的 JSON 文本，接受标量、列表、映射和结构体；结构体字段会成为对象属性。
+`json/decode` 接受 UTF-8 文本或 bytes，并返回对应的 parsh 值：对象变成映射，数组变成列表，`null` 变成 nil。
+
+```parsh
+(defstruct User name admin)
+(let body (json/encode (User parsh #true)))
+(let value (json/decode body))
+(map/get $value name)
+```
+
+编码函数、命令、表单、bytes、状态和非有限数值都会报错。JSON 对象保留输入顺序；重复键采用最后一个值。
+
+## HTTP
+
+原生 parsh 通过 `http/` 提供同步 HTTP 请求；浏览器运行时目前会报告能力不支持。
+
+```parsh
+(let response
+  (http/get "https://example.com/api"
+            (map "accept" ["application/json"])))
+(if (HttpResponse.ok $response)
+    (json/decode (HttpResponse.body $response))
+    (HttpResponse.status $response))
+```
+
+可用函数如下：
+
+| 调用 | 返回值 |
+| --- | --- |
+| `(http/request method url [body] [headers])` | `HttpResponse`；自定义方法无 body 但有 headers 时使用 `#nil` 占位。 |
+| `(http/get url [headers])` | GET 响应。 |
+| `(http/post url body [headers])` | POST 响应。 |
+| `(http/body-text response)` | 将响应 body 严格解码为 UTF-8 文本。 |
+
+请求 body 接受 nil、文本或 bytes。Headers 是文本名称到文本列表的映射；响应 header 名称统一为小写，重复值保留在列表中。
+`HttpResponse` 包含 `status`、`ok`、`headers`、bytes 类型的 `body` 和最终 `url`。
+4xx 或 5xx 响应仍作为数据返回；DNS、连接、协议和 body 超限错误会抛出语言错误。
+
+## 数据变换
+
+高阶列表函数把函数放在首位，并返回新值：
+
+```parsh
+(list/map (fn (value) (str $value "!")) [a b])
+(list/filter (fn (value) (eq $value yes)) [yes no yes])
+(list/fold (fn (total value) (+ $total $value)) #0 [#1 #2 #3])
+```
+
+另外还有 `list/any`、`list/all`、`list/reverse` 和 `list/contains`。
+谓词必须返回布尔值；空列表上的 `any` 返回假，`all` 返回真。
+
+映射支持浅合并和有序 entries 转换：
+
+```parsh
+(map/merge {name parsh} {version #1})
+(map/entries {name parsh version #1})
+(map/from-entries [[name parsh] [version #1]])
+```
+
+后面的映射覆盖前面的值，同时保留原键的位置；新键追加到末尾。
+`map/from-entries` 会拒绝格式错误的 pair 和重复键。
+
+## Bytes
+
+`bytes/` 函数操作命令捕获和 HTTP 返回的原始 bytes：
+
+| 调用 | 返回值 |
+| --- | --- |
+| `(bytes/len value)` | 字节长度。 |
+| `(bytes/slice value start [end])` | 使用列表索引规则切片。 |
+| `(bytes/concat values...)` | 拼接 bytes。 |
+| `(bytes/from-text text)` / `(bytes/to-text bytes)` | UTF-8 转换，解码严格检查。 |
+| `(bytes/base64-encode bytes)` / `(bytes/base64-decode text)` | 标准 Base64 转换。 |
+| `(bytes/hex-encode bytes)` / `(bytes/hex-decode text)` | 小写 Hex 编码和严格解码。 |
 
 ## 标量转换
 
@@ -117,8 +197,8 @@ description: "不可变列表、Unicode 字符串、类型判断和数值函数�
 ## 类型判断
 
 `typeof` 返回类型名称文本：`text`、`int`、`float`、`bool`、`list`、`map`、`form`、
-`struct`、`function`、`nil`、`status`。对应判定为 `text?`、`int?`、`float?`、`bool?`、
-`list?`、`map?`、`form?`、`struct?`、`function?`、`nil?`、`status?`。
+`struct`、`bytes`、`function`、`nil`、`status`。对应判定为 `text?`、`int?`、`float?`、`bool?`、
+`list?`、`map?`、`form?`、`struct?`、`bytes?`、`function?`、`nil?`、`status?`。
 `number?` 同时接受整数和浮点数；`empty?` 判断文本、列表或映射是否为空，其他类型报错。
 
 判断严格检查运行时类型：裸词 `123` 是文本，因此 `(number? 123)` 为假，

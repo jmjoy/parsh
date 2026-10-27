@@ -32,8 +32,11 @@ use std::{
 };
 
 mod builtins;
+mod bytes;
 mod execution;
 mod functions;
+mod http;
+mod json;
 mod map;
 #[cfg(feature = "native")]
 mod snapshot;

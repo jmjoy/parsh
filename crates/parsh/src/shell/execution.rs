@@ -22,6 +22,7 @@ pub(super) const TYPES: &[(&str, &[&str])] = &[
         "Error",
         &["kind", "message", "code", "offset", "payload", "result"],
     ),
+    ("HttpResponse", &["status", "ok", "headers", "body", "url"]),
 ];
 
 pub(super) fn record(name: &str, fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
