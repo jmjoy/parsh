@@ -289,7 +289,7 @@ fn new_functions_and_parameter_declarations_complete_without_execution() {
         ),
     ] {
         repl.input(Key::ClearInput);
-        type_text(&mut repl, source);
+        repl.paste(source);
         repl.input(Key::Tab);
         assert_eq!(repl.session.input.body, completed, "{source}");
     }
@@ -338,7 +338,7 @@ fn loop_builtins_complete_in_commands_and_nested_expressions_without_running() {
         ("for item (list a) (cont", "for item (list a) (continue "),
     ] {
         let mut repl = Repl::new();
-        type_text(&mut repl, source);
+        repl.paste(source);
         repl.input(Key::Tab);
         assert_eq!(repl.session.input.body, expected);
         assert!(repl.session.history.entries.is_empty());
@@ -505,6 +505,7 @@ fn quoted_directory_completion_can_continue_into_the_next_component() {
     for delimiter in ["", "\"\"\"", "'''"] {
         let mut repl = Repl::with_host(TestHost::default()).unwrap();
         type_text(&mut repl, &format!("str {delimiter}fol"));
+        let closer = delimiter;
         let delimiter = if delimiter.is_empty() {
             "\""
         } else {
@@ -513,7 +514,7 @@ fn quoted_directory_completion_can_continue_into_the_next_component() {
         repl.input(Key::Tab);
         assert_eq!(
             repl.session.input.body,
-            format!("str {delimiter}folder name/")
+            format!("str {delimiter}folder name/{closer}")
         );
         repl.input(Key::Tab);
         assert_eq!(
@@ -549,7 +550,7 @@ fn triple_quoted_completion_preserves_embedded_variables_and_calls() {
     repl.input(Key::ClearInput);
     type_text(&mut repl, r#"str """$(str/tr"#);
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, r#"str """$(str/trim "#);
+    assert_eq!(repl.session.input.body, r#"str """$(str/trim)""""#);
     type_text(&mut repl, r#"'''inner''')!""""#);
     assert!(
         repl.input(Key::Enter)
@@ -584,7 +585,7 @@ fn quoted_variable_and_expression_completion_preserve_the_surrounding_text() {
     repl.input(Key::ClearInput);
     type_text(&mut repl, r#"str "$(str/tr"#);
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, r#"str "$(str/trim "#);
+    assert_eq!(repl.session.input.body, r#"str "$(str/trim)""#);
     type_text(&mut repl, r#""inner")!""#);
     assert!(
         repl.input(Key::Enter)
@@ -592,7 +593,7 @@ fn quoted_variable_and_expression_completion_preserve_the_surrounding_text() {
     );
     type_text(&mut repl, r#"str "$(echo no-run) $TAB_N"#);
     repl.input(Key::Tab);
-    assert_eq!(repl.session.input.body, r#"str "$(echo no-run) $TAB_NAME"#);
+    assert_eq!(repl.session.input.body, r#"str "$(echo no-run) $TAB_NAME""#);
     assert_eq!(host.runs.get(), 0);
 }
 
@@ -695,7 +696,7 @@ fn unknown_prefixes_and_comments_are_no_ops_and_literal_pasted_tabs_survive() {
     let mut repl = Repl::with_host(TestHost::default()).unwrap();
     for text in ["no-such-prefix", "(; (ec", "(let na", "(defn f (na"] {
         repl.input(Key::ClearInput);
-        type_text(&mut repl, text);
+        repl.paste(text);
         repl.input(Key::Tab);
         let events = repl.input(Key::Tab);
         assert_eq!(repl.session.input.body, text);

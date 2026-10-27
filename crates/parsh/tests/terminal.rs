@@ -554,6 +554,72 @@ fn emacs_alt_backspace_and_split_escape_prefix_share_the_kill_ring() {
 }
 
 #[test]
+fn paredit_typed_pairs_triple_quotes_and_safe_deletion_use_real_keys() {
+    let mut terminal = Terminal::new();
+    let offset = terminal.send(b"(str \"PAREDIT_PAIR");
+    terminal.expect(b"(str \"PAREDIT_PAIR\")", offset);
+    terminal.drain();
+    assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\n\"PAREDIT_PAIR\"\r\n"));
+    terminal.send(b"\r");
+    let end = terminal.expect(b"\r\n\"PAREDIT_PAIR\"\r\n", offset);
+    terminal.ready_after(end);
+    let offset = terminal.send(b"echo (\x7fSAFE_DELETE\r");
+    let end = terminal.expect(b"\r\nSAFE_DELETE\r\n", offset);
+    terminal.ready_after(end);
+    for delimiter in ["'''", "\"\"\""] {
+        let offset =
+            terminal.send(format!("echo {delimiter}TRIPLE_FIRST\nTRIPLE_SECOND\r").as_bytes());
+        let end = terminal.expect(b"\r\nTRIPLE_FIRST\r\nTRIPLE_SECOND\r\n", offset);
+        terminal.ready_after(end);
+    }
+    terminal.exit(0);
+}
+
+#[test]
+fn paredit_navigation_and_all_four_reshape_keys_work_in_the_terminal() {
+    let mut terminal = Terminal::new();
+    for (source, keys, expected) in [
+        (
+            "list (str a) b",
+            b"\x01\x1b\x04\x1b[1;5C\r".as_slice(),
+            "(\"ab\")",
+        ),
+        (
+            "list (str a b)",
+            b"\x01\x1b\x04\x1b[1;5D\r".as_slice(),
+            "(\"a\" \"b\")",
+        ),
+        (
+            "list str (a b)",
+            b"\x01\x1b\x04\x1b[1;7D\r".as_slice(),
+            "(\"ab\")",
+        ),
+        (
+            "list (prefix str a)",
+            b"\x01\x1b\x04\x1b[1;7C\r".as_slice(),
+            "(\"prefix\" \"a\")",
+        ),
+        (
+            "list a (str removed)",
+            b"\x01\x1b\x06\x1b\x06\x1b\x0b\r".as_slice(),
+            "(\"a\")",
+        ),
+    ] {
+        let offset = terminal.paste(source);
+        terminal.send(keys);
+        let end = terminal.expect(format!("\r\n{expected}\r\n").as_bytes(), offset);
+        terminal.ready_after(end);
+    }
+    let offset = terminal.paste("list abc");
+    terminal.send(b"\x01\x06\x06\x06\x06\x06\x1b(");
+    terminal.expect(b"(list (abc))", offset);
+    terminal.send(b"\x1bs\r");
+    let end = terminal.expect(b"\r\n(\"abc\")\r\n", offset);
+    terminal.ready_after(end);
+    terminal.exit(0);
+}
+
+#[test]
 fn emacs_search_accepts_without_submitting_and_abort_restores_the_cursor() {
     let mut terminal = Terminal::new();
     let offset = terminal.execute("(echo SEARCH_FIRST)(echo SEARCH_SECOND)");

@@ -350,7 +350,7 @@ test("loop keywords complete inside browser control flow", async ({ page }) => {
   await page.keyboard.press("Tab");
   await page.keyboard.type("#true (br");
   await page.keyboard.press("Tab");
-  await page.keyboard.type("(list completed))");
+  await page.keyboard.type(" (list completed))");
   await expect(terminal(page)).toContainText("(while #true (break (list completed))");
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('("completed")');
@@ -944,6 +944,72 @@ test("Emacs search accepts without execution and abort restores the draft cursor
   await page.keyboard.type("_ACCEPTED");
   await page.keyboard.press("Enter");
   await expect(terminal(page)).toContainText('"SEARCH_SECOND_ACCEPTED"');
+});
+
+test("Paredit pairs typed delimiters and triple quotes without executing until Enter", async ({ page }) => {
+  await playground(page);
+  await page.getByRole("textbox", { name: "parsh terminal input" }).focus();
+  await page.keyboard.type('(str "PAREDIT_PAIR');
+  await expect(terminal(page)).toContainText('$ (str "PAREDIT_PAIR")');
+  const pairResults = async () => (await terminal(page).innerText()).split("\n")
+    .filter(line => line.trim() === '"PAREDIT_PAIR"').length;
+  await expect.poll(pairResults).toBe(0);
+  await page.keyboard.press("Enter");
+  await expect.poll(pairResults).toBe(1);
+  await page.keyboard.type("str (");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.type("SAFE_DELETE");
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('"SAFE_DELETE"');
+  for (const [index, delimiter] of ["'''", '"""'].entries()) {
+    await page.keyboard.type(`str ${delimiter}TRIPLE_${index}_FIRST`);
+    await page.keyboard.press("Control+j");
+    await page.keyboard.type("TRIPLE_SECOND");
+    await page.keyboard.press("Enter");
+    await expect(terminal(page)).toContainText(`"TRIPLE_${index}_FIRST\\nTRIPLE_SECOND"`);
+  }
+});
+
+test("Paredit expression navigation, reshaping, wrapping, and splicing share browser keys", async ({ page }) => {
+  await playground(page);
+  const input = page.getByRole("textbox", { name: "parsh terminal input" });
+  const cases = [
+    { source: "list (str a) b", key: "Control+ArrowRight", expected: '("ab")' },
+    { source: "list (str a b)", key: "Control+ArrowLeft", expected: '("a" "b")' },
+    { source: "list str (back ward)", key: "Control+Alt+ArrowLeft", expected: '("backward")' },
+    { source: "list (prefix str a)", key: "Control+Alt+ArrowRight", expected: '("prefix" "a")' },
+  ];
+  for (const { source, key, expected } of cases) {
+    await paste(page, source);
+    await input.focus();
+    await page.keyboard.press("Home");
+    await page.keyboard.press("Control+Alt+d");
+    await page.keyboard.press(key);
+    await page.keyboard.press("Enter");
+    await expect(terminal(page)).toContainText(expected);
+  }
+  await paste(page, "list abc");
+  await input.focus();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Control+Alt+f");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Alt+(");
+  await expect(terminal(page)).toContainText("$ (list (abc))");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("s");
+  await expect(terminal(page)).toContainText("$ (list abc)");
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('("abc")');
+  await paste(page, "list a (str removed)");
+  await input.focus();
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 2; i++) {
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Control+f");
+  }
+  await page.keyboard.press("Control+Alt+k");
+  await page.keyboard.press("Enter");
+  await expect(terminal(page)).toContainText('("a")');
 });
 
 test("Emacs search treats pasted source as a query and survives clear screen", async ({ page }) => {

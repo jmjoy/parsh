@@ -1,6 +1,6 @@
 ---
 title: "Interactive editing"
-description: "The parenthesis prompt, multiline editing, Tab completion, paste, and history."
+description: "Paredit structural editing, the parenthesis prompt, completion, paste, and history."
 ---
 
 - The prompt is `$ ()` for regular users and `# ()` for root, with the cursor
@@ -13,8 +13,9 @@ description: "The parenthesis prompt, multiline editing, Tab completion, paste, 
   executes immediately; otherwise parsh tries appending exactly one `)`. If the
   source is still unfinished, Enter inserts a newline at the cursor. Ctrl+J
   always inserts a newline. Blank input does not execute or enter history.
-- Typing `)` only edits text. Starting fresh input with `(` switches to explicit
-  source, so a complete expression or script keeps its own parentheses exactly once.
+- Opening delimiters insert a matching closer. Starting fresh input with `(`, `[` or `{`
+  switches to explicit source, so an expression keeps its own delimiters exactly once.
+  Typing a closer moves past its match without executing; the implicit outer `)` stays a display hint.
 - Pasting only inserts text, including newlines and tabs; it never executes.
   Press Enter to submit. Every top-level expression must be complete and valid
   before any expression in the batch executes. Syntax errors report their
@@ -42,6 +43,43 @@ description: "The parenthesis prompt, multiline editing, Tab completion, paste, 
 - Ctrl+C clears the input or interrupts the foreground task. Ctrl+D exits on an
   empty buffer and deletes forward otherwise.
 
+### Paredit structural editing
+
+Paredit is always enabled in the native terminal and browser playground. Typed `()`, `[]`,
+`{}`, single quotes, and double quotes form pairs with point between them. Three consecutive
+typed quotes promote a newly created empty quote pair to `'''…'''` or `"""…"""`.
+Auto-inserted closers are real source: Enter can execute a complete expression even before
+you type its closing delimiters. Use Ctrl+J to continue editing on another line.
+
+Backspace/Delete remove both sides of an empty pair, and move across nonempty delimiter
+boundaries. String escapes and triple-quote delimiters stay intact. Line and word kills
+stop before a boundary they would split; Ctrl+T transposes ordinary text within a word or
+string, preserving delimiters and escapes. Double-quoted text escapes a typed interior `"`;
+inside a raw single-quoted string, typing `'` moves past its existing closer.
+
+| Keys | Action |
+| --- | --- |
+| Ctrl+Alt+F/B | Move forward/backward over an expression |
+| Ctrl+Alt+U/D | Move to the enclosing form's start / enter the next collection |
+| Ctrl+Alt+K | Kill the next expression, using the shared kill ring |
+| Alt+( | Wrap the current or next expression in `()`; insert an empty pair if none follows |
+| Alt+S | Splice the innermost collection, removing its outer delimiters |
+| Ctrl+Right/Left | Forward slurp/barf: move the closer to include/exclude one expression |
+| Ctrl+Alt+Left/Right | Backward slurp/barf: move the opener to include/exclude one expression |
+
+For example, forward slurp changes `(a) b` to `(a b)`; forward barf reverses it. Backward
+slurp changes `a (b)` to `(a b)`. These transforms work with all three collection delimiters,
+preserve source formatting, and add a separator when needed to keep words distinct. Each
+transform is one undo group. Strings are whole expressions; embedded `$(...)` calls have
+their own editing context. The implicit outer form and interpolation boundaries cannot
+be spliced or reshaped.
+
+Alt combinations also accept an Esc prefix: `Esc Ctrl+F` moves over an expression,
+`Esc (` wraps, and `Esc Ctrl+Left` performs backward slurp. Paste and yank insert text
+without automatic pairing, so incomplete or erroneous source can be pasted and repaired.
+Unmatched characters can be deleted or closed; a structural transform with no reliable
+target does nothing. History search queries use ordinary text editing.
+
 ### Emacs-style shortcuts
 
 The native terminal and browser playground share these editing commands. Alt combinations
@@ -57,7 +95,7 @@ grapheme clusters; Home/End, Ctrl+A/E, and Ctrl+U/K operate on the current logic
 | Alt+Backspace, Alt+D | Kill backward/forward; words contain letters and digits, with path punctuation and underscores as separators |
 | Ctrl+U/K | Kill to the line's start/end; Ctrl+K at the end kills the newline |
 | Ctrl+Y, Alt+Y | Yank killed text; immediately cycle through earlier kills |
-| Ctrl+T | Transpose adjacent graphemes, or the last two at line end; never cross a newline |
+| Ctrl+T | Transpose adjacent graphemes within ordinary text, or the last two at line end |
 | Ctrl+L | Clear and redraw the screen, preserving the draft and session |
 | Ctrl+R/S | Search session history incrementally backward/forward |
 | Ctrl+_, Ctrl+X Ctrl+U | Undo an editing group |

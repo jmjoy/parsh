@@ -373,10 +373,10 @@ fn yank_rotation_restores_the_original_implicit_prompt_mode() {
     let mut repl = Repl::new();
     type_text(&mut repl, "str implicit");
     repl.input(Key::KillStart);
-    type_text(&mut repl, "(str explicit");
+    type_text(&mut repl, "(str explicit)");
     repl.input(Key::KillStart);
     repl.input(Key::Yank);
-    assert_eq!(repl.session.input.source(), "(str explicit");
+    assert_eq!(repl.session.input.source(), "(str explicit)");
     assert!(repl.session.input.explicit);
     repl.input(Key::YankPop);
     assert_eq!(repl.session.input.source(), "(str implicit");

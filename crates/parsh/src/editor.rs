@@ -196,6 +196,15 @@ fn map_key(key: KeyEvent) -> Key {
             (KeyCode::Char('f'), false) => Key::WordRight,
             (KeyCode::Char('d'), false) => Key::KillWordForward,
             (KeyCode::Char('y'), false) => Key::YankPop,
+            (KeyCode::Char('('), false) => Key::WrapSexp,
+            (KeyCode::Char('s'), false) => Key::SpliceSexp,
+            (KeyCode::Char('f'), true) => Key::SexpForward,
+            (KeyCode::Char('b'), true) => Key::SexpBackward,
+            (KeyCode::Char('u'), true) => Key::SexpUp,
+            (KeyCode::Char('d'), true) => Key::SexpDown,
+            (KeyCode::Char('k'), true) => Key::KillSexp,
+            (KeyCode::Left, true) => Key::SlurpBackward,
+            (KeyCode::Right, true) => Key::BarfBackward,
             (KeyCode::Backspace, _) | (KeyCode::Char('h'), true) => Key::KillWordBack,
             _ => Key::Ignore,
         };
@@ -226,6 +235,8 @@ fn map_key(key: KeyEvent) -> Key {
             KeyCode::Char('j') => Key::Newline,
             KeyCode::Char('m') | KeyCode::Enter => Key::Enter,
             KeyCode::Char('i') | KeyCode::Tab => Key::Tab,
+            KeyCode::Right => Key::SlurpForward,
+            KeyCode::Left => Key::BarfForward,
             _ => Key::Ignore,
         };
     }

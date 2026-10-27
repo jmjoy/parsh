@@ -71,6 +71,17 @@ const keys: Record<string, string> = {
   "\x1by": "yank-pop",
   "\x1b\x7f": "kill-word-back",
   "\x1b\b": "kill-word-back",
+  "\x1b\x06": "sexp-forward",
+  "\x1b\x02": "sexp-backward",
+  "\x1b\x15": "sexp-up",
+  "\x1b\x04": "sexp-down",
+  "\x1b\x0b": "kill-sexp",
+  "\x1b(": "wrap-sexp",
+  "\x1bs": "splice-sexp",
+  "\x1b[1;5C": "slurp-forward",
+  "\x1b[1;5D": "barf-forward",
+  "\x1b[1;7D": "slurp-backward",
+  "\x1b[1;7C": "barf-backward",
 };
 
 export function mountTerminal(root: HTMLElement): void {
@@ -353,15 +364,24 @@ export function mountTerminal(root: HTMLElement): void {
       w: "kill-whitespace-word", y: "yank", t: "transpose",
       l: "clear-screen", r: "search-backward", s: "search-forward",
       d: "eof", g: "abort", x: "control-x", _: "undo", "/": "undo", "7": "undo",
+      arrowright: "slurp-forward", arrowleft: "barf-forward",
     };
     const meta: Record<string, string> = {
       b: "word-left", f: "word-right", d: "kill-word-forward",
       y: "yank-pop", backspace: "kill-word-back",
+      "(": "wrap-sexp", s: "splice-sexp",
+    };
+    const controlMeta: Record<string, string> = {
+      f: "sexp-forward", b: "sexp-backward", u: "sexp-up", d: "sexp-down",
+      k: "kill-sexp", arrowleft: "slurp-backward", arrowright: "barf-backward",
     };
     let key: string | undefined;
     if (event.ctrlKey && !event.altKey && !event.metaKey &&
         (!event.shiftKey || name === "_" || name === "/")) key = control[name];
-    else if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey)
+    else if (event.ctrlKey && event.altKey && !event.metaKey && !event.shiftKey)
+      key = controlMeta[name];
+    else if (event.altKey && !event.ctrlKey && !event.metaKey &&
+        (!event.shiftKey || name === "("))
       key = meta[name];
     if (key) {
       event.preventDefault();

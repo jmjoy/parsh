@@ -1,3 +1,4 @@
+use super::paredit::{Paredit, Syntax};
 use super::*;
 use std::{collections::VecDeque, ops::Range};
 
@@ -9,6 +10,7 @@ pub(super) struct Editing {
     last_kill: bool,
     yank: Option<Yank>,
     prefix: Option<Prefix>,
+    paredit: Paredit,
 }
 
 #[derive(Clone, Copy)]
@@ -30,6 +32,7 @@ impl Editing {
         self.last_kill = false;
         self.yank = None;
         self.prefix = None;
+        self.paredit.clear();
     }
 
     pub(super) fn baseline(&mut self) {
@@ -49,6 +52,7 @@ impl Editing {
     }
 
     fn kill(&mut self, input: &mut Input, range: Range<usize>, backward: bool) {
+        let range = Syntax::new(input).safe_range(range, backward);
         if range.is_empty() {
             return;
         }
@@ -180,7 +184,13 @@ impl Input {
             .unwrap()
             .0;
         let right = middle + self.body[middle..].graphemes(true).next().unwrap().len();
+        if !Syntax::new(self).plain(left..right) {
+            return;
+        }
         let text = format!("{}{}", &self.body[middle..right], &self.body[left..middle]);
+        if !Syntax::new(self).accepts_edit(left..right, &text) {
+            return;
+        }
         self.body.replace_range(left..right, &text);
         self.cursor = right;
     }
@@ -321,6 +331,15 @@ impl Session {
                 (Prefix::Meta, Key::Character('f')) => Key::WordRight,
                 (Prefix::Meta, Key::Character('d')) => Key::KillWordForward,
                 (Prefix::Meta, Key::Character('y')) => Key::YankPop,
+                (Prefix::Meta, Key::Character('(')) => Key::WrapSexp,
+                (Prefix::Meta, Key::Character('s')) => Key::SpliceSexp,
+                (Prefix::Meta, Key::Right) => Key::SexpForward,
+                (Prefix::Meta, Key::Left) => Key::SexpBackward,
+                (Prefix::Meta, Key::KillStart) => Key::SexpUp,
+                (Prefix::Meta, Key::Eof) => Key::SexpDown,
+                (Prefix::Meta, Key::KillEnd) => Key::KillSexp,
+                (Prefix::Meta, Key::BarfForward) => Key::SlurpBackward,
+                (Prefix::Meta, Key::SlurpForward) => Key::BarfBackward,
                 (Prefix::Meta, Key::Backspace) => Key::KillWordBack,
                 (Prefix::ControlX, Key::KillStart) => Key::Undo,
                 _ => Key::Ignore,
@@ -334,9 +353,11 @@ impl Session {
                 | Key::KillWordBack
                 | Key::KillWordForward
                 | Key::KillWhitespaceWord
+                | Key::KillSexp
         );
         if !typing {
             self.editing.typing = false;
+            self.editing.paredit.clear();
         }
         if !killing && !matches!(key, Key::Escape) {
             self.editing.last_kill = false;
@@ -347,7 +368,7 @@ impl Session {
         let before = self.input.clone();
         let history_index = self.history.index;
         match key {
-            Key::Character(ch) => self.input.insert(ch),
+            Key::Character(ch) => self.editing.paredit.insert(&mut self.input, ch),
             Key::Enter => {
                 let code = self.enter(shell, console)?;
                 if code.is_some() || self.input.body.is_empty() {
@@ -360,8 +381,23 @@ impl Session {
             Key::Right => self.input.right(),
             Key::WordLeft => self.input.cursor = self.input.word_start(false),
             Key::WordRight => self.input.cursor = self.input.word_end(),
-            Key::Backspace => self.input.backspace(),
-            Key::Delete => self.input.delete(),
+            Key::Backspace | Key::Delete => {
+                Syntax::new(&self.input).delete(&mut self.input, matches!(key, Key::Backspace))
+            }
+            Key::SexpForward
+            | Key::SexpBackward
+            | Key::SexpUp
+            | Key::SexpDown
+            | Key::WrapSexp
+            | Key::SpliceSexp
+            | Key::SlurpForward
+            | Key::BarfForward
+            | Key::SlurpBackward
+            | Key::BarfBackward => Syntax::new(&self.input).command(&mut self.input, key),
+            Key::KillSexp => {
+                let range = Syntax::new(&self.input).kill_sexp(&self.input);
+                self.editing.kill(&mut self.input, range, false);
+            }
             Key::Home => self.input.cursor = self.input.line_start(),
             Key::End => self.input.cursor = self.input.line_end(),
             Key::Up => {
@@ -438,7 +474,7 @@ impl Session {
                 console.pause()?;
                 return Ok(Some(self.last_code));
             }
-            Key::Eof => self.input.delete(),
+            Key::Eof => Syntax::new(&self.input).delete(&mut self.input, false),
         }
         self.input.align_cursor();
         if self.input.body.trim().is_empty() {

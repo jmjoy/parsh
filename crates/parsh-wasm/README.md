@@ -10,6 +10,12 @@ ordered terminal events including raw stdout/stderr byte chunks. An activity
 callback lets the page interrupt or time out execution by replacing the Worker.
 Reset preserves the host capability and recreates its initial filesystem.
 
+Paredit is always enabled. Structural `input` keys are `sexp-forward`,
+`sexp-backward`, `sexp-up`, `sexp-down`, `kill-sexp`, `wrap-sexp`, `splice-sexp`,
+`slurp-forward`, `barf-forward`, `slurp-backward`, and `barf-backward`.
+The `text` key types characters with automatic pairing; `paste` inserts source
+without pairing or executing it.
+
 From the repository root:
 
 ```console

@@ -49,6 +49,7 @@ description: "在浏览器中运行 parsh、coreutils 和命令管道。"
 
 - Tab 补全命令、临时文件路径和 `$变量名`；多个匹配先补公共前缀，再按一次显示候选。例如输入 `cat fru` 后按 Tab 可补全 `fruits.txt`。
 - Enter 检查整个编辑区，必要时补一个 `)` 后执行；输入未完成时换行，Ctrl+J 始终换行。输入 `)` 或粘贴都只编辑文本；粘贴批次先整批通过语法检查才会执行。
+- 始终启用 paredit：括号和引号自动配对，删除保护配对边界，连续三个引号创建三引号对。Ctrl+Alt+F/B 按表达式移动；Ctrl+Right/Left 向后吸入／吐出，Ctrl+Alt+Left/Right 向前吸入／吐出。Alt+( 包裹，Alt+S 去掉外层界符。自动闭合符属于源码，粘贴保留原文。
 - 上下箭头移动行或召回历史；Ctrl+P/N 始终切换历史。召回时完整显示源码，光标停在最外层右括号前，可直接追加参数或按 Enter 重新执行。
 - 支持 Emacs 风格的按词编辑、Ctrl+Y 粘回、Alt+Y 轮换、Ctrl+T 交换、Ctrl+L 清屏和 Ctrl+_ 撤销。Ctrl+R/S 搜索历史，Enter/Esc 接受但不执行，Ctrl+G 恢复草稿；Alt 键也可用 Esc 前缀。详见[交互编辑](/parsh/zh-cn/docs/interactive/)。浏览器保留的快捷键可能无法传入终端。
 - Unicode 编辑、多行输入、完整脚本粘贴和批次错误恢复与原生版本共用同一套编辑模型。

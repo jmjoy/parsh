@@ -16,6 +16,9 @@ mod editing;
 mod editing_tests;
 #[cfg(test)]
 mod literal_tests;
+mod paredit;
+#[cfg(test)]
+mod paredit_tests;
 use editing::{Editing, Search};
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -729,6 +732,17 @@ pub enum Key {
     KillWordBack,
     KillWordForward,
     KillWhitespaceWord,
+    SexpForward,
+    SexpBackward,
+    SexpUp,
+    SexpDown,
+    KillSexp,
+    WrapSexp,
+    SpliceSexp,
+    SlurpForward,
+    BarfForward,
+    SlurpBackward,
+    BarfBackward,
     Yank,
     YankPop,
     Transpose,
@@ -1690,7 +1704,7 @@ mod syntax_tests {
             "str (; nested (str x",
         ] {
             let mut repl = Repl::new();
-            type_text(&mut repl, text);
+            repl.paste(text);
             let events = repl.input(Key::Enter);
             assert!(values(&events).is_empty());
             assert!(diagnostics(&events).is_empty());
@@ -1698,7 +1712,7 @@ mod syntax_tests {
             assert!(repl.session.history.entries.is_empty());
         }
         let mut repl = Repl::new();
-        type_text(&mut repl, "str (str a");
+        repl.paste("str (str a");
         repl.input(Key::Home);
         repl.input(Key::Enter);
         assert_eq!(repl.session.input.body, "\nstr (str a");
