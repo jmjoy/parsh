@@ -102,6 +102,15 @@ description: "不可变集合、JSON、原生 HTTP 请求、类型判断和数�
 | `(bytes/base64-encode bytes)` / `(bytes/base64-decode text)` | 标准 Base64 转换。 |
 | `(bytes/hex-encode bytes)` / `(bytes/hex-decode text)` | 小写 Hex 编码和严格解码。 |
 
+## 调试输出
+
+`dump` 使用值的显示形式打印任意 parsh 值，并追加换行。它返回 nil，且遵循其他内建输出相同的 stdout 重定向和捕获规则：
+
+```parsh
+(dump {name parsh items [#1 #true]})
+(dump (CallResult.stdout $result))
+```
+
 ## 标量转换
 
 每个转换函数恰好接受一个参数，先检查参数个数，再求值一次。

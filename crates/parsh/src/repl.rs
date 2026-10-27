@@ -2113,3 +2113,6 @@ mod json_tests;
 
 #[cfg(test)]
 mod data_tests;
+
+#[cfg(test)]
+mod dump_tests;

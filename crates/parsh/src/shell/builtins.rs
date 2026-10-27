@@ -5,6 +5,7 @@ use crate::{reader::Expr, streams::Io};
 
 pub(super) const VALUE_BUILTINS: &[&str] = &[
     "get",
+    "dump",
     "list",
     "map",
     "map/get",
@@ -334,6 +335,16 @@ impl Shell {
                     );
                 };
                 Ok(self.variable(args.at(expr, 0), &name, env)?)
+            }
+            "dump" => {
+                let value = args.value(self, 0, env, io)?;
+                self.write_output(
+                    expr,
+                    io,
+                    crate::host::Stream::Stdout,
+                    format!("{}\n", value.display()).into_bytes(),
+                )?;
+                Ok(Value::Nil)
             }
             "list" => Ok(Value::List(args.values(self, env, io)?)),
             "map" => self.construct_map(expr, args, env, io),

@@ -209,6 +209,8 @@ test("list, map, and bytes data transforms share native semantics in the browser
   await expect(terminal(page)).toContainText('(map "a" "one" "b" "changed" "c" "three")');
   await execute(page, '(bytes/base64-encode (bytes/from-text "hello"))');
   await expect(terminal(page)).toContainText('"aGVsbG8="');
+  await execute(page, '(dump (map key value))');
+  await expect(terminal(page)).toContainText('(map "key" "value")');
 });
 
 test("collection shorthand supports nested values, Enter submission, and history in the browser", async ({ page }) => {

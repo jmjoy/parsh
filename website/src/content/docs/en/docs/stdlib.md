@@ -115,6 +115,17 @@ keys.
 | `(bytes/base64-encode bytes)` / `(bytes/base64-decode text)` | Standard Base64 conversion. |
 | `(bytes/hex-encode bytes)` / `(bytes/hex-decode text)` | Lowercase hex encoding and strict decoding. |
 
+## Debug output
+
+`dump` prints any parsh value using its display representation and adds a
+trailing newline. It returns nil, and follows the same stdout redirection and
+capture rules as other builtin output:
+
+```parsh
+(dump {name parsh items [#1 #true]})
+(dump (CallResult.stdout $result))
+```
+
 ## Scalar conversions
 
 Each conversion takes exactly one argument, checks arity before evaluation, and
