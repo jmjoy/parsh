@@ -667,6 +667,19 @@ fn unicode_common_prefixes_and_editing_keep_valid_cursor_boundaries() {
 }
 
 #[test]
+fn previous_value_completes_before_evaluation_and_after_reset() {
+    let mut repl = Repl::new();
+    for _ in 0..2 {
+        type_text(&mut repl, "str $_");
+        repl.input(Key::Tab);
+        assert_eq!(repl.session.input.body, "str $_ ");
+        repl.input(Key::ClearInput);
+        execute(&mut repl, "(+ #1 #2)");
+        repl.reset();
+    }
+}
+
+#[test]
 fn variable_completion_sees_executed_bindings_and_exports_but_not_values() {
     let mut repl = Repl::with_host(TestHost::default()).unwrap();
     execute(

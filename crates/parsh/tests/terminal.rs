@@ -262,6 +262,26 @@ fn enter_submits_and_typed_closers_remain_edits() {
 }
 
 #[test]
+fn previous_value_is_initialized_and_updated_by_the_native_repl() {
+    let mut terminal = Terminal::configured(|command| {
+        command.env("_", "inherited-value");
+    });
+    for (source, expected) in [
+        ("(nil? $_)", "#true"),
+        ("(+ #1 #2) (+ $_ #4)", "#7"),
+        ("(get _)", "#7"),
+        ("(do (+ #100 #200) (+ $_ #1))", "#8"),
+        ("(set _ #42) (nil? $_)", "#true"),
+        ("(echo LAST_VALUE_OUTPUT) (if $_ #11 #12)", "#11"),
+    ] {
+        let offset = terminal.execute(source);
+        let end = terminal.expect(format!("\r\n{expected}\r\n").as_bytes(), offset);
+        terminal.ready_after(end);
+    }
+    terminal.exit(0);
+}
+
+#[test]
 fn middle_enter_submits_the_whole_input() {
     let mut terminal = Terminal::new();
     let offset = terminal.send(b"echo FIRSTSECOND\x1b[D\x1b[D\x1b[D\r");

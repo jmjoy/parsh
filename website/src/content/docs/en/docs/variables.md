@@ -143,6 +143,34 @@ arguments, and environment values reject maps. Use `map/keys` or `map/vals` expl
 when a list is needed for iteration or command arguments.
 
 
+## Previous REPL value: `$_`
+
+In the native terminal and browser playground, `$_` (also `(get _)`) holds the
+previous successful top-level expression's return value. It starts as `#nil` and
+returns to `#nil` when the session is reset.
+
+```parsh
+(+ #1 #2)
+(+ $_ #4)
+(get _)
+```
+
+These expressions return `#3`, `#7`, and `#7`. Each expression updates `_` before
+the next expression runs, including multiple expressions submitted together.
+Nested calls do not automatically update it. Values retain their original types,
+including lists, maps, functions, nil, and command statuses; storing a command
+status does not capture its terminal output. Nil and statuses remain undisplayed.
+
+`_` is an ordinary session binding: `set`, `export`, and local shadowing follow
+the usual rules. It is already bound at the top level, so another top-level
+`let _` reports a duplicate binding. Every successful expression replaces the
+session binding with its return value, so `(set _ #42)` ends with `$_` equal to
+`#nil`, the return value of `set`.
+
+Empty input, comments, incomplete input, and errors do not automatically update
+`_`. Explicit assignments made before an error are not rolled back. Scripts do
+not initialize or automatically update `_`.
+
 ## Previous execution result
 
 The read-only special variable `$?` (also `(get ?)`) holds the previous complete `CallResult`, initially nil. Use `(exit-code $?)` or `(signal $?)` to inspect termination, or `(let saved $?)` to keep a snapshot. It is not an environment variable and cannot be assigned. See [execution results](/parsh/en/docs/execution/).

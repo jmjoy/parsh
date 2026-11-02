@@ -15,6 +15,8 @@ mod editing;
 #[cfg(test)]
 mod editing_tests;
 #[cfg(test)]
+mod last_value_tests;
+#[cfg(test)]
 mod literal_tests;
 mod paredit;
 #[cfg(test)]
@@ -404,6 +406,11 @@ pub(crate) struct Session {
 }
 
 impl Session {
+    pub(crate) fn new(shell: &mut Shell) -> Self {
+        shell.record_repl_value(Value::Nil);
+        Self::default()
+    }
+
     fn complete(&mut self, shell: &mut Shell, console: &mut impl ConsoleBackend) -> io::Result<()> {
         let repeated = self
             .completion
@@ -484,6 +491,9 @@ impl Session {
             console.activity(false);
             match result {
                 Ok(value) => {
+                    if !matches!(expr.kind, Kind::Comment) {
+                        shell.record_repl_value(value.clone());
+                    }
                     if !matches!(value, Value::Nil | Value::Status(_)) {
                         console.value(&value.display())?;
                     }
@@ -852,28 +862,30 @@ pub struct Repl {
 
 impl Default for Repl {
     fn default() -> Self {
+        Self::from_shell(Shell::syntax())
+    }
+}
+
+impl Repl {
+    fn from_shell(mut shell: Shell) -> Self {
+        let session = Session::new(&mut shell);
         Self {
             observer: None,
-            shell: Shell::syntax(),
-            session: Session::default(),
+            shell,
+            session,
             columns: 80,
             rows: 24,
             closed: false,
         }
     }
-}
 
-impl Repl {
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Create a REPL backed by isolated commands and files.
     pub fn with_host(host: impl ExecutionHost + 'static) -> Result<Self, HostError> {
-        Ok(Self {
-            shell: Shell::with_host(host)?,
-            ..Self::default()
-        })
+        Ok(Self::from_shell(Shell::with_host(host)?))
     }
 
     /// Observe evaluation boundaries without interpreting input outside Rust.
@@ -926,9 +938,9 @@ impl Repl {
 
     pub fn reset(&mut self) -> Vec<Event> {
         let (columns, rows) = (self.columns, self.rows);
-        self.session = Session::default();
         self.closed = false;
         let result = self.shell.reset_session();
+        self.session = Session::new(&mut self.shell);
         let mut events = Vec::new();
         if let Err(error) = result {
             events.push(Event::Diagnostic(error.message));
@@ -2063,6 +2075,48 @@ mod host_tests {
                 .iter()
                 .any(|event| matches!(event, Event::Diagnostic(_)))
         );
+    }
+
+    #[test]
+    fn host_previous_value_preserves_command_statuses_and_resets_to_nil() {
+        let mut repl = Repl::with_host(TestHost).unwrap();
+        let Read::Form(previous) = Reader::new("(get _)").read() else {
+            unreachable!()
+        };
+        let Read::Form(last_result) = Reader::new("(get ?)").read() else {
+            unreachable!()
+        };
+        assert_eq!(repl.shell.execute(&previous).unwrap(), Value::Nil);
+        let events = execute(&mut repl, "(str before) (echo output)");
+        assert_eq!(outputs(&events), "output\n");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, Event::Value(_)))
+                .count(),
+            1
+        );
+        let Value::Status(status) = repl.shell.execute(&previous).unwrap() else {
+            panic!("expected the original command status")
+        };
+        assert_eq!(status.code, 0);
+        assert_eq!(*status.result, repl.shell.execute(&last_result).unwrap());
+        let events = execute(&mut repl, "(false)");
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, Event::Diagnostic(_)))
+        );
+        let Value::Status(unchanged) = repl.shell.execute(&previous).unwrap() else {
+            panic!("failed command replaced the previous value")
+        };
+        assert_eq!(unchanged.result, status.result);
+        let events = execute(&mut repl, "(if $_ #7 #9)");
+        assert!(events.contains(&Event::Value("#7".into())));
+        repl.reset();
+        assert_eq!(repl.shell.execute(&previous).unwrap(), Value::Nil);
+        let events = execute(&mut repl, "(+ #1 #2) (+ $_ #4)");
+        assert!(events.contains(&Event::Value("#7".into())));
     }
 
     #[test]

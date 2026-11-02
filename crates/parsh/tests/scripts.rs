@@ -1167,6 +1167,18 @@ fn numeric_text_from_commands_environment_and_arguments_requires_conversion() {
 }
 
 #[test]
+fn scripts_do_not_initialize_or_automatically_update_underscore_bindings() {
+    let output = run(r#"
+        (let _ #10)
+        (+ #1 #2)
+        (set _ (+ $_ #1))
+        (printf "%s" $_)
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "11");
+}
+
+#[test]
 fn complete_results_preserve_both_streams_status_and_last_result() {
     let output = run(r#"
         (let here (pwd)) (let saved $?)

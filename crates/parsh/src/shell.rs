@@ -733,6 +733,10 @@ impl Shell {
         Ok(())
     }
 
+    pub(crate) fn record_repl_value(&mut self, value: Value) {
+        self.root.borrow_mut().variables.insert("_".into(), value);
+    }
+
     pub fn execute(&mut self, expr: &Expr) -> Result<Value, Error> {
         self.interrupted.store(false, Ordering::Relaxed);
         self.output_bytes = 0;

@@ -164,7 +164,7 @@ impl ConsoleBackend for TerminalConsole {
 
 pub fn run(shell: &mut Shell) -> io::Result<i32> {
     let mut console = TerminalConsole::new()?;
-    let mut session = Session::default();
+    let mut session = Session::new(shell);
     loop {
         session.draw(&mut console)?;
         let code = match event::read()? {
