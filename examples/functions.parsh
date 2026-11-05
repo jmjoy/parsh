@@ -27,3 +27,13 @@
   (printf "hello, ")
   (printf "%s\n" $name))
 (printf "captured function output: <%s>\n" (banner parsh))
+
+(; Closures retain captured bindings; optional defaults run only when omitted. )
+(defn accumulator (initial)
+  (fn (&optional (step #1) &rest more)
+    (set initial (+ $initial $step))
+    (for amount $more (set initial (+ $initial $amount)))
+    (return $initial)))
+(let next (accumulator #10))
+(printf "counter: %s %s %s\n" ($next) ($next #2 #3) (apply $next []))
+(echo "apply sum=$(apply (function +) #1 [#2 #3])")

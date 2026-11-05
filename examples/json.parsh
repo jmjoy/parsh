@@ -1,0 +1,23 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/json.parsh )
+
+(; Struct fields become JSON object properties. )
+(defstruct Profile name enabled tags)
+(let profile (Profile parsh #true [shell lisp]))
+(let encoded (json/encode $profile))
+(echo "json=$encoded")
+
+(; Objects decode to maps, not to instances of the original struct. )
+(let decoded (json/decode $encoded))
+(echo "decoded type=$(typeof $decoded); name=$(map/get $decoded name)")
+(dump (map/get $decoded tags))
+(dump (json/decode "[1,1.5,true,null]"))
+
+(; Decode accepts UTF-8 bytes, such as a captured stdout or HTTP body. )
+(let raw (bytes/from-text $encoded))
+(echo "bytes round-trip=$(eq $decoded (json/decode $raw))")
+
+(; Invalid JSON raises a catchable error. )
+(try
+  (json/decode "{")
+  (catch err (echo "decode failed: $(Error.kind $err)")))

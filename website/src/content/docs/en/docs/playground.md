@@ -45,6 +45,30 @@ Nested commands capture UTF-8 stdout, remove trailing LF characters, and keep th
 
 Browser pipelines run one stage at a time with buffered output. They report the rightmost nonzero status, but do not reproduce native streaming or SIGPIPE behavior. stdin is EOF unless supplied by a file or pipeline. Each command's output and each pipeline buffer are limited to 8 MiB; the virtual filesystem is limited to 32 MiB. Commands such as `grep`, `sed`, and `find` and interactive programs are not included.
 
+## Language and execution
+
+Typed values, closures, optional/rest parameters, structs, macros, immutable
+collections, JSON, and bytes share the native implementation. `dump` prints values
+that cannot implicitly become text, including maps and structs.
+
+| Feature | Browser | Native Linux |
+| --- | --- | --- |
+| Language, JSON, and bytes | Shared semantics | Supported |
+| External commands | Listed coreutils subset | Executable programs available to the session |
+| Files | Temporary virtual filesystem | Local filesystem |
+| Pipelines | Buffered stages | Concurrent streaming stages |
+| Command references, `apply`, `capture-call`, `$?`, exceptions | Supported | Supported |
+| Signals and background tasks | Unavailable | Supported |
+| `http/request`, `http/get`, `http/post` | Unavailable | Supported |
+
+`capture-call` preserves raw bytes and newlines; ordinary value-position command
+capture returns UTF-8 text with trailing LF removed. The previous REPL value `$_`
+and previous execution result `$?` have different update rules; see
+[variables and scope](/parsh/en/docs/variables/).
+
+Use the [examples guide](/parsh/en/docs/examples/) to select scripts that run in
+the browser. Reset between independent scripts to avoid duplicate top-level bindings.
+
 ## Sessions and keys
 
 - Tab completes commands, temporary paths, and `$variable` names. Multiple matches extend the common prefix; press Tab again to list them. For example, `cat fru` followed by Tab completes `fruits.txt`.
@@ -60,6 +84,3 @@ Browser pipelines run one stage at a time with buffered output. They report the 
 - `exit` and Ctrl+D on empty input end the session; reset to restart.
 
 To work with your own files and Linux programs, [run parsh on Linux](/parsh/en/docs/getting-started/).
-
-
-Synchronous `command` references, `apply`, `capture-call`, raw-byte results, `$?`, and `try/catch/throw/finally` share native semantics. The browser has no native signal or background-task support; `spawn`, `wait`, `job-status`, and `cancel` report that capability limit.

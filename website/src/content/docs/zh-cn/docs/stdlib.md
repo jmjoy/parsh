@@ -3,9 +3,9 @@ title: "基础库"
 description: "不可变集合、JSON、原生 HTTP 请求、类型判断和数值函数。"
 ---
 
-这些内置函数在原生终端和浏览器中共用实现，都支持 `(function name)` 和 `apply`。
-集合更新返回新值，需要更新绑定时显式使用 `set`。
-下列表格中的方括号表示可选参数，`...` 表示可重复参数。
+这些普通内置都支持 `(function name)` 和 `apply`。数据操作在原生终端和浏览器中共用实现，
+HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要更新绑定时显式使用 `set`。
+签名中的方括号表示可选参数，并非列表字面值；`...` 表示可重复参数。
 
 ## 模块命名空间
 
@@ -20,96 +20,10 @@ description: "不可变集合、JSON、原生 HTTP 请求、类型判断和数�
 (apply "str/join" [[a b] ","])
 ```
 
-构造器 `str`、`list`、`map` 保留原名。旧的字母前缀操作名已移除，脚本需要改用模块名称。
+构造器使用 `str`、`list` 和 `map`。
 `str/join` 这样的名称仍是普通名称；其中的 `/` 只是名称或文本值中的一个字符，约定用来归类相关函数，
 不是导入语法，也不是运行时的模块对象。单独的 `/` 仍然是除法内置。内置命名空间可以直接使用，无需导入；
 目前尚不支持用户模块声明和文件导入。
-
-## JSON
-
-`json/encode` 返回紧凑的 JSON 文本，接受标量、列表、映射和结构体；结构体字段会成为对象属性。
-`json/decode` 接受 UTF-8 文本或 bytes，并返回对应的 parsh 值：对象变成映射，数组变成列表，`null` 变成 nil。
-
-```parsh
-(defstruct User name admin)
-(let body (json/encode (User parsh #true)))
-(let value (json/decode body))
-(map/get $value name)
-```
-
-编码函数、命令、表单、bytes、状态和非有限数值都会报错。JSON 对象保留输入顺序；重复键采用最后一个值。
-
-## HTTP
-
-原生 parsh 通过 `http/` 提供同步 HTTP 请求；浏览器运行时目前会报告能力不支持。
-
-```parsh
-(let response
-  (http/get "https://example.com/api"
-            (map "accept" ["application/json"])))
-(if (HttpResponse.ok $response)
-    (json/decode (HttpResponse.body $response))
-    (HttpResponse.status $response))
-```
-
-可用函数如下：
-
-| 调用 | 返回值 |
-| --- | --- |
-| `(http/request method url [body] [headers])` | `HttpResponse`；自定义方法无 body 但有 headers 时使用 `#nil` 占位。 |
-| `(http/get url [headers])` | GET 响应。 |
-| `(http/post url body [headers])` | POST 响应。 |
-| `(http/body-text response)` | 将响应 body 严格解码为 UTF-8 文本。 |
-
-请求 body 接受 nil、文本或 bytes。Headers 是文本名称到文本列表的映射；响应 header 名称统一为小写，重复值保留在列表中。
-`HttpResponse` 包含 `status`、`ok`、`headers`、bytes 类型的 `body` 和最终 `url`。
-4xx 或 5xx 响应仍作为数据返回；DNS、连接、协议和 body 超限错误会抛出语言错误。
-
-## 数据变换
-
-高阶列表函数把函数放在首位，并返回新值：
-
-```parsh
-(list/map (fn (value) (str $value "!")) [a b])
-(list/filter (fn (value) (eq $value yes)) [yes no yes])
-(list/fold (fn (total value) (+ $total $value)) #0 [#1 #2 #3])
-```
-
-另外还有 `list/any`、`list/all`、`list/reverse` 和 `list/contains`。
-谓词必须返回布尔值；空列表上的 `any` 返回假，`all` 返回真。
-
-映射支持浅合并和有序 entries 转换：
-
-```parsh
-(map/merge {name parsh} {version #1})
-(map/entries {name parsh version #1})
-(map/from-entries [[name parsh] [version #1]])
-```
-
-后面的映射覆盖前面的值，同时保留原键的位置；新键追加到末尾。
-`map/from-entries` 会拒绝格式错误的 pair 和重复键。
-
-## Bytes
-
-`bytes/` 函数操作命令捕获和 HTTP 返回的原始 bytes：
-
-| 调用 | 返回值 |
-| --- | --- |
-| `(bytes/len value)` | 字节长度。 |
-| `(bytes/slice value start [end])` | 使用列表索引规则切片。 |
-| `(bytes/concat values...)` | 拼接 bytes。 |
-| `(bytes/from-text text)` / `(bytes/to-text bytes)` | UTF-8 转换，解码严格检查。 |
-| `(bytes/base64-encode bytes)` / `(bytes/base64-decode text)` | 标准 Base64 转换。 |
-| `(bytes/hex-encode bytes)` / `(bytes/hex-decode text)` | 小写 Hex 编码和严格解码。 |
-
-## 调试输出
-
-`dump` 使用值的显示形式打印任意 parsh 值，并追加换行。它返回 nil，且遵循其他内建输出相同的 stdout 重定向和捕获规则：
-
-```parsh
-(dump {name parsh items [#1 #true]})
-(dump (CallResult.stdout $result))
-```
 
 ## 标量转换
 
@@ -136,6 +50,45 @@ description: "不可变集合、JSON、原生 HTTP 请求、类型判断和数�
 ```
 
 结果依次为 `#1`、`#1.0`、`#false`、`#100`。
+
+## 类型判断
+
+`typeof` 返回类型名称文本：`text`、`int`、`float`、`bool`、`list`、`map`、`form`、
+`struct`、`bytes`、`function`、`command`、`nil`、`status`。
+对应判定为 `text?`、`int?`、`float?`、`bool?`、`list?`、`map?`、`form?`、`struct?`、`bytes?`、
+`function?`、`command?`、`nil?`、`status?`。`number?` 同时接受整数和浮点数。
+`callable?` 接受函数值和命令引用；文本名称即使可通过调用接口解析，也仍返回假。
+`empty?` 只接受文本、列表和映射。
+
+```parsh
+(list (typeof (command echo)) (command? (command echo))
+      (callable? (function +)) (callable? echo))
+```
+
+结果为 `("command" #true #true #false)`。
+
+判断严格检查运行时类型：裸词 `123` 是文本，因此 `(number? 123)` 为假，
+`(number? #123)` 为真。普通命令在值位置会捕获成文本；`type` 继续用于查询命令解析。
+
+## 基础数值函数
+
+| 调用 | 返回值 |
+| --- | --- |
+| `(quot a b)` | 向零取整的整数商 |
+| `(rem a b)` | 与上述商对应的余数，符号随被除数 |
+| `(abs n)` | 绝对值，保留整数或浮点类型 |
+| `(min n...)`、`(max n...)` | 至少一个参数，返回胜出数值，平局取首项 |
+| `(floor n)` | 向下取整的 i64 |
+| `(ceil n)` | 向上取整的 i64 |
+| `(round n)` | 最接近的 i64，中点远离零 |
+
+```parsh
+(list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5))
+```
+
+结果为 `(#-2 #-1 #3 #-3)`。`quot/rem` 仅接受 int，其他数值函数只接受 int 或 float；文本应先用 `int`、`float` 显式转换。
+`min/max` 保留胜出数值的类型，并保留大整数与浮点混合比较的精度。
+除零、整数溢出、取整结果超出 i64 和非有限数值仍是语言错误。
 
 ## 列表
 
@@ -188,6 +141,47 @@ description: "不可变集合、JSON、原生 HTTP 请求、类型判断和数�
 分割保留中间和末尾的空字段；空分隔符沿用 Rust `split("")` 的规则，包含两端空字段。
 替换使用 Rust `replace` 的规则，空模式会在字符之间及两端插入替换文本。
 
+## 数据变换
+
+高阶列表函数把函数放在首位，并返回新值：
+
+```parsh
+(list/map (fn (value) (str $value "!")) [a b])
+(list/filter (fn (value) (eq $value yes)) [yes no yes])
+(list/fold (fn (total value) (+ $total $value)) #0 [#1 #2 #3])
+```
+
+| 调用 | 返回值 |
+| --- | --- |
+| `(list/map f xs)` | 依次调用 `f`，收集各项返回值 |
+| `(list/filter predicate xs)` | 保留谓词返回真的原始元素 |
+| `(list/fold f initial xs)` | 从左到右，将累加值和每个元素传给 `f` |
+| `(list/any predicate xs)` | 首个真值处短路；空列表为假 |
+| `(list/all predicate xs)` | 首个假值处短路；空列表为真 |
+| `(list/reverse xs)` | 顺序反转后的新列表 |
+| `(list/contains xs value)` | 按 `eq` 的类型和值相等规则判断成员关系 |
+
+回调可以是函数值、外部命令引用或 `apply` 支持的文本名称。
+`filter`、`any`、`all` 的回调必须返回布尔值，命令状态不能用作谓词结果。
+空列表上的 `fold` 返回 `initial`。
+
+映射支持浅合并和有序 entries 转换：
+
+```parsh
+(map/merge {name parsh} {version #1})
+(map/entries {name parsh version #1})
+(map/from-entries [[name parsh] [version #1]])
+```
+
+| 调用 | 返回值 |
+| --- | --- |
+| `(map/merge maps...)` | 浅合并后的新映射；零参数返回空映射 |
+| `(map/entries m)` | 按插入顺序返回二元素 `[key value]` 列表组成的列表 |
+| `(map/from-entries entries)` | 从文本键的二元素列表构造映射 |
+
+后面的映射覆盖前面的值，同时保留原键的位置；新键追加到末尾。
+嵌套值整体替换，不递归合并。`map/from-entries` 会拒绝格式错误的 pair 和重复键。
+
 ## 显式默认值严格求值
 
 `map/get`、`list/get`、`list/first`、`str/get` 的显式默认值是普通实参。
@@ -203,36 +197,97 @@ description: "不可变集合、JSON、原生 HTTP 请求、类型判断和数�
 结果为 `"parsh"` 和 `(#1)`。已有 nil 值的键仍然命中，返回 nil；默认值仍被求值。
 此规则也适用于函数引用和 `apply`。函数声明中的 `&optional` 默认表达式则只在缺参时求值。
 
-## 类型判断
+## JSON
 
-`typeof` 返回类型名称文本：`text`、`int`、`float`、`bool`、`list`、`map`、`form`、
-`struct`、`bytes`、`function`、`nil`、`status`。对应判定为 `text?`、`int?`、`float?`、`bool?`、
-`list?`、`map?`、`form?`、`struct?`、`bytes?`、`function?`、`nil?`、`status?`。
-`number?` 同时接受整数和浮点数；`empty?` 判断文本、列表或映射是否为空，其他类型报错。
+`json/encode` 返回紧凑的 JSON 文本，接受标量、列表、映射和结构体；结构体字段会成为对象属性。
+`json/decode` 接受 UTF-8 文本或 bytes，并返回对应的 parsh 值：对象变成映射，数组变成列表，`null` 变成 nil。
 
-判断严格检查运行时类型：裸词 `123` 是文本，因此 `(number? 123)` 为假，
-`(number? #123)` 为真。普通命令在值位置会捕获成文本；`type` 继续用于查询命令解析。
+```parsh
+(defstruct User name admin)
+(let body (json/encode (User parsh #true)))
+(let value (json/decode $body))
+(map/get $value name)
+```
 
-## 基础数值函数
+编码函数、命令引用、表单、bytes、状态和非有限数值都会报错。
+结构体编码后的 JSON 再解码会得到映射，不会重建原结构体名称。JSON 对象保留输入顺序，重复键采用最后一个值。
+解码数值时优先使用 i64，否则使用有限 f64，因此非常大的 JSON 整数可能损失精度。
+JSON 错误的 `Error.kind` 为 `json`。
+
+## Bytes
+
+`bytes/` 函数操作命令捕获和 HTTP 返回的原始 bytes：
 
 | 调用 | 返回值 |
 | --- | --- |
-| `(quot a b)` | 向零取整的整数商 |
-| `(rem a b)` | 与上述商对应的余数，符号随被除数 |
-| `(abs n)` | 绝对值，保留整数或浮点类型 |
-| `(min n...)`、`(max n...)` | 至少一个参数，返回胜出数值，平局取首项 |
-| `(floor n)` | 向下取整的 i64 |
-| `(ceil n)` | 向上取整的 i64 |
-| `(round n)` | 最接近的 i64，中点远离零 |
+| `(bytes/len value)` | 字节长度。 |
+| `(bytes/slice value start [end])` | 使用列表索引规则切片。 |
+| `(bytes/concat values...)` | 拼接 bytes。 |
+| `(bytes/from-text text)` / `(bytes/to-text bytes)` | UTF-8 转换，解码严格检查。 |
+| `(bytes/base64-encode bytes)` / `(bytes/base64-decode text)` | 标准 Base64 转换。 |
+| `(bytes/hex-encode bytes)` / `(bytes/hex-decode text)` | 小写 Hex 编码和严格解码。 |
+
+索引与切片边界必须是 int。负数从末尾计算，越界边界被截断，反向范围返回空 bytes。
+按字节切片可能拆开 UTF-8 序列，之后解码会报错。Hex 解码接受大小写数字，要求偶数长度，
+拒绝空白与非十六进制文本。
 
 ```parsh
-(list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5))
+(let raw (bytes/hex-decode "00ff41"))
+(list (bytes/len $raw) (bytes/base64-encode $raw)
+      (bytes/to-text (bytes/slice $raw #-1)))
 ```
 
-结果为 `(#-2 #-1 #3 #-3)`。`quot/rem` 仅接受 int，其他数值函数只接受 int 或 float；文本应先用 `int`、`float` 显式转换。
-`min/max` 保留胜出数值的类型，并保留大整数与浮点混合比较的精度。
-除零、整数溢出、取整结果超出 i64 和非有限数值仍是语言错误。
+结果为 `(#3 "AP9B" "A")`。bytes 显示为 `<bytes N>`，不能隐式变成文本，需显式解码或编码。
 
+## 调试输出
+
+`dump` 使用值的显示形式打印任意 parsh 值，并追加换行。它返回 nil，且遵循其他内建输出相同的 stdout 重定向和捕获规则：
+
+```parsh
+(dump {name parsh items [#1 #true]})
+(let result (capture-call printf "hello\n"))
+(dump (CallResult.stdout $result))
+```
+
+需要把显示形式保存为文本时使用 `capture-call`：
+
+```parsh
+(stdout-text (capture-call dump {name parsh}))
+```
+
+结果为 `"(map \"name\" \"parsh\")\n"`。普通 `(let value (dump ...))` 绑定的是 nil，
+因为 `dump` 即使写入输出也仍返回 nil。
+
+## HTTP
+
+原生 parsh 通过 `http/request`、`http/get` 和 `http/post` 提供同步 HTTP 请求。
+浏览器调用这些请求函数会报告能力不支持；`http/body-text` 只解码已有响应，属于共用的数据操作。
+
+下面的示例假设指定 URL 有一个返回 JSON 的 HTTP 服务；请替换为实际服务地址：
+
+```parsh
+(let response
+  (http/get "http://127.0.0.1:8080/data"
+            {accept [application/json]}))
+(if (HttpResponse.ok $response)
+    (json/decode (HttpResponse.body $response))
+    (HttpResponse.status $response))
+```
+
+可用函数如下：
+
+| 调用 | 返回值 |
+| --- | --- |
+| `(http/request method url [body] [headers])` | `HttpResponse`；自定义方法无 body 但有 headers 时使用 `#nil` 占位。 |
+| `(http/get url [headers])` | GET 响应。 |
+| `(http/post url body [headers])` | POST 响应。 |
+| `(http/body-text response)` | 将响应 body 严格解码为 UTF-8 文本。 |
+
+请求 body 接受 nil、文本或 bytes。Headers 是文本名称到文本列表的映射；响应 header 名称统一为小写，重复值保留在列表中。
+`HttpResponse` 包含 `status`、`ok`、`headers`、bytes 类型的 `body` 和最终 `url`。
+4xx 或 5xx 响应仍作为数据返回；DNS、连接、协议和 body 超限错误会抛出 kind 为 `http` 的错误。
+`ok` 仅在 2xx 状态时为真，每次请求的总超时为 30 秒，响应 body 上限为 8 MiB。
+`HttpResponse` 是运行时结构体，通过 `HttpResponse.status` 等访问器查询字段，不能直接调用或重定义其构造器。
 
 ## 调用、结果与任务
 

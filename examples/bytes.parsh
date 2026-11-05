@@ -1,0 +1,18 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/bytes.parsh )
+
+(; Bytes preserve binary data; encoding is explicit. )
+(let raw (bytes/hex-decode "00ff41"))
+(dump $raw)
+(echo "type=$(typeof $raw); length=$(bytes/len $raw)")
+(echo "hex=$(bytes/hex-encode $raw); base64=$(bytes/base64-encode $raw)")
+(echo "base64 round-trip=$(eq $raw (bytes/base64-decode 'AP9B'))")
+(echo "last byte=$(bytes/to-text (bytes/slice $raw #-1))")
+
+(let greeting (bytes/concat (bytes/from-text "hello, ") (bytes/from-text "中文")))
+(echo "UTF-8=$(bytes/to-text $greeting); byte length=$(bytes/len $greeting)")
+
+(; Decoding binary data as UTF-8 throws rather than replacing invalid bytes. )
+(try
+  (bytes/to-text $raw)
+  (catch err (echo "text decode failed: $(Error.kind $err)")))

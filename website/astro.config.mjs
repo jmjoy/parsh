@@ -42,6 +42,11 @@ export default defineConfig({
               label: "Getting started",
               translations: { "zh-CN": "快速开始" },
             },
+            {
+              slug: "docs/examples",
+              label: "Example scripts",
+              translations: { "zh-CN": "示例脚本" },
+            },
           ],
         },
         {

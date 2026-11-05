@@ -21,12 +21,24 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 (apply "map/get" [{name parsh} name])
 ```
 
-`function` 仍只取得用户函数和普通内置。`command?`、`callable?` 用于检查引用。
-名称沿用普通查找规则，宏和 `if` 等特殊形式不能作为普通被调用对象。
+`function` 只取得用户函数和普通内置。`command` 只保存程序名，创建时不查找 PATH 或启动程序，
+调用时才查找，并始终绕过同名语言定义。`command?` 判断命令引用，`callable?` 判断函数值与命令引用，
+不接受文本名称。文本名称沿用普通查找规则，也可以选择结构体构造器、访问器和谓词；
+宏和 `if` 等特殊形式不能作为普通被调用对象。
 实参从左到右求值一次，`apply` 不将值重新解析成源码。
 
 普通调用保留原来的取值规则：`(let here (pwd))` 得到去掉尾部 LF 的 UTF-8 stdout 文本，
 算术和普通函数返回语言值。函数以命令结束时可以返回捕获输出；显式返回类型值则保留该值。
+
+| 调用 | 参数与返回值 |
+| --- | --- |
+| `(command name)` | 非空文本程序名，返回 `<command name>` |
+| `(apply callee fixed... args)` | 仅把最后一个列表展开为调用参数 |
+| `(capture-call callee args...)` | 实参直接排列，返回同步调用的完整 `CallResult` |
+| `(spawn callee args...)` | 实参直接排列，返回原生 `Job` |
+
+传给 `capture-call` 和 `spawn` 的列表仍是一个语言参数；调用外部命令时，才按通常规则展开一层 argv。
+这些调用的首参都不是待执行的命令表达式；多个表达式或管道应放入 `(fn () ...)`。
 
 ## 完整执行结果
 
@@ -44,15 +56,31 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 | `value` | 语言返回值；外部命令为 nil |
 | `termination` | `(Exited code)`、`(Signaled signal core_dumped)` 或 nil |
 | `stdout`、`stderr` | 捕获的 `bytes`；显式重定向或未捕获时为 nil |
-| `error` | 错误摘要或 nil |
+| `error` | `result` 字段为 nil 的 `Error` 摘要，或 nil |
 | `stages` | 管道阶段的 `StageResult`，包含 argv、终止信息和错误 |
 
-这些是运行时结构体，提供 `CallResult.stdout`、`CallResult?`、`Exited.code` 等访问器和谓词；
-其名称与构造器由运行时保留。`bytes?` 判断原始字节，`typeof` 返回 `bytes`，`eq` 按内容比较。
+这些运行时结构体提供 `CallResult.stdout`、`CallResult?`、`Exited.code` 等访问器和谓词。
+其名称与构造器由运行时保留，应读取运行时返回的记录，不能直接构造。
+
+| 结构体 | 字段 |
+| --- | --- |
+| `CallResult` | `value`、`termination`、`stdout`、`stderr`、`error`、`stages` |
+| `Exited` | `code` |
+| `Signaled` | `signal`、`core_dumped` |
+| `StageResult` | `argv`（文本列表）、`termination`、`error` |
+| `Error` | `kind`、`message`、`code`、`offset`（字节偏移）、`payload`、`result` |
+| `Job` | `session`、`id` |
+| `JobStatus` | `state`、`result` |
+
+`HttpResponse` 也是运行时结构体，详见 [HTTP](/parsh/zh-cn/docs/stdlib/#http)。
+
+`bytes?` 判断原始字节，`typeof` 返回 `bytes`，`eq` 按内容比较。
 bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境变量。
 
-`stdout-text`、`stderr-text` 严格解码 UTF-8，保留换行。无效 UTF-8 会抛出携带原始结果的错误。
-信号终止时 `exit-code` 为 nil，正常退出时 `signal` 为 nil，因此显式退出码 143 与 SIGTERM 终止不同。
+`stdout-text`、`stderr-text` 严格解码 UTF-8 并保留换行；未捕获或已重定向的流返回 nil，
+捕获的空流返回空文本。无效 UTF-8 会抛出携带原始结果的错误。
+信号终止或没有终止信息时 `exit-code` 为 nil，正常退出或没有终止信息时 `signal` 为 nil，
+因此显式退出码 143 与 SIGTERM 终止不同。
 原生 Linux 的 core dump 信息保存在 `Signaled.core_dumped`。
 
 `capture-call` 将非零退出和信号终止作为数据返回，启动、实参和语言错误仍抛异常。
@@ -70,6 +98,15 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 ```parsh
 (capture-call (fn () (| (printf "b\na\n") (sort))))
 ```
+
+原始捕获也接受二进制输出，不会自动解码：
+
+```parsh
+(let binary (capture-call printf "\\377\\000\\101"))
+(bytes/hex-encode (CallResult.stdout $binary))
+```
+
+结果为 `"ff0041"`。切片、拼接和显式文本转换见 [bytes 函数](/parsh/zh-cn/docs/stdlib/#bytes)。
 
 ## 上一次执行结果：`$?`
 
@@ -110,14 +147,16 @@ finally 在正常完成、异常和语言跳转时执行，忽略普通返回值
 finally 的当前函数上下文禁止 return/break/continue，调用的辅助函数仍可正常返回。
 强制取消可以打断清理。
 
+错误分类、脚本读取与交互批次检查的区别见[错误与退出码](/parsh/zh-cn/docs/diagnostics/)。
+
 ## 原生后台任务
 
 ```parsh
 (let job (spawn printf "hello %s\n" world))
 (job-status $job)
-(let result (wait $job))
-(stdout-text $result)
-(check $result)
+(let completed (wait $job))
+(stdout-text $completed)
+(check $completed)
 ```
 
 `spawn` 接受外部命令、用户函数和普通内置，采用铺平实参，返回属于当前会话的 `Job`。
@@ -138,4 +177,10 @@ spawn 发布的启动结果在 `value` 中保存 Job，termination 为 nil。
 后台功能要求原生 parsh。浏览器支持同步调用、结果、bytes、`$?` 和异常，后台接口明确报能力不支持。
 首版没有字面 `&`、暂停恢复、fg/bg 或脱离会话长期运行的任务。
 
-显式捕获最多嵌套 32 层；普通求值保留独立的深度限制。
+| 调用 | 返回值 |
+| --- | --- |
+| `(wait job)` | 等待完成并返回最终 `CallResult`，可重复等待 |
+| `(job-status job)` | 不改变 `$?` 的 `JobStatus` 快照 |
+| `(cancel job)` | 请求取消并返回 nil，不改变 `$?` |
+
+显式捕获最多嵌套 32 层，求值有独立的 128 层限制。完整可运行程序见[示例脚本](/parsh/zh-cn/docs/examples/)。

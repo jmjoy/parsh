@@ -1,0 +1,25 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/http.parsh URL
+   Native only. Pass an HTTP or HTTPS URL; no request is made without one. )
+
+(if (empty? $args)
+    (do
+      (echo "usage: cargo run -- examples/http.parsh URL")
+      (exit 0)))
+
+(let url (list/first $args))
+(let response (http/get $url {accept [application/json]}))
+(echo "status=$(HttpResponse.status $response); ok=$(HttpResponse.ok $response)")
+(echo "url=$(HttpResponse.url $response); body bytes=$(bytes/len (HttpResponse.body $response))")
+(dump (HttpResponse.headers $response))
+
+(; HTTP error statuses remain data; transport failures throw before this point. )
+(if (not (HttpResponse.ok $response))
+    (echo "server returned an unsuccessful HTTP status"))
+
+(; Decode only JSON responses as JSON; other bodies use strict UTF-8 decoding. )
+(let content_type
+  (str/join (map/get (HttpResponse.headers $response) content-type []) ","))
+(if (str/contains $content_type application/json)
+    (dump (json/decode (HttpResponse.body $response)))
+    (echo (http/body-text $response)))

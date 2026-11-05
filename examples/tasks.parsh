@@ -1,0 +1,30 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/tasks.parsh
+   Native only: background tasks are not available in the browser. )
+
+(; Task output is captured, and wait returns an inspectable result. )
+(let job (spawn printf "hello %s\n" world))
+(let result (wait $job))
+(check $result)
+(dump (stdout-text $result))
+(echo "state=$(JobStatus.state (job-status $job)); repeated wait=$(eq $result (wait $job))")
+
+(; A function task copies its lexical environment; the parent binding stays put. )
+(let message parent)
+(let worker
+  (spawn (fn ()
+    (set message child)
+    (echo "worker=$message")
+    (return $message))))
+(let completed (wait $worker))
+(check $completed)
+(echo "parent=$message; returned=$(CallResult.value $completed)")
+(dump (stdout-text $completed))
+
+(; Cancellation is a request; wait still collects the final result. )
+(let sleeper (spawn sleep 30))
+(cancel $sleeper)
+(let cancelled (wait $sleeper))
+(try
+  (check $cancelled)
+  (catch err (echo "task ended: $(Error.kind $err)")))

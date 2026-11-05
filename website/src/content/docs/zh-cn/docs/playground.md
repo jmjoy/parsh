@@ -45,6 +45,26 @@ description: "在浏览器中运行 parsh、coreutils 和命令管道。"
 
 浏览器管道逐阶段缓冲执行，返回最右侧非零状态，不提供原生实时流式处理或 SIGPIPE 行为。未提供文件或上游管道时，标准输入为 EOF。单次命令输出和每段管道缓冲上限为 8 MiB，虚拟文件总量上限为 32 MiB。首版不包含 `grep`、`sed`、`find` 或交互程序。
 
+## 语言与执行
+
+有类型的值、闭包、可选与变长参数、结构体、宏、不可变集合、JSON 和 bytes 与原生共用实现。
+`dump` 可以显示映射和结构体等不能隐式转成文本的值。
+
+| 功能 | 浏览器 | 原生 Linux |
+| --- | --- | --- |
+| 语言、JSON 和 bytes | 共用语义 | 支持 |
+| 外部命令 | 上述 coreutils 子集 | 会话可用的可执行程序 |
+| 文件 | 临时虚拟文件系统 | 本地文件系统 |
+| 管道 | 逐阶段缓冲 | 多阶段并发流式执行 |
+| 命令引用、`apply`、`capture-call`、`$?`、异常 | 支持 | 支持 |
+| 信号与后台任务 | 不支持 | 支持 |
+| `http/request`、`http/get`、`http/post` | 不支持 | 支持 |
+
+`capture-call` 保留原始字节与换行；普通值位置命令捕获返回去掉尾部 LF 的 UTF-8 文本。
+REPL 上次返回值 `$_` 与上次执行结果 `$?` 的更新规则不同，详见[变量与作用域](/parsh/zh-cn/docs/variables/)。
+
+[示例指南](/parsh/zh-cn/docs/examples/)标注了可在浏览器中执行的脚本；运行独立脚本前重置会话，避免重复的顶层绑定。
+
 ## 会话与按键
 
 - Tab 补全命令、临时文件路径和 `$变量名`；多个匹配先补公共前缀，再按一次显示候选。例如输入 `cat fru` 后按 Tab 可补全 `fruits.txt`。
@@ -60,6 +80,3 @@ description: "在浏览器中运行 parsh、coreutils 和命令管道。"
 - `exit` 和空输入时 Ctrl+D 结束会话，可重置重新开始。
 
 要操作自己的文件并运行 Linux 程序，请[在 Linux 上使用 parsh](/parsh/zh-cn/docs/getting-started/)。
-
-
-同步的 `command` 引用、`apply`、`capture-call`、原始字节结果、`$?` 和 `try/catch/throw/finally` 与原生环境共用语义。浏览器不提供原生信号或后台任务，`spawn`、`wait`、`job-status`、`cancel` 明确提示能力限制。

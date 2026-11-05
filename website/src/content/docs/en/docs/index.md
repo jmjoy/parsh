@@ -20,6 +20,7 @@ The interactive result is `"hello, world"`. Scripts use exactly the same syntax;
 
 - [Get started on Linux](/parsh/en/docs/getting-started/) to use parsh with your own commands.
 - [Try the language](/parsh/en/playground/) without installing anything.
+- [Run complete example scripts](/parsh/en/docs/examples/) organized by topic and runtime support.
 - [Learn the syntax](/parsh/en/docs/syntax/) and build up to functions and command composition.
 - [Define structs and macros](/parsh/en/docs/structs-and-macros/) to extend the language itself.
 - Read the [design principles](/parsh/en/docs/design/) behind these choices.

@@ -14,10 +14,6 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 
 调用头接受文本命令名、函数值或显式 `command` 引用；数值、布尔和 nil 即使来自变量也不可调用。需要文本命令名时显式使用 `str`。`int`、`float`、`bool` 是保留内建命令。
 
-`map` 用于构造映射；内置操作包括 `map/get`、`map/set`、`map/del`、`map/has`、`map/keys`、`map/vals` 和 `map/len`，
-首参均为映射值，例如 `$config` 或 `{name parsh}`。更新操作返回新映射，
-使用 `set` 显式赋回才会更新变量。命令签名与示例见[映射](/parsh/zh-cn/docs/variables/#映射)。
-
 使用 `type` 查询命令的解析结果，不会执行被查询的命令：
 
 ```parsh
@@ -47,8 +43,9 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 (| (find . -name "*.rs") (sort))
 (|> files.txt (| (find . -name "*.rs") (sort)))
 (|>> log.txt (echo another entry))
-(<| input.txt (sort))
-(|2> errors.txt (grep needle missing.txt))
+(<| files.txt (sort))
+(|2> errors.txt
+  (if (cat missing.txt) (echo found) (echo "read failure handled")))
 ```
 
 组合操作如下：
@@ -62,7 +59,13 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 
 重定向始终将路径作为第一个参数、表达式作为第二个参数。
 重定向形式可以嵌套，也可以包裹整个管道。
-首版管道的每个阶段必须是外部命令调用；函数和改变 Shell 状态的内置形式在管道外执行。
+管道的每个阶段必须调用外部命令，调用头可以是文本名称、文本变量或 `command` 引用。
+用户函数、宏、结构体成员和内置形式不能作为管道阶段；显式引用可以绕过同名的语言命令：
+
+```parsh
+(let sorter (command sort))
+(| (printf "b\na\n") ($sorter))
+```
 
 例如，将标准输出写入清空后的日志，并将标准错误追加到另一个日志：
 
@@ -74,7 +77,6 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 
 顶层命令实时输出。外部命令或管道用作值时，会将标准输出按 UTF-8 捕获，
 移除末尾的 LF 换行符，并将结果保持为一个参数。标准错误仍写入原来的目标。
-二进制输出应使用管道或文件重定向。显式重定向优先于对该表达式输出的捕获。
-
+二进制输出应使用管道、文件重定向或 `capture-call` 原始字节捕获。显式重定向优先于对该表达式输出的捕获。
 
 完整结果、原始字节捕获、`$?`、异常和后台执行见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。

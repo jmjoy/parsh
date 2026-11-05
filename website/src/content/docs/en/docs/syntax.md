@@ -18,7 +18,11 @@ Outside strings, variable references use `$name`. Binding
 and assignment targets use bare names, including function parameters, loop
 bindings, and environment settings.
 
-The reader creates text, scalar literals, variable references, interpolated strings, and lists of expressions. Evaluation can return text, numbers, booleans, lists, maps, nil, or native command statuses. These are different value types even though words such as `true` and `nil` themselves are just text.
+The reader creates text, scalar literals, variable references, interpolated strings,
+and lists of expressions. Runtime values include text, ints, floats, booleans, lists,
+maps, quoted forms, functions, external command references, bytes, structs, nil, and
+command statuses. Words such as `true` and `nil` themselves remain text.
+See [type predicates](/parsh/en/docs/stdlib/#type-predicates) for runtime type names.
 
 ```parsh
 (eq true true)
@@ -57,12 +61,14 @@ fraction, and exponent syntax, with i64 integers and finite f64 floats; integer
 overflow never falls back to floating point. Boolean and nil names are lowercase,
 with no `#t`/`#f` aliases.
 
-Literals can appear directly at the prompt or at script top level. Scripts do not
-print their results automatically. A literal is source syntax: quoted text,
+Calls, collection expressions, and scalar literals can appear at script top level.
+Bare text, quoted strings, and standalone variable references cannot: use `(str $name)`
+to return text or `(dump $name)` to print any value. Scripts do not print return values
+automatically. The prompt also accepts scalar literals directly. A literal is source syntax: quoted text,
 variable contents, and command output are never parsed again, and `#$name` is not
 a conversion. Use `int`, `float`, or `bool` for runtime conversion.
 
-A command head must evaluate to text or a function. `(#1)` and a numeric variable
+A command head must evaluate to text, a function, or an external `command` reference. `(#1)` and a numeric variable
 used as a command name are errors; use `str` to explicitly construct a text command
 name. `#false` is an ordinary false value, while `(false)` retains its external
 command failure behavior. Numeric values and nil are not implicit conditions.
@@ -120,7 +126,8 @@ escaping for the outer string. The `pwd` example needs a command execution host.
 Parts evaluate once from left to right. Each parenthesized part has its own
 lexical scope, while `let` binds in the surrounding expression scope; side effects
 and errors otherwise match ordinary calls. Scalars convert as `str` does: numbers and
-booleans become text, nil becomes empty text, and lists and maps are errors. External
+booleans become text and nil becomes empty text. Collections, structs, forms, functions,
+command references, bytes, and statuses cannot implicitly become text. External
 commands capture UTF-8 stdout and remove trailing LF characters; stderr keeps
 its destination. Errors stop the current batch. The resulting text stays one
 argument, and inserted values are never parsed or interpolated again.
@@ -194,9 +201,9 @@ tests equality and `!=` tests inequality; `<`, `<=`, `>`, and `>=` test order.
 Each numeric comparison takes exactly two arguments and returns a boolean.
 Comparisons require int or float values and compare them by value,
 preserving integer precision even for large mixed operands:
-`(> #9007199254740993 #9007199254740992.0)` is `true`.
+`(> #9007199254740993 #9007199254740992.0)` is `#true`.
 Float comparisons are exact, with no tolerance: `(= (+ #0.1 #0.2) #0.3)` is
-`false` because `f64` has binary rounding error. Arithmetic involving floats
+`#false` because `f64` has binary rounding error. Arithmetic involving floats
 can also lose large integer precision.
 
 ```parsh

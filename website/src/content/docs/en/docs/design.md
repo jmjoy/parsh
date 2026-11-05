@@ -60,8 +60,8 @@ another shell to parse again, so there is no second round of quoting and no
 injection layer.
 
 Command results are values. A command used as a value captures stdout as UTF-8
-text with trailing newlines removed, binary output goes through redirection or
-pipelines, and the exit status is a `status` value. A nonzero status stops the
+text with trailing LF characters removed. Binary output uses redirection, pipelines,
+or explicit raw-byte capture, and the exit status is a `status` value. A nonzero status stops the
 current batch, but conditions and explicit capture may inspect it. Complete results retain exit and signal information, and exceptions provide recovery.
 See [commands and composition](/parsh/en/docs/commands/).
 

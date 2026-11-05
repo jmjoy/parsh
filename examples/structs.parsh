@@ -4,6 +4,7 @@
 (; defstruct defines a constructor, one accessor per field, and a predicate. )
 (defstruct Point x y)
 (let corner (Point #3 #4))
+(dump $corner)
 (printf "x=%s y=%s\n" (Point.x $corner) (Point.y $corner))
 (if (Point? $corner)
     (echo "corner is a point"))

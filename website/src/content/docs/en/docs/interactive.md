@@ -29,7 +29,7 @@ description: "Paredit structural editing, the parenthesis prompt, completion, pa
   Editing and display account for Unicode grapheme clusters and character
   width. Up/Down move between lines and recall session history at the buffer
   boundaries; Ctrl+P/N always browse history.
-- Tab completes built-ins, defined functions, executable commands, file paths,
+- Tab completes built-ins, functions, macros, struct members, executable commands, file paths,
   and `$variable` names. A unique match is inserted directly; directories end in
   `/`. Multiple matches extend the common prefix; press Tab again to list them.
   Completion works at the cursor, handles quoted paths, and never runs a command.
@@ -123,14 +123,16 @@ shortcuts cannot reach the page; use an Esc prefix when Alt conflicts. Copy and 
 continue using the browser's shortcuts.
 
 Errors include the source, line, and column. Script execution recovers
-unexpected top-level `)` and continues with later expressions. Such errors give
+unexpected top-level `)`, `]`, and `}` and continues with later expressions. Such errors give
 a script exit status of 2 unless a runtime failure or explicit `exit` supersedes
 it. Command failures keep their exit status; startup failures use 127 for a
 missing command and 126 for permission denied. Other language errors use 2.
 
-The initial scope is Linux foreground jobs, including interactive external
-programs and foreground pipelines. There is no background job table, `bg`, `fg`,
-or suspend/resume support; children ignore Ctrl+Z. History is session-local.
-Macros and persistent configuration are future work.
+Native parsh supports interactive foreground programs and pipelines, plus isolated
+background tasks through `spawn`, `wait`, `job-status`, and `cancel`; see
+[execution results and tasks](/parsh/en/docs/execution/#native-background-tasks).
+There is no `bg`, `fg`, or suspend/resume support; children ignore Ctrl+Z.
+Macros are supported. History is session-local; persistent history and configuration
+are not yet implemented.
 
 The browser playground shares this editor's input, completion, history, paste, and layout model. It completes only commands and temporary files available in its isolated host. It evaluates the language and runs a coreutils subset; pressing Ctrl+C during execution resets the browser session. Native foreground programs and terminal handoffs apply to Linux only.

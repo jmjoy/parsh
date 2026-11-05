@@ -8,7 +8,7 @@ Native parsh requires Linux and a current stable Rust toolchain. Build from the 
 ```console
 git clone https://github.com/jmjoy/parsh.git
 cd parsh
-cargo build --release
+cargo build --locked --release
 ./target/release/parsh
 ```
 
@@ -19,7 +19,9 @@ To install it on your PATH, run `cargo install --path crates/parsh`.
 ```console
 parsh
 parsh -c '(echo hello)'
+parsh -c '(printf "%s\n" $args)' first 'two words'
 parsh examples/hello.parsh world
+parsh - first < examples/hello.parsh
 ```
 
 With no arguments, parsh opens an interactive editor when stdin is a terminal,
@@ -45,3 +47,5 @@ Type `str "hello, " "parsh"` at the `$ ()` prompt and press Enter. parsh supplie
 The first expression binds a value. The second returns text, which an interactive session displays. The third runs the native `echo` program and writes stdout. Script mode does not print expression return values automatically.
 
 The [browser playground](/parsh/en/playground/) supports language expressions and coreutils commands. See its [capabilities](/parsh/en/docs/playground/) for the command list and temporary files.
+
+See [example scripts](/parsh/en/docs/examples/) for complete programs covering collections, functions, command results, and background tasks.

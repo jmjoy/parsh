@@ -17,9 +17,10 @@ or expressions.
 
 Typed scalars use `#1`, `#1.0`, `#true`, `#false`, and `#nil`. Runtime text conversion uses `int`, `float`, and `bool`; see [syntax](/parsh/en/docs/syntax/#scalar-literals) and [conversions](/parsh/en/docs/stdlib/#scalar-conversions).
 
-Values use copy semantics. Reading a variable, assigning a value, or passing a
-function argument copies it, including nested lists and maps. Collection updates
-return new values; use `set` to replace an existing binding.
+Ordinary data uses value semantics: reading, assigning, or passing it copies the
+value, including nested lists and maps. Collection updates return new values;
+use `set` to replace an existing binding. Function copies retain their identity
+and captured lexical environment.
 
 ```parsh
 (let name "a friend")
@@ -39,9 +40,10 @@ function, or a loop stays in that enclosing body scope.
 nearest existing binding or environment entry; an undefined name errors before the
 right-hand side is evaluated. It then evaluates the right-hand side and updates the
 binding. Lookups fall back to the inherited environment.
-`export` sets the environment for subsequent children and updates an existing local
-binding of the same name. Environment and working directory changes belong to this
-parsh session.
+`(export name value)` converts a scalar to text, sets the environment for subsequent
+children, and updates an existing local binding of the same name to that text.
+Lists, maps, structs, forms, functions, commands, bytes, and statuses cannot be exported
+implicitly. Environment and working directory changes belong to this parsh session.
 
 `get` takes exactly one text variable name, which can itself be an expression,
 and returns the original value using the same lookup rules as `$name`:
@@ -93,7 +95,7 @@ before evaluating that key's value.
 (set config (map/del $updated version))
 ```
 
-Every `m` command takes a map value as its first argument: `$config`, a map literal,
+The operations in the table below take a map value as their first argument: `$config`, a map literal,
 or any expression returning a map. A bare word such as `config` is text and produces
 a type error. In the example, `updated` contains the new name while `config` keeps
 its old value until the final `set`.
@@ -114,7 +116,7 @@ default is still evaluated.
 The default does not handle undefined variables or non-map arguments.
 After checking argument count, arguments evaluate once from left to right.
 `map/get` evaluates all explicit arguments before checking the map and choosing a
-result. Other map operations check the map before evaluating keys and values.
+result. The other operations in the table check the map before evaluating keys and values.
 The operation uses that independent map value, even if later expressions change
 the source variable. In map construction and `map/set`, invalid keys stop evaluation
 before the value expression.
@@ -142,6 +144,8 @@ Maps cannot implicitly become text: `str`, string interpolation, external comman
 arguments, and environment values reject maps. Use `map/keys` or `map/vals` explicitly
 when a list is needed for iteration or command arguments.
 
+For shallow merging and ordered key-value pair conversion, see `map/merge`,
+`map/entries`, and `map/from-entries` in [data transforms](/parsh/en/docs/stdlib/#data-transforms).
 
 ## Previous REPL value: `$_`
 

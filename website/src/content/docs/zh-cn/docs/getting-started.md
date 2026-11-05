@@ -8,7 +8,7 @@ description: "在 Linux 上构建与运行 parsh。"
 ```console
 git clone https://github.com/jmjoy/parsh.git
 cd parsh
-cargo build --release
+cargo build --locked --release
 ./target/release/parsh
 ```
 
@@ -19,7 +19,9 @@ cargo build --release
 ```console
 parsh
 parsh -c '(echo hello)'
+parsh -c '(printf "%s\n" $args)' first 'two words'
 parsh examples/hello.parsh world
+parsh - first < examples/hello.parsh
 ```
 
 不带参数启动时，如果标准输入是终端，parsh 会打开交互编辑器；否则从标准输入读取脚本。
@@ -43,3 +45,5 @@ parsh examples/hello.parsh world
 第一个表达式绑定变量。第二个返回文本，交互环境会显示它。第三个调用原生 `echo` 程序并输出到 stdout。脚本模式不会自动打印表达式返回值。
 
 [浏览器终端](/parsh/zh-cn/playground/)支持语言表达式和 coreutils 命令；命令清单与临时文件说明见[支持范围](/parsh/zh-cn/docs/playground/)。
+
+[示例脚本](/parsh/zh-cn/docs/examples/)提供集合、函数、命令结果和后台任务等完整程序。

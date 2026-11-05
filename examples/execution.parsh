@@ -1,0 +1,39 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/execution.parsh )
+
+(; An explicit external reference can be called directly or through apply. )
+(let printer (command printf))
+(apply $printer "argument: <%s>\n" ["one item" second])
+(echo "command=$(command? $printer); callable=$(callable? $printer)")
+
+(; Complete capture preserves newlines and publishes the same result as $? . )
+(let result (capture-call $printer "hello\n\n"))
+(let saved $?)
+(dump (list (stdout-text $result) (exit-code $result) (signal $result)))
+(echo "saved result=$(eq $result $saved); bytes=$(bytes? (CallResult.stdout $result))")
+(let sum (capture-call + #2 #3))
+(echo "language return value=$(CallResult.value $sum)")
+
+(; Wrap a pipeline in a function; command references are valid stage heads. )
+(let sorter (command sort))
+(let sorted (capture-call (fn () (| (printf "b\na\n") ($sorter)))))
+(dump (stdout-text $sorted))
+
+(; Capture returns nonzero exits as data, including each pipeline stage. )
+(let failed (capture-call (fn () (| (false) (true)))))
+(echo "pipeline exit=$(exit-code $failed)")
+(dump (CallResult.stages $failed))
+(try
+  (check $failed)
+  (catch err
+    (echo "caught $(Error.kind $err): exit=$(exit-code (Error.result $err))"))
+  (finally (echo "cleanup always runs")))
+
+(; Both streams are captured independently, including stderr from a failed command. )
+(let missing (capture-call cat __parsh_example_missing__.txt))
+(echo "read exit=$(exit-code $missing); stderr captured=$(not (empty? (stderr-text $missing)))")
+
+(; User exceptions retain typed payloads. )
+(try
+  (throw {reason example retry #false})
+  (catch err (dump (Error.payload $err))))

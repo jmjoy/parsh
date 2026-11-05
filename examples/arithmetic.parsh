@@ -7,7 +7,7 @@
   (set total (+ $total $number)))
 
 (printf "number: %s\n" $numbers)
-(printf "sum=%s mean=%s\n" $total (/ $total #4))
+(printf "sum=%s mean=%s\n" $total (/ $total (list/len $numbers)))
 (printf "square of 9=%s\n" (* #9 #9))
 
 (if (>= $total #20)

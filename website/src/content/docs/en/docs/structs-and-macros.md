@@ -24,10 +24,19 @@ three kinds of command:
 (if (Point? $point) (echo a point))
 ```
 
-A struct is an ordinary value: it can sit in lists and maps, be passed to
-functions, and be captured by interpolation. It prints in field order, for
-example `(Point #3 #4)`, or `(Point "3" "4")` when the fields are text. It
-compares by name and fields, and copies with the usual value semantics. Structs are immutable, so changing a field means building a new value.
+A struct can sit in lists and maps and be passed to functions. It displays in
+field order, for example `(Point #3 #4)`, or `(Point "3" "4")` when the fields are
+text. It compares by name and fields and uses ordinary data value semantics.
+Structs are immutable, so changing a field means building a new value.
+
+Structs cannot implicitly become text, external arguments, or environment values.
+Read scalar fields for interpolation, use `dump` for display, or encode as JSON:
+
+```parsh
+(dump $point)
+(str "x=$(Point.x $point)")
+(json/encode $point)
+```
 
 Accessors read the field from the value rather than from the current definition,
 so redefining a struct keeps existing values readable:
@@ -117,3 +126,9 @@ the caller's function or loop.
 - Structs have no field setters and no dynamic field names.
 
 Scalar literals retain their types through quote, quasiquote, and unquote. Form source uses `#` for typed scalars and normalizes numeric spelling: `#001` prints as `#1`. Literal nodes compare by type and value, ignoring source offsets.
+
+`CallResult`, `Exited`, `Signaled`, `StageResult`, `Job`, `JobStatus`, `Error`, and
+`HttpResponse` are runtime-owned structs. Their constructors cannot be called or
+redefined; use their accessors and predicates to inspect results. See
+[execution results](/parsh/en/docs/execution/#complete-results) and
+[HTTP](/parsh/en/docs/stdlib/#http). Macro expansion is limited to 32 nested levels.

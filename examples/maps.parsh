@@ -1,0 +1,27 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/maps.parsh )
+
+(; Map updates return new values; nested values keep their types. )
+(let original {name parsh retries #3 nested {enabled #true} empty #nil})
+(let config (map/set $original name updated))
+(echo "original=$(map/get $original name) updated=$(map/get $config name)")
+(dump (map/get $config nested))
+(echo "has nil=$(map/has $config empty); missing=$(map/get $config missing fallback)")
+
+(; set explicitly replaces a binding; deleting a key leaves the original intact. )
+(set config (map/del $config retries))
+(echo "original size=$(map/len $original); updated size=$(map/len $config)")
+(dump (map/keys $config))
+(dump (map/vals $config))
+
+(; A provided default evaluates even when the key is present. )
+(let defaults #0)
+(dump (map/get $config name (do (set defaults (+ $defaults #1)) fallback)))
+(echo "default evaluations=$defaults")
+
+(; Merge is shallow: later values replace earlier ones without moving keys. )
+(let merged (map/merge $config {name merged version #1}))
+(dump $merged)
+(let entries (map/entries $merged))
+(dump $entries)
+(echo "entries round-trip=$(eq $merged (map/from-entries $entries))")

@@ -23,9 +23,13 @@ quoted string, so namespace names can be selected dynamically:
 (apply "map/get" [{name parsh} name])
 ```
 
-`function` continues to obtain only user functions and ordinary builtins.
-`command?` and `callable?` inspect references. Names follow ordinary lookup;
-macros and special forms such as `if` cannot be passed as ordinary callees.
+`function` obtains only user functions and ordinary builtins. `command` stores a
+program name without searching PATH or starting it; lookup happens when called.
+It always bypasses language definitions. `command?` identifies command references;
+`callable?` identifies function and command reference values, not text names.
+Text names follow ordinary lookup and can also select struct constructors,
+accessors, and predicates. Macros and special forms such as `if` cannot be passed
+as ordinary callees.
 Arguments evaluate once from left to right, and values passed by `apply` are never
 reparsed as source.
 
@@ -33,6 +37,18 @@ Ordinary calls keep their existing behavior: `(let here (pwd))` obtains stdout a
 UTF-8 text with trailing LF characters removed, while arithmetic and typed functions
 return their language values. A function ending with a command can return its captured
 output; an explicit typed return retains that value.
+
+| Call | Arguments and result |
+| --- | --- |
+| `(command name)` | One nonempty text program name; returns `<command name>` |
+| `(apply callee fixed... args)` | Expands only the final list into call arguments |
+| `(capture-call callee args...)` | Flat arguments; returns a complete synchronous `CallResult` |
+| `(spawn callee args...)` | Flat arguments; returns a native `Job` |
+
+Lists passed to `capture-call` and `spawn` remain one language argument; external
+command calls then apply the usual one-level list expansion to argv. None of
+these operations takes an unevaluated command expression as its first argument.
+Wrap multiple expressions or a pipeline in `(fn () ...)` instead.
 
 ## Complete results
 
@@ -51,19 +67,34 @@ output; an explicit typed return retains that value.
 | `value` | Language return value; nil for an external command |
 | `termination` | `(Exited code)`, `(Signaled signal core_dumped)`, or nil |
 | `stdout`, `stderr` | Captured `bytes`, or nil when explicitly redirected or not captured |
-| `error` | Error summary, or nil |
+| `error` | `Error` summary with a nil `result` field, or nil |
 | `stages` | `StageResult` records containing argv, termination, and error for pipeline stages |
 
-These are runtime structures with ordinary field accessors and predicates, such as
+Runtime records provide ordinary field accessors and predicates, such as
 `CallResult.stdout`, `CallResult?`, and `Exited.code`. Their constructors and names
-are reserved. `bytes?` identifies raw captured bytes, `typeof` reports `bytes`, and
+are reserved; inspect records returned by the runtime rather than constructing them.
+
+| Record | Fields |
+| --- | --- |
+| `CallResult` | `value`, `termination`, `stdout`, `stderr`, `error`, `stages` |
+| `Exited` | `code` |
+| `Signaled` | `signal`, `core_dumped` |
+| `StageResult` | `argv` (text list), `termination`, `error` |
+| `Error` | `kind`, `message`, `code`, `offset` (byte offset), `payload`, `result` |
+| `Job` | `session`, `id` |
+| `JobStatus` | `state`, `result` |
+
+`HttpResponse` is another runtime-owned record; see [HTTP](/parsh/en/docs/stdlib/#http).
+
+`bytes?` identifies raw captured bytes, `typeof` reports `bytes`, and
 `eq` compares their contents. Bytes display as `<bytes N>` and cannot implicitly
 become text, external arguments, or environment values.
 
-`stdout-text` and `stderr-text` strictly decode UTF-8 and preserve newlines. Invalid
-UTF-8 raises an error carrying the original result. `exit-code` returns nil for
-signal termination; `signal` returns nil for normal exit. Thus a program exiting
-with code 143 differs from one killed by SIGTERM. Core-dump information is retained
+`stdout-text` and `stderr-text` strictly decode UTF-8 and preserve newlines. They
+return nil for an uncaptured or redirected stream, and empty text for a captured
+empty stream. Invalid UTF-8 raises an error carrying the original result.
+`exit-code` returns nil for signal termination or absent termination information;
+`signal` returns nil for normal exit or absent termination information. A program exiting with code 143 differs from one killed by SIGTERM. Core-dump information is retained
 in `Signaled.core_dumped` on native Linux.
 
 Nonzero exits and terminating signals are returned as data by `capture-call`.
@@ -85,6 +116,16 @@ external stages; wrap a pipeline in a function to capture or spawn it:
 ```parsh
 (capture-call (fn () (| (printf "b\na\n") (sort))))
 ```
+
+Raw capture also accepts binary output without decoding it:
+
+```parsh
+(let binary (capture-call printf "\\377\\000\\101"))
+(bytes/hex-encode (CallResult.stdout $binary))
+```
+
+The result is `"ff0041"`. Use the [bytes functions](/parsh/en/docs/stdlib/#bytes)
+for slicing, concatenation, and explicit text conversion.
 
 ## The previous result: `$?`
 
@@ -131,14 +172,17 @@ value is ignored; a new exception overrides the pending outcome, except cancella
 Return, break, and continue are forbidden in the finally block's current function;
 helper functions may return normally. Forced cancellation can interrupt cleanup.
 
+See [errors and exit codes](/parsh/en/docs/diagnostics/) for error kinds and the
+difference between script reading and interactive batch validation.
+
 ## Native background tasks
 
 ```parsh
 (let job (spawn printf "hello %s\n" world))
 (job-status $job)
-(let result (wait $job))
-(stdout-text $result)
-(check $result)
+(let completed (wait $job))
+(stdout-text $completed)
+(check $completed)
 ```
 
 `spawn` accepts external commands, user functions, and ordinary builtins with flat
@@ -166,4 +210,11 @@ Background execution requires native parsh. The browser supports synchronous cal
 results, bytes, `$?`, and exceptions, and reports background interfaces as unsupported.
 There is no literal `&`, job suspension, `fg/bg`, or detached persistent task support.
 
-Explicit captures can nest up to 32 levels; ordinary evaluation retains its separate depth limit.
+| Call | Result |
+| --- | --- |
+| `(wait job)` | Final `CallResult`; waits until completion and can be repeated |
+| `(job-status job)` | `JobStatus` snapshot without changing `$?` |
+| `(cancel job)` | Request cancellation; returns nil without changing `$?` |
+
+Explicit captures can nest up to 32 levels; evaluation has a separate 128-level
+limit. Runnable examples are listed in the [examples guide](/parsh/en/docs/examples/).

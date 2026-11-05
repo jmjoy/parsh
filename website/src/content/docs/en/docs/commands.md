@@ -15,11 +15,6 @@ its value is one program name, without implicit splitting into flags.
 
 Command heads accept text, function values, and explicit `command` references. Numeric, boolean, and nil heads are not callable, including values read from variables. Use `str` to explicitly construct a text command name. `int`, `float`, and `bool` are reserved builtins.
 
-`map` constructs a map. Its built-in operations are `map/get`, `map/set`, `map/del`, `map/has`,
-`map/keys`, `map/vals`, and `map/len`; all take a map value first, such as `$config` or
-`{name parsh}`. Updates return new maps; use `set` to replace a variable's value.
-See [maps](/parsh/en/docs/variables/#maps) for signatures and examples.
-
 Use `type` to inspect command lookup without executing the command:
 
 ```parsh
@@ -50,8 +45,9 @@ return those names.
 (| (find . -name "*.rs") (sort))
 (|> files.txt (| (find . -name "*.rs") (sort)))
 (|>> log.txt (echo another entry))
-(<| input.txt (sort))
-(|2> errors.txt (grep needle missing.txt))
+(<| files.txt (sort))
+(|2> errors.txt
+  (if (cat missing.txt) (echo found) (echo "read failure handled")))
 ```
 
 The operators are:
@@ -64,8 +60,15 @@ The operators are:
 - `|2>>`: create or append a file and redirect stderr.
 
 Redirection always takes the path first and an expression second. Wrappers can
-nest and can enclose an entire pipeline. Pipeline stages in v1 must be external
-command calls; functions and state-changing built-ins run outside pipelines.
+nest and can enclose an entire pipeline. Pipeline stages must call external
+commands. Their heads can be text names, text variables, or `command` references;
+user functions, macros, struct members, and builtins cannot run as stages.
+Use an explicit reference to bypass a same-named language command:
+
+```parsh
+(let sorter (command sort))
+(| (printf "b\na\n") ($sorter))
+```
 
 For example, write stdout to a fresh log and append stderr to another:
 
@@ -78,8 +81,7 @@ For example, write stdout to a fresh log and append stderr to another:
 Top-level commands stream output immediately. When an external command or
 pipeline is used as a value, stdout is captured as UTF-8, trailing LF characters
 are removed, and the result stays one argument. Stderr keeps its existing
-destination. Use a pipeline or file redirection for binary output. Explicit
+destination. Use a pipeline, file redirection, or `capture-call` for binary output. Explicit
 redirection takes precedence over capturing that expression's output.
-
 
 For complete results, raw-byte capture, `$?`, exceptions, and background execution, see [execution results and tasks](/parsh/en/docs/execution/).
