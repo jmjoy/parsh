@@ -57,16 +57,17 @@ impl ExecutionHost for TestHost {
         _: &str,
         _: &HashMap<OsString, OsString>,
         _: HostStreams,
+        emit: crate::host::OutputSink,
     ) -> Result<CommandOutput, HostError> {
         self.runs.set(self.runs.get() + 1);
+        emit(OutputChunk {
+            stream: Stream::Stdout,
+            bytes: stages[0][1..].join(" ").into_bytes(),
+        })?;
         Ok(CommandOutput {
             error: None,
             stages: Vec::new(),
             code: 0,
-            chunks: vec![OutputChunk {
-                stream: Stream::Stdout,
-                bytes: stages[0][1..].join(" ").into_bytes(),
-            }],
         })
     }
     fn open(&mut self, _: &str, _: &str, _: FileMode) -> Result<u32, HostError> {
@@ -149,10 +150,7 @@ fn syntax_only_completion_uses_available_builtins_and_current_functions() {
     type_text(&mut repl, "tab-f");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "tab-function ");
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value("\"result\"".into()))
-    );
+    assert_eq!(enter_value(&mut repl), "\"result\"");
     repl.reset();
     type_text(&mut repl, "tab-f");
     repl.input(Key::Tab);
@@ -467,15 +465,12 @@ fn collection_arguments_complete_paths_and_quote_delimiters_without_running() {
             "/home/playground/curly{1}".into(),
         ]);
         let mut repl = Repl::with_host(host.clone()).unwrap();
-        repl.paste(source);
+        repl.paste(&format!("(do {source}"));
         repl.input(Key::Tab);
-        assert_eq!(repl.session.input.body, completed);
+        assert_eq!(repl.session.input.body, format!("(do {completed}"));
         assert_eq!(host.runs.get(), 0);
-        repl.paste(close);
-        assert!(
-            repl.input(Key::Enter)
-                .contains(&Event::Value(expected.into()))
-        );
+        repl.paste(&format!("{close})"));
+        assert_eq!(enter_value(&mut repl), expected);
         assert_eq!(host.runs.get(), 0);
     }
 }
@@ -486,17 +481,14 @@ fn paths_with_quotes_whitespace_and_dollar_signs_remain_literal_values() {
     let mut repl = Repl::with_host(host.clone()).unwrap();
     type_text(&mut repl, "str odd");
     repl.input(Key::Tab);
-    let events = repl.input(Key::Enter);
-    assert!(events.contains(&Event::Value(
+    assert_eq!(
+        enter_value(&mut repl),
         Value::Text("odd (\"x\")\n\t\\name".into()).display()
-    )));
+    );
     type_text(&mut repl, "str \"\\$l");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "str \"\\$literal\" ");
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value("\"\\$literal\"".into()))
-    );
+    assert_eq!(enter_value(&mut repl), "\"\\$literal\"");
     assert_eq!(host.runs.get(), 0);
 }
 
@@ -521,10 +513,7 @@ fn quoted_directory_completion_can_continue_into_the_next_component() {
             repl.session.input.body,
             format!("str {delimiter}folder name/你好.txt{delimiter} ")
         );
-        assert!(
-            repl.input(Key::Enter)
-                .contains(&Event::Value("\"folder name/你好.txt\"".into()))
-        );
+        assert_eq!(enter_value(&mut repl), "\"folder name/你好.txt\"");
     }
 }
 
@@ -552,17 +541,11 @@ fn triple_quoted_completion_preserves_embedded_variables_and_calls() {
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, r#"str """$(str/trim)""""#);
     type_text(&mut repl, r#"'''inner''')!""""#);
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value(r#""inner!""#.into()))
-    );
+    assert_eq!(enter_value(&mut repl), r#""inner!""#);
     type_text(&mut repl, "str '''$l");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "str '''$literal''' ");
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value(r#""\$literal""#.into()))
-    );
+    assert_eq!(enter_value(&mut repl), r#""\$literal""#);
     assert_eq!(host.runs.get(), 0);
 }
 
@@ -587,10 +570,7 @@ fn quoted_variable_and_expression_completion_preserve_the_surrounding_text() {
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, r#"str "$(str/trim)""#);
     type_text(&mut repl, r#""inner")!""#);
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value(r#""inner!""#.into()))
-    );
+    assert_eq!(enter_value(&mut repl), r#""inner!""#);
     type_text(&mut repl, r#"str "$(echo no-run) $TAB_N"#);
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, r#"str "$(echo no-run) $TAB_NAME""#);
@@ -607,17 +587,11 @@ fn single_quote_path_completion_preserves_literal_content_and_handles_apostrophe
     type_text(&mut repl, "str '$l");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "str '$literal' ");
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value(r#""\$literal""#.into()))
-    );
+    assert_eq!(enter_value(&mut repl), r#""\$literal""#);
     type_text(&mut repl, "str 'quote");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, r#"str "quote's \$literal" "#);
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value(r#""quote's \$literal""#.into()))
-    );
+    assert_eq!(enter_value(&mut repl), r#""quote's \$literal""#);
     assert_eq!(host.runs.get(), 0);
 }
 
@@ -694,10 +668,7 @@ fn variable_completion_sees_executed_bindings_and_exports_but_not_values() {
     type_text(&mut repl, "N");
     repl.input(Key::Tab);
     assert_eq!(repl.session.input.body, "str $TAB_NAME ");
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value("\"retained\"".into()))
-    );
+    assert_eq!(enter_value(&mut repl), "\"retained\"");
     repl.reset();
     type_text(&mut repl, "str $TAB_");
     repl.input(Key::Tab);
@@ -752,4 +723,22 @@ fn narrow_candidate_lists_wrap_safely_and_restore_the_current_input() {
     assert!(
         matches!(events.last(), Some(Event::Render { lines, row: 1, column: 5, .. }) if lines == &["$ (hos", "t-alp)", ""])
     );
+}
+
+#[test]
+fn trimmed_capture_helpers_and_their_callees_complete_without_running() {
+    for stream in ["stdout", "stderr"] {
+        let host = TestHost::default();
+        let mut repl = Repl::with_host(host.clone()).unwrap();
+        type_text(&mut repl, &format!("capture/{stream}-tr"));
+        repl.input(Key::Tab);
+        assert_eq!(repl.session.input.body, format!("capture/{stream}-trim "));
+        type_text(&mut repl, "host-alph");
+        repl.input(Key::Tab);
+        assert_eq!(
+            repl.session.input.body,
+            format!("capture/{stream}-trim host-alpha ")
+        );
+        assert_eq!(host.runs.get(), 0);
+    }
 }

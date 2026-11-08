@@ -1,15 +1,5 @@
 use super::*;
 
-fn values(events: &[Event]) -> Vec<&str> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::Value(value) => Some(value.as_str()),
-            _ => None,
-        })
-        .collect()
-}
-
 fn diagnostics(events: &[Event]) -> Vec<&str> {
     events
         .iter()
@@ -21,7 +11,7 @@ fn diagnostics(events: &[Event]) -> Vec<&str> {
 }
 
 fn assert_values(source: &str, expected: &[&str]) {
-    let events = execute(&mut Repl::new(), source);
+    let events = evaluate(&mut Repl::new(), source);
     assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
     assert_eq!(values(&events), expected, "{source}: {events:?}");
 }
@@ -46,7 +36,7 @@ fn while_checks_the_condition_once_per_iteration_and_returns_the_last_body_value
 #[test]
 fn while_iterations_have_fresh_lexical_scopes_retained_by_closures() {
     let mut repl = Repl::new();
-    let events = execute(
+    let events = evaluate(
         &mut repl,
         r#"
         (let name outer)
@@ -70,7 +60,7 @@ fn while_iterations_have_fresh_lexical_scopes_retained_by_closures() {
             r#"(("outer" "outer1") ("outer" "outer2") "outer")"#
         ]
     );
-    let events = execute(&mut repl, "(get copy)");
+    let events = evaluate(&mut repl, "(get copy)");
     assert!(diagnostics(&events)[0].contains("undefined variable $copy"));
 }
 
@@ -183,18 +173,18 @@ fn functions_isolate_loop_control_but_arguments_use_the_callers_loop() {
     for jump in ["(break)", "(continue)"] {
         let mut repl = Repl::new();
         let source = format!("(defn jump () {jump}) (for item (list a b) (jump))");
-        let events = execute(&mut repl, &source);
+        let events = evaluate(&mut repl, &source);
         assert!(diagnostics(&events)[0].contains("in jump:"), "{events:?}");
         assert!(
             diagnostics(&events)[0].contains("outside a loop body"),
             "{events:?}"
         );
-        let events = execute(&mut repl, jump);
+        let events = evaluate(&mut repl, jump);
         assert!(
             diagnostics(&events)[0].contains("outside a loop body"),
             "{events:?}"
         );
-        assert_eq!(values(&execute(&mut repl, "(+ #1 #2)")), ["#3"]);
+        assert_eq!(values(&evaluate(&mut repl, "(+ #1 #2)")), ["#3"]);
     }
     assert_values(
         "(defn inner () (for item (list a b) (break (list $item))))
@@ -216,22 +206,22 @@ fn invalid_loops_and_jumps_report_positions_without_evaluating_arguments() {
         ("(while #true)", "expected at least 2 arguments", "1:1"),
         (
             "(while\n (str text)\n (unavailable))",
-            "a condition must be a boolean or command status",
+            "a condition must be a boolean or CallResult",
             "2:2",
         ),
         (
             "(while\n (+ #1)\n (unavailable))",
-            "a condition must be a boolean or command status",
+            "a condition must be a boolean or CallResult",
             "2:2",
         ),
         (
             "(while\n (list)\n (unavailable))",
-            "a condition must be a boolean or command status",
+            "a condition must be a boolean or CallResult",
             "2:2",
         ),
         (
             "(while\n (do)\n (unavailable))",
-            "a condition must be a boolean or command status",
+            "a condition must be a boolean or CallResult",
             "2:2",
         ),
         (
@@ -263,8 +253,8 @@ fn invalid_loops_and_jumps_report_positions_without_evaluating_arguments() {
         ("(while #true\n (+ #1 invalid))", "expected a number", "2:8"),
     ] {
         let mut repl = Repl::new();
-        execute(&mut repl, "(let sentinel retained)");
-        let events = execute(&mut repl, &format!("{source} (str skipped)"));
+        evaluate(&mut repl, "(let sentinel retained)");
+        let events = evaluate(&mut repl, &format!("{source} (str skipped)"));
         let errors = diagnostics(&events);
         assert_eq!(errors.len(), 1, "{source}: {events:?}");
         assert!(errors[0].contains(message), "{source}: {events:?}");
@@ -273,15 +263,14 @@ fn invalid_loops_and_jumps_report_positions_without_evaluating_arguments() {
             "{events:?}"
         );
         assert!(values(&events).is_empty(), "{events:?}");
-        assert_eq!(repl.session.last_code, 2);
         assert_eq!(
-            values(&execute(&mut repl, "(str $sentinel)")),
+            values(&evaluate(&mut repl, "(str $sentinel)")),
             [r#""retained""#]
         );
-        assert!(diagnostics(&execute(&mut repl, "(break)"))[0].contains("outside a loop body"));
+        assert!(diagnostics(&evaluate(&mut repl, "(break)"))[0].contains("outside a loop body"));
     }
     for name in ["while", "break", "continue"] {
-        let events = execute(&mut Repl::new(), &format!("(defn {name} () (str invalid))"));
+        let events = evaluate(&mut Repl::new(), &format!("(defn {name} () (str invalid))"));
         assert!(diagnostics(&events)[0].contains("function name is reserved"));
     }
     assert_values(

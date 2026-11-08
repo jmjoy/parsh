@@ -6,11 +6,11 @@ const locale = Astro.params.locale as Locale;
 const zh = locale === 'zh-cn';
 const features = zh ? [
   { number: '01', title: '命令行与脚本，同一种语言。', text: '在命令行中试好的表达式，可以直接放进脚本。变量、函数与控制流，始终遵循同一套规则。', code: '(defn greet (name)\n  (str "hello, " $name))' },
-  { number: '02', title: '参数，保持完整。', text: '文本始终保持为一个参数，列表作为外部命令参数时展开一层。没有隐式分词或通配符展开，无需猜测空格会如何影响参数。', code: '(let files (list "a file.rs" "b.rs"))\n(list $files)' },
+  { number: '02', title: '参数，保持完整。', text: '文本始终保持为一个参数，列表作为外部命令参数时展开一层。没有隐式分词或通配符展开，无需猜测空格会如何影响参数。', code: '(let files (list "a file.rs" "b.rs"))\n(dump (list $files))' },
   { number: '03', title: '真实命令，结构化组合。', text: '在 Linux 上直接启动程序，用管道与重定向组合命令。保留熟悉的工具，用新的语法来表达。', code: '(|> files.txt\n  (| (find . -name "*.rs") (sort)))' },
 ] : [
   { number: '01', title: 'One language for the prompt and scripts.', text: 'Take an expression from the prompt straight into a script. Variables, functions, and control flow follow the same rules in both.', code: '(defn greet (name)\n  (str "hello, " $name))' },
-  { number: '02', title: 'Arguments stay intact.', text: 'Text stays one argument. Lists expand one level into external command arguments. No implicit word splitting or globbing, and no guessing what spaces will do.', code: '(let files (list "a file.rs" "b.rs"))\n(list $files)' },
+  { number: '02', title: 'Arguments stay intact.', text: 'Text stays one argument. Lists expand one level into external command arguments. No implicit word splitting or globbing, and no guessing what spaces will do.', code: '(let files (list "a file.rs" "b.rs"))\n(dump (list $files))' },
   { number: '03', title: 'Real commands. Structured composition.', text: 'On Linux, programs launch directly. Compose commands with pipes and redirections. Keep your familiar tools and use a new syntax.', code: '(|> files.txt\n  (| (find . -name "*.rs") (sort)))' },
 ];
 ---
@@ -30,19 +30,19 @@ const features = zh ? [
           <div class="demo-titlebar"><div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div><span>{zh ? 'parsh / 初识表达式' : 'parsh / first expressions'}</span><span class="terminal-tag">{zh ? '语法预览' : 'SYNTAX PREVIEW'}</span></div>
           <div class="demo-code" role="group" aria-label={zh ? 'parsh 语法示例' : 'parsh syntax example'}>
             <div><span class="code-paren">(</span><span class="code-keyword">let</span> <span class="code-variable">name</span> <span class="code-string">world</span>)</div>
-            <div><span class="code-paren">(</span><span class="code-keyword">str</span> <span class="code-string">"hello, "</span> <span class="code-variable">$name</span>)</div>
+            <div><span class="code-paren">(</span><span class="code-keyword">dump</span> (<span class="code-keyword">str</span> <span class="code-string">"hello, "</span> <span class="code-variable">$name</span>))</div>
             <div class="code-result">"hello, world"</div>
             <div class="code-gap"></div>
             <div><span class="code-paren">(</span><span class="code-keyword">defn</span> greet (<span class="code-variable">who</span>)</div>
             <div>&nbsp; (<span class="code-keyword">str</span> <span class="code-string">"hello, "</span> <span class="code-variable">$who</span>))</div>
-            <div><span class="code-paren">(</span>greet <span class="code-string">parsh</span>)</div>
+            <div><span class="code-paren">(</span><span class="code-keyword">dump</span> (greet <span class="code-string">parsh</span>))</div>
             <div class="code-result">"hello, parsh"</div>
             <div class="code-gap"></div>
             <div class="demo-prompt"><span class="code-paren">(</span><span class="block-cursor" aria-hidden="true"></span></div>
           </div>
           <div class="demo-status"><span><span class="status-dot"></span> {zh ? '同一个 Rust 解释器' : 'The same Rust interpreter'}</span><span>UTF-8 · S-EXP</span></div>
         </div>
-        <div class="art-note"><span aria-hidden="true">↖</span> {zh ? '闭合括号，查看结果。' : 'Close the parenthesis. See the result.'}</div>
+        <div class="art-note"><span aria-hidden="true">↖</span> {zh ? '显式打印，查看结果。' : 'Print a value. See the result.'}</div>
       </div>
     </section>
     <div class="principles-strip"><span><i aria-hidden="true">∗</i>{zh ? 'S 表达式' : 'S-EXPRESSIONS'}</span><span><i aria-hidden="true">↗</i>{zh ? '显式的值' : 'EXPLICIT VALUES'}</span><span><i aria-hidden="true">⎇</i>{zh ? '可组合命令' : 'COMPOSABLE COMMANDS'}</span><span><i aria-hidden="true">⊙</i>{zh ? '使用 Rust 构建' : 'BUILT IN RUST'}</span></div>
@@ -55,7 +55,7 @@ const features = zh ? [
           <h3 id="agent-title">{zh ? '逻辑和命令，一套语法。' : 'Logic and commands, one grammar.'}</h3>
           <p>{zh ? '算术、数据与控制流留在脚本里，程序、管道与重定向同样是表达式。少一层需要猜的引号，生成的脚本读起来就是它执行的样子。' : 'Arithmetic, data, and control flow stay in the script; programs, pipes, and redirections are expressions too. With fewer quoting layers to guess, generated scripts read the way they run.'}</p>
         </div>
-        <pre><code>(let count (int (| (ls) (wc -l))))
+        <pre><code>(let count (int (capture/stdout (fn () (| (ls) (wc -l))))))
 (echo "entries: $count; doubled: $(* $count #2)")</code></pre>
       </aside>
     </section>

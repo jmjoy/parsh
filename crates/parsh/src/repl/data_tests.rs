@@ -1,15 +1,5 @@
 use super::*;
 
-fn values(events: &[Event]) -> Vec<&str> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::Value(value) => Some(value.as_str()),
-            _ => None,
-        })
-        .collect()
-}
-
 fn diagnostics(events: &[Event]) -> Vec<&str> {
     events
         .iter()
@@ -21,13 +11,13 @@ fn diagnostics(events: &[Event]) -> Vec<&str> {
 }
 
 fn assert_values(source: &str, expected: &[&str]) {
-    let events = execute(&mut Repl::new(), source);
+    let events = evaluate(&mut Repl::new(), source);
     assert!(diagnostics(&events).is_empty(), "{events:?}");
     assert_eq!(values(&events), expected, "{source}");
 }
 
 fn assert_diagnostic(source: &str, expected: &str) {
-    let events = execute(&mut Repl::new(), source);
+    let events = evaluate(&mut Repl::new(), source);
     assert!(
         diagnostics(&events)
             .iter()

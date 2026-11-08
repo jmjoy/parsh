@@ -20,7 +20,7 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 (defstruct Point x y)
 (let point (Point #3 #4))
 (echo (Point.x $point) (Point.y $point))
-(if (Point? $point) (echo a point))
+(dump (if (Point? $point) (echo a point)))
 ```
 
 结构体可以放进列表和映射，也可以传给函数。
@@ -32,8 +32,8 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 
 ```parsh
 (dump $point)
-(str "x=$(Point.x $point)")
-(json/encode $point)
+(dump (str "x=$(Point.x $point)"))
+(dump (json/encode $point))
 ```
 
 访问器从值本身读取字段，而不是查当前定义，因此重定义结构体不会让已有的值失效：
@@ -42,7 +42,7 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 (defstruct Point x y)
 (let old (Point #1 #2))
 (defstruct Point x)
-(Point.y $old)
+(dump (Point.y $old))
 ```
 
 `type` 可以查看这些成员，不会调用它们：
@@ -67,8 +67,8 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 (defmacro unless (condition body)
   `(if (not ,$condition) ,$body))
 
-(unless (test -f config.txt)
-  (echo "configuration missing"))
+(dump (unless (test -f config.txt)
+  (echo "configuration missing")))
 ```
 
 宏参数和普通变量一样用 `$name` 读取。由于返回的表单在调用点求值，
@@ -78,16 +78,16 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 (defmacro greet (who)
   `(echo hello ,$who))
 (let who parsh)
-(greet $who)
+(dump (greet $who))
 ```
 
-`quote` 构造一个不求值的表单。表单是普通值：`eq` 按语法比较，交互提示符按源码显示。
+`quote` 构造一个不求值的表单。表单是普通值：`eq` 按语法比较，`dump` 按源码显示。
 
 ```parsh
-(quote (a b))
-(eq (quote (a b)) (quote (a   b)))
+(dump (quote (a b)))
+(dump (eq (quote (a b)) (quote (a   b))))
 (defmacro begin (body) `(do ,@$body))
-(begin ((echo one) (echo two)))
+(dump (begin ((echo one) (echo two))))
 ```
 
 unquote 接受被引用的表单或标量值；splicing 接受被引用的列表表单，或者由被引用表单组成的列表。
@@ -97,7 +97,7 @@ unquote 接受被引用的表单或标量值；splicing 接受被引用的列表
 ```parsh
 (defmacro when (condition &rest body)
   `(if ,$condition (do ,@$body)))
-(when #true (str first) (str last))
+(dump (when #true (str first) (str last)))
 ```
 
 宏的显式实参保持为 Form，不会提前求值。`&rest` 收集 Form 列表，`&optional` 的缺省表达式

@@ -1,20 +1,24 @@
 use super::*;
 
 fn submit(repl: &mut Repl, source: &str) -> Vec<String> {
-    let events = execute(repl, source);
+    let source = if source.trim_start().starts_with('(') {
+        source.to_owned()
+    } else {
+        format!("(do {source})")
+    };
+    let events = execute(repl, &source);
     assert!(
         !events
             .iter()
             .any(|event| matches!(event, Event::Diagnostic(_))),
         "{source}: {events:?}"
     );
-    events
-        .into_iter()
-        .filter_map(|event| match event {
-            Event::Value(value) => Some(value),
-            _ => None,
-        })
-        .collect()
+    let value = binding(repl, "_");
+    if matches!(value, Value::Nil) {
+        Vec::new()
+    } else {
+        vec![value.display()]
+    }
 }
 
 fn binding(repl: &mut Repl, name: &str) -> Value {
@@ -30,10 +34,7 @@ fn previous_value_updates_between_submissions_and_each_top_level_expression() {
     let mut repl = Repl::new();
     assert_eq!(submit(&mut repl, "(+ #1 #2)"), ["#3"]);
     assert_eq!(submit(&mut repl, "(+ $_ #4)"), ["#7"]);
-    assert_eq!(
-        submit(&mut repl, "(+ $_ #1) (+ $_ #2) (get _)"),
-        ["#8", "#10", "#10"]
-    );
+    assert_eq!(submit(&mut repl, "(+ $_ #1) (+ $_ #2) (get _)"), ["#10"]);
     assert_eq!(submit(&mut repl, "(do (+ #100 #200) (+ $_ #1))"), ["#11"]);
 }
 
@@ -71,7 +72,7 @@ fn previous_value_preserves_data_types_and_callable_functions() {
 #[test]
 fn nil_returns_replace_previous_values_and_assignments_without_changing_saved_values() {
     let mut repl = Repl::new();
-    submit(&mut repl, "[#1 {enabled #true}]");
+    submit(&mut repl, "(do [#1 {enabled #true}])");
     let saved = binding(&mut repl, "_");
     assert!(submit(&mut repl, "(let saved $_)").is_empty());
     assert_eq!(binding(&mut repl, "_"), Value::Nil);
@@ -129,7 +130,6 @@ fn empty_comments_incomplete_input_and_errors_do_not_automatically_replace_previ
 fn runtime_failures_keep_completed_results_and_do_not_roll_back_explicit_assignments() {
     let mut repl = Repl::new();
     let events = execute(&mut repl, "(+ #1 #2) (throw stop) (+ #100 #200)");
-    assert!(events.contains(&Event::Value("#3".into())));
     assert!(
         events
             .iter()
@@ -167,6 +167,6 @@ fn automatic_previous_value_updates_leave_last_execution_result_unchanged() {
     submit(&mut repl, "(defn answer () #42) (answer)");
     let result = binding(&mut repl, "?");
     assert!(matches!(result, Value::Struct { .. }));
-    assert_eq!(submit(&mut repl, "(+ $_ #1) (get _)"), ["#43", "#43"]);
+    assert_eq!(submit(&mut repl, "(+ $_ #1) (get _)"), ["#43"]);
     assert_eq!(binding(&mut repl, "?"), result);
 }

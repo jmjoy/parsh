@@ -467,7 +467,7 @@ impl Syntax {
                 .trim_start()
                 .chars()
                 .next()
-                .is_some_and(|ch| reader::closing_delimiter(ch).is_some())
+                .is_some_and(|ch| ch == '(')
         {
             input.explicit = true;
         }

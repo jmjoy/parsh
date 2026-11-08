@@ -21,7 +21,7 @@ three kinds of command:
 (defstruct Point x y)
 (let point (Point #3 #4))
 (echo (Point.x $point) (Point.y $point))
-(if (Point? $point) (echo a point))
+(dump (if (Point? $point) (echo a point)))
 ```
 
 A struct can sit in lists and maps and be passed to functions. It displays in
@@ -34,8 +34,8 @@ Read scalar fields for interpolation, use `dump` for display, or encode as JSON:
 
 ```parsh
 (dump $point)
-(str "x=$(Point.x $point)")
-(json/encode $point)
+(dump (str "x=$(Point.x $point)"))
+(dump (json/encode $point))
 ```
 
 Accessors read the field from the value rather than from the current definition,
@@ -45,7 +45,7 @@ so redefining a struct keeps existing values readable:
 (defstruct Point x y)
 (let old (Point #1 #2))
 (defstruct Point x)
-(Point.y $old)
+(dump (Point.y $old))
 ```
 
 `type` reports struct members without calling them:
@@ -74,8 +74,8 @@ Backquote starts a template. `,` inserts one evaluated expression into it, and
 (defmacro unless (condition body)
   `(if (not ,$condition) ,$body))
 
-(unless (test -f config.txt)
-  (echo "configuration missing"))
+(dump (unless (test -f config.txt)
+  (echo "configuration missing")))
 ```
 
 Macro parameters are variables like any other, so they are read with `$name`
@@ -86,17 +86,17 @@ template that mentions a variable refers to the caller's binding:
 (defmacro greet (who)
   `(echo hello ,$who))
 (let who parsh)
-(greet $who)
+(dump (greet $who))
 ```
 
 `quote` builds a form without evaluating it. Forms behave like values: `eq`
-compares them by syntax, and the interactive prompt prints them as source.
+compares them by syntax, and `dump` prints them as source.
 
 ```parsh
-(quote (a b))
-(eq (quote (a b)) (quote (a   b)))
+(dump (quote (a b)))
+(dump (eq (quote (a b)) (quote (a   b))))
 (defmacro begin (body) `(do ,@$body))
-(begin ((echo one) (echo two)))
+(dump (begin ((echo one) (echo two))))
 ```
 
 Unquote accepts a quoted form or a scalar value. Splicing accepts a quoted list
@@ -107,7 +107,7 @@ form or a list of quoted forms.
 ```parsh
 (defmacro when (condition &rest body)
   `(if ,$condition (do ,@$body)))
-(when #true (str first) (str last))
+(dump (when #true (str first) (str last)))
 ```
 
 Explicit macro arguments remain unevaluated forms. `&rest` collects a list of

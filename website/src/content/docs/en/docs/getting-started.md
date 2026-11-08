@@ -36,15 +36,15 @@ Use `parsh -- -script.parsh` for a script filename beginning with `-`.
 
 ## Your first session
 
-Type `str "hello, " "parsh"` at the `$ ()` prompt and press Enter. parsh supplies the outer closing parenthesis and displays `"hello, parsh"`. Enter inserts a newline when input is unfinished; Ctrl+J always inserts a newline.
+Type `dump (str "hello, " "parsh")` at the `$ ()` prompt and press Enter. parsh supplies the outer closing parenthesis and displays `"hello, parsh"`. Enter inserts a newline when input is unfinished; Ctrl+J always inserts a newline.
 
 ```parsh
 (let name world)
-(str "hello, " $name)
+(dump (str "hello, " $name))
 (echo hello $name)
 ```
 
-The first expression binds a value. The second returns text, which an interactive session displays. The third runs the native `echo` program and writes stdout. Script mode does not print expression return values automatically.
+The first expression binds a value. The second explicitly prints text using `dump`. The third runs the native `echo` program and writes stdout. Neither interactive nor script mode automatically prints return values.
 
 The [browser playground](/parsh/en/playground/) supports language expressions and coreutils commands. See its [capabilities](/parsh/en/docs/playground/) for the command list and temporary files.
 

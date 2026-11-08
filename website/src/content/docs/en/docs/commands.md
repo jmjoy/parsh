@@ -22,8 +22,8 @@ Use `type` to inspect command lookup without executing the command:
 (defn greet (name) (echo hello $name))
 (type greet)
 (type -a echo)
-(let kind (type -t greet))
-(if (type -t optional-tool) (optional-tool))
+(let kind (capture/stdout-trim type -t greet))
+(dump (if (type -t optional-tool) (optional-tool)))
 ```
 
 `type` accepts multiple names, including list arguments, and supports these Bash-style options:
@@ -41,7 +41,7 @@ commands are reported by the host's available command names; `-p` and `-P`
 return those names.
 
 ```parsh
-(echo (pwd))
+(echo (capture/stdout-trim pwd))
 (| (find . -name "*.rs") (sort))
 (|> files.txt (| (find . -name "*.rs") (sort)))
 (|>> log.txt (echo another entry))
@@ -78,10 +78,11 @@ For example, write stdout to a fresh log and append stderr to another:
     (make)))
 ```
 
-Top-level commands stream output immediately. When an external command or
-pipeline is used as a value, stdout is captured as UTF-8, trailing LF characters
-are removed, and the result stays one argument. Stderr keeps its existing
-destination. Use a pipeline, file redirection, or `capture-call` for binary output. Explicit
-redirection takes precedence over capturing that expression's output.
+Ordinary commands write to their current destinations and return `CallResult` in
+all positions, including assignments, arguments, and interpolation. Their stdout
+and stderr fields are `#nil` by default. Use `capture/stdout` or `capture/stderr`
+for text, or `capture-call` for both raw byte streams. Text capture preserves all
+newlines. Explicit file redirection takes precedence over capture; pipelines and
+files preserve binary bytes.
 
 For complete results, raw-byte capture, `$?`, exceptions, and background execution, see [execution results and tasks](/parsh/en/docs/execution/).

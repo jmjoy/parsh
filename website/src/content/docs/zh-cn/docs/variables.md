@@ -31,14 +31,14 @@ description: "变量绑定、环境变量、列表、映射与显式展开。"
 `let` 和 `set` 成功后都返回 `nil`；`set` 会先检查最近的已有绑定或已有的环境变量，名称未定义时在求值右值前报错，
 然后才求值右值并更新绑定。查找不到局部变量时，会继续查找继承的环境变量。
 `(export name value)` 将标量转为文本，为后续子进程设置环境变量，并将已有的同名局部绑定也更新为文本。
-列表、映射、结构体、表单、函数、命令引用、bytes 和命令状态都不能隐式导出。
+列表、映射、结构体、表单、函数、命令引用和 bytes 都不能隐式导出。
 环境变量与工作目录的修改属于当前 parsh 会话。
 
 `get` 恰好接受一个文本变量名，参数也可以来自表达式；它按 `$name` 的相同规则查找并返回原始值：
 
 ```parsh
-(get name)
-(get (str na me))
+(dump (get name))
+(dump (get (str na me)))
 (echo "hello, $(get name)_friend")
 ```
 
@@ -49,8 +49,8 @@ description: "变量绑定、环境变量、列表、映射与显式展开。"
 ```parsh
 (let files (list "a file.rs" other.rs))
 (printf "<%s>\n" $files)
-(for file (glob *.rs)
-  (echo $file))
+(dump (for file (glob *.rs)
+  (echo $file)))
 ```
 
 列表作为外部命令参数时会展开一层。文本始终保持为一个参数，即使其中包含空格或换行。
@@ -71,10 +71,10 @@ description: "变量绑定、环境变量、列表、映射与显式展开。"
 ```parsh
 (let config (map name parsh version #1 nested (map enabled #true)))
 (let updated (map/set $config name new-name))
-(map/get $config name)
-(map/get $updated name)
-(map/get $config missing fallback)
-(map/keys $config)
+(dump (map/get $config name))
+(dump (map/get $updated name))
+(dump (map/get $config missing fallback))
+(dump (map/keys $config))
 (set config (map/del $updated version))
 ```
 
@@ -103,9 +103,9 @@ description: "变量绑定、环境变量、列表、映射与显式展开。"
 映射操作可以直接组合，无需先绑定中间结果：
 
 ```parsh
-(map/set {name parsh} version v1)
-(map/get (map/set $config name other) name)
-(map/set (map/set $config name other) version v2)
+(dump (map/set {name parsh} version v1))
+(dump (map/get (map/set $config name other) name))
+(dump (map/set (map/set $config name other) version v2))
 ```
 
 更新已有键保留原位置，新键追加到末尾。删除不改变其余键的相对顺序，重新插入追加到末尾。
@@ -130,12 +130,12 @@ description: "变量绑定、环境变量、列表、映射与显式展开。"
 ```parsh
 (+ #1 #2)
 (+ $_ #4)
-(get _)
+(dump $_)
 ```
 
-以上表达式依次返回 `#3`、`#7` 和 `#7`。每条表达式结束后立即更新 `_`，同一次提交中的下一条表达式也能读取。
-嵌套调用不会自动更新它。保存的值保留原始类型，包括列表、映射、函数、nil 和命令状态；
-保存命令状态不会额外捕获终端输出。nil 和命令状态仍不自动显示。
+前两条表达式静默返回 `#3`、`#7`；最后一条打印 `#7` 并返回 nil。每条表达式结束后立即更新 `_`，同一次提交中的下一条表达式也能读取。
+嵌套调用不会自动更新它。保存的值保留原始类型，包括列表、映射、函数、nil 和 `CallResult`；
+保存结果不会额外捕获终端输出。所有返回值都不会自动显示。
 
 `_` 是普通会话变量，`set`、`export` 和局部遮蔽遵循通常的规则。
 它在顶层已经绑定，因此再次执行顶层 `let _` 会报重复绑定错误。

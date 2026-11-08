@@ -473,7 +473,16 @@ fn hash_literals_complete_without_becoming_quoted_paths() {
 
 #[test]
 fn invocation_helpers_and_special_result_complete_without_evaluation() {
-    for source in ["(capture-call ec", "(spawn ec", "(command ec", "(apply ec"] {
+    for source in [
+        "(capture-call ec",
+        "(capture/stdout ec",
+        "(capture/stderr ec",
+        "(capture/stdout-trim ec",
+        "(capture/stderr-trim ec",
+        "(spawn ec",
+        "(command ec",
+        "(apply ec",
+    ] {
         assert_eq!(
             Context::parse(source, source.len()).unwrap().kind,
             Kind::Command

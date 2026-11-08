@@ -11,19 +11,19 @@ import type {
 type Phase = "loading" | "ready" | "running" | "closed" | "error";
 const examples: Record<string, string> = {
   commands:
-    '(echo "hello, parsh")\n(printf "%s\\n" (list "你好，parsh" "a value with spaces"))',
-  pipeline: '(cat fruits.txt)\n(| (sort fruits.txt) (uniq -c))',
+    "(echo \"hello, parsh\")\n(printf \"%s\\n\" (list \"你好，parsh\" \"a value with spaces\"))",
+  pipeline: "(cat fruits.txt)\n(| (sort fruits.txt) (uniq -c))",
   files:
-    '(mkdir -p demo)\n(|> demo/greeting.txt (echo hello))\n(|>> demo/greeting.txt (echo parsh))\n(cat demo/greeting.txt)\n(<| numbers.txt (sort -n))',
+    "(mkdir -p demo)\n(|> demo/greeting.txt (echo hello))\n(|>> demo/greeting.txt (echo parsh))\n(cat demo/greeting.txt)\n(<| numbers.txt (sort -n))",
   capture:
-    '(let here (pwd))\n(echo (str "working in " $here))\n(if (test -f fruits.txt) (echo "found fruits.txt") (echo missing))',
-  hello: '(str "hello, " "parsh")\n(list text "a value with spaces" #true)',
+    "(let here (capture/stdout-trim pwd))\n(echo (str \"working in \" $here))\n(if (test -f fruits.txt) (echo \"found fruits.txt\") (echo missing))",
+  hello: "(dump (str \"hello, \" \"parsh\"))\n(dump (list text \"a value with spaces\" #true))",
   variables:
-    '(let name world)\n(str "hello, " $name)\n(set name parsh)\n(str "hello, " $name)',
+    "(let name world)\n(dump (str \"hello, \" $name))\n(set name parsh)\n(dump (str \"hello, \" $name))",
   functions:
-    '(defn greet (who)\n  (str "hello, " $who))\n(greet parsh)\n(greet "a friend")',
+    "(defn greet (who)\n  (str \"hello, \" $who))\n(dump (greet parsh))\n(dump (greet \"a friend\"))",
   control:
-    '(let items (list first second last))\n(if (not (eq first last))\n    (str "different words")\n    (str "same word"))\n(for item $items\n  (str "last result: " $item))',
+    "(let items (list first second last))\n(dump (if (not (eq first last))\n    (str \"different words\")\n    (str \"same word\")))\n(dump (for item $items\n  (str \"last result: \" $item)))",
 };
 const keys: Record<string, string> = {
   "\r": "enter",
@@ -262,9 +262,6 @@ export function mountTerminal(root: HTMLElement): void {
           break;
         case "completions":
           terminal.write(`${event.lines.join("\r\n")}\r\n`);
-          break;
-        case "value":
-          terminal.write(`\x1b[32m${event.text}\x1b[0m\r\n`);
           break;
         case "diagnostic":
           terminal.write(`\x1b[31m${event.text}\x1b[0m\r\n`);

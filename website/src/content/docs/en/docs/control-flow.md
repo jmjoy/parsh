@@ -7,24 +7,24 @@ description: "Lexical functions, branching, sequencing, and iteration."
 (defn greet (name)
   (echo hello $name))
 
-(if (test -d crates/parsh/src)
+(dump (if (test -d crates/parsh/src)
     (greet developer)
-    (echo missing))
+    (echo missing)))
 
 (export EDITOR vim)
-(if (eq $EDITOR vim)
-    (echo using vim))
+(dump (if (eq $EDITOR vim)
+    (echo using vim)))
 
-(if (not (test -f config.txt))
-    (echo configuration missing))
+(dump (if (not (test -f config.txt))
+    (echo configuration missing)))
 
-(do
+(dump (do
   (let message "multiple expressions")
-  (echo $message))
+  (echo $message)))
 ```
 
 `if` evaluates only the selected branch. A condition must produce a boolean
-(from `eq`, a numeric comparison, or `not`) or a command status; zero status is true. Text and
+(from `eq`, a numeric comparison, or `not`) or a `CallResult`; a result is true when its `error` field is `#nil`. Text and
 numbers are not implicitly booleans. Every parenthesized expression creates a fresh
 lexical scope, so a `let` in a branch does not leak outside the `if`. `do` creates
 a scope and runs its body expressions in sequence; bindings declared directly in
@@ -36,15 +36,15 @@ more body expressions and create a fresh scope per iteration: `let` stays local,
 and `set` can update an outer binding.
 
 `and/or` short-circuit from left to right and return booleans. `(and)` is true;
-`(or)` is false. They accept the same conditions as `if`, including command statuses.
+`(or)` is false. They accept the same conditions as `if`, including `CallResult`.
 
 ```parsh
 (let count #0)
-(while (< $count #5)
+(dump (while (< $count #5)
   (set count (+ $count #1))
   (if (= $count #2) (continue))
   (if (= $count #4) (break (list stopped $count)))
-  (echo iteration $count))
+  (echo iteration $count)))
 ```
 
 `(continue)` skips the rest of the current iteration. `(break)` ends the nearest
@@ -63,12 +63,10 @@ Function names and parameter declarations use bare names. Read parameter and
 local variable values with `$name`. Each function call creates a fresh call scope;
 `let` in the body stays in that scope, and repeating `let` in the same scope is an
 error. Functions capture their defining lexical scope and return the last expression's value. Argument expressions are evaluated
-before parameters are bound. Functions can return numbers, lists, maps, and booleans as well as
-command output.
-When called as a value, stdout is captured throughout the function body: if the
-last expression produces a command status, captured stdout is returned as text;
-otherwise the last typed value is returned. Earlier captured output is not
-printed in that case.
+before parameters are bound. Functions can return numbers, lists, maps, booleans, and `CallResult`.
+Commands inside functions write to their current destinations in every calling
+position. A final command returns its `CallResult` directly. Capture function
+output explicitly with `(capture/stdout function-name args...)`.
 
 ## Function values and parameters
 
@@ -78,16 +76,16 @@ passed, returned, and called through expressions:
 
 ```parsh
 (let inc (fn (x) (+ $x #1)))
-($inc #2)
-((fn (x) (* $x #2)) #3)
+(dump ($inc #2))
+(dump ((fn (x) (* $x #2)) #3))
 (let add (function +))
-(apply $add #1 [#2 #3])
+(dump (apply $add #1 [#2 #3]))
 
 (defn sum (first &optional (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
-(sum #1 #2 #3 #4)
+(dump (sum #1 #2 #3 #4))
 ```
 
 Parameters appear in this order: required, `&optional`, then `&rest name`.
@@ -110,7 +108,7 @@ include `get`, `not`, numeric and collection operations, `glob`, `cd`, and `type
 `(return)` returns nil early; `(return expr)` evaluates once and exits the current
 function through loops, nested expressions, and redirections. It does not exit
 the caller. Using return outside a function is an error. Returned command
-expressions use the usual value-position output capture rules. A macro body can
+expressions stream output and return `CallResult`; text capture is explicit. A macro body can
 also return its expansion early; return in expanded code belongs to the caller.
 
 ## See the return value
@@ -118,9 +116,9 @@ also return its expansion early; return in expanded code belongs to the caller.
 ```parsh
 (defn greet (who)
   (str "hello, " $who))
-(greet parsh)
-(if #true (list yes) (list no))
-(for item (list first last) (str $item))
+(dump (greet parsh))
+(dump (if #true (list yes) (list no)))
+(dump (for item (list first last) (str $item)))
 ```
 
 An interactive session displays `"hello, parsh"`, `("yes")`, and `"last"`. A loop returns the last body's result, rather than collecting every iteration. These examples work in the browser playground.

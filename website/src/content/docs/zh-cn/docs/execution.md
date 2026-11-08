@@ -11,14 +11,14 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 (let print (command printf))
 ($print "<%s>\n" "a b")
 (apply $print "<%s>\n" [first second])
-(apply + [#1 #2])
+(dump (apply + [#1 #2]))
 ```
 
 `apply` 接受函数值、命令引用或文本名称。文本名称可以是引号字符串，因此可以动态选择命名空间函数：
 
 ```parsh
-(apply "str/join" [[a b] ","])
-(apply "map/get" [{name parsh} name])
+(dump (apply "str/join" [[a b] ","]))
+(dump (apply "map/get" [{name parsh} name]))
 ```
 
 `function` 只取得用户函数和普通内置。`command` 只保存程序名，创建时不查找 PATH 或启动程序，
@@ -27,17 +27,36 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 宏和 `if` 等特殊形式不能作为普通被调用对象。
 实参从左到右求值一次，`apply` 不将值重新解析成源码。
 
-普通调用保留原来的取值规则：`(let here (pwd))` 得到去掉尾部 LF 的 UTF-8 stdout 文本，
-算术和普通函数返回语言值。函数以命令结束时可以返回捕获输出；显式返回类型值则保留该值。
+普通命令调用始终流式输出 stdout/stderr，返回 `CallResult`，默认两个流字段都是 `#nil`。
+`(let result (pwd))` 会打印目录，并将结果结构体绑定到 result；取值位置不会隐式捕获。
+外部命令、管道、`type`、`cd`、`export` 使用相同结果类型。算术和数据内置保留原类型，
+用户函数按函数体返回；以命令结束时直接返回该 `CallResult`。
+
+需要文本时使用 `(capture/stdout pwd)` 或 `(capture/stderr callee args...)`。
+它们只捕获指定流，严格解码 UTF-8 并保留全部换行；另一流沿用当前输出目标。
+空捕获返回空文本，未捕获的流返回 nil。命令失败会抛错，错误附带捕获结果。
+需要裁剪首尾空白时，使用 `capture/stdout-trim` 或 `capture/stderr-trim`，分别等价于
+`str/trim` 包裹对应的捕获方法。它们去掉首尾 Unicode 空白（空格、制表符和换行），
+保留中间内容；空输出和全空白输出返回空文本。`$?` 中的原始 bytes 不会被裁剪。
+目标流已重定向而无法捕获时，裁剪版本与原组合一样报 `expected text`。
+
+```parsh
+(let here (capture/stdout-trim pwd))
+(dump $here)
+```
 
 | 调用 | 参数与返回值 |
 | --- | --- |
 | `(command name)` | 非空文本程序名，返回 `<command name>` |
 | `(apply callee fixed... args)` | 仅把最后一个列表展开为调用参数 |
+| `(capture/stdout callee args...)` | 捕获 stdout，返回保留换行的 UTF-8 文本 |
+| `(capture/stderr callee args...)` | 捕获 stderr，返回保留换行的 UTF-8 文本 |
+| `(capture/stdout-trim callee args...)` | 捕获 stdout，返回去掉首尾空白的 UTF-8 文本 |
+| `(capture/stderr-trim callee args...)` | 捕获 stderr，返回去掉首尾空白的 UTF-8 文本 |
 | `(capture-call callee args...)` | 实参直接排列，返回同步调用的完整 `CallResult` |
 | `(spawn callee args...)` | 实参直接排列，返回原生 `Job` |
 
-传给 `capture-call` 和 `spawn` 的列表仍是一个语言参数；调用外部命令时，才按通常规则展开一层 argv。
+传给捕获方法和 `spawn` 的列表仍是一个语言参数；调用外部命令时，才按通常规则展开一层 argv。
 这些调用的首参都不是待执行的命令表达式；多个表达式或管道应放入 `(fn () ...)`。
 
 ## 完整执行结果
@@ -46,9 +65,9 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 
 ```parsh
 (let result (capture-call printf "hello\n"))
-(list (stdout-text $result) (exit-code $result) (signal $result))
+(dump (list (stdout-text $result) (exit-code $result) (signal $result)))
 (let sum (capture-call + #2 #3))
-(CallResult.value $sum)
+(dump (CallResult.value $sum))
 ```
 
 | 字段 | 含义 |
@@ -96,14 +115,14 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 未捕获的前台命令仍实时输出。管道阶段仍限外部命令；捕获或后台执行整个管道时使用函数包装：
 
 ```parsh
-(capture-call (fn () (| (printf "b\na\n") (sort))))
+(dump (capture-call (fn () (| (printf "b\na\n") (sort)))))
 ```
 
 原始捕获也接受二进制输出，不会自动解码：
 
 ```parsh
 (let binary (capture-call printf "\\377\\000\\101"))
-(bytes/hex-encode (CallResult.stdout $binary))
+(dump (bytes/hex-encode (CallResult.stdout $binary)))
 ```
 
 结果为 `"ff0041"`。切片、拼接和显式文本转换见 [bytes 函数](/parsh/zh-cn/docs/stdlib/#bytes)。
@@ -114,17 +133,17 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 需要数值退出码时显式使用访问函数：
 
 ```parsh
-(let here (pwd))
+(let here (capture/stdout-trim pwd))
 (let saved $?)
-(list $here (exit-code $saved) (signal $saved))
+(dump (list $here (exit-code $saved) (signal $saved)))
 (echo "exit=$(exit-code $?)")
 ```
 
 外部命令、管道、用户函数及 `cd`、`export`、`type` 等命令内置发布结果，失败时先更新再抛异常。
 纯数据内置、字段访问、变量读取和任务状态查询不覆盖结果。绑定、控制流与 `apply` 不额外覆盖被包裹调用的结果。
-`capture-call`、`wait`、`check` 发布其处理的那份结果。
+捕获方法、`wait`、`check` 发布其处理的那份结果。
 
-普通调用只保留取值时已经捕获的输出，不会额外缓存终端输出。在下一条命令前绑定 `$?` 可以保存快照。
+普通调用不会缓存终端输出，两个流字段为 nil；显式捕获才在结果中保存 bytes。在下一条命令前绑定 `$?` 可以保存快照。
 `?` 不能用于绑定、赋值、导出或形参。双引号识别 `$?`，但不隐式将结构体转成文本；插值时读取字段。
 单引号与 `\$` 保留字面美元符。
 
@@ -153,10 +172,10 @@ finally 的当前函数上下文禁止 return/break/continue，调用的辅助�
 
 ```parsh
 (let job (spawn printf "hello %s\n" world))
-(job-status $job)
+(dump (job-status $job))
 (let completed (wait $job))
-(stdout-text $completed)
-(check $completed)
+(dump (stdout-text $completed))
+(dump (check $completed))
 ```
 
 `spawn` 接受外部命令、用户函数和普通内置，采用铺平实参，返回属于当前会话的 `Job`。

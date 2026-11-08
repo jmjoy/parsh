@@ -65,19 +65,6 @@ pub enum Value {
         fields: IndexMap<String, Value>,
     },
     Nil,
-    Status(CommandStatus),
-}
-
-/// A command's compatibility status and its complete, immutable invocation result.
-#[derive(Clone, Debug)]
-pub struct CommandStatus {
-    pub code: i32,
-    pub(crate) result: Box<Value>,
-}
-impl PartialEq for CommandStatus {
-    fn eq(&self, other: &Self) -> bool {
-        self.code == other.code
-    }
 }
 
 impl PartialEq for Value {
@@ -104,7 +91,6 @@ impl PartialEq for Value {
                 },
             ) => left == right && left_fields == right_fields,
             (Self::Nil, Self::Nil) => true,
-            (Self::Status(left), Self::Status(right)) => left == right,
             _ => false,
         }
     }
@@ -146,7 +132,6 @@ impl Value {
             Self::Struct { .. } => Err("expected a scalar value, got a struct".into()),
             Self::Command(_) => Err("expected a scalar value, got a command".into()),
             Self::Bytes(_) => Err("expected a scalar value, got bytes".into()),
-            Self::Status(_) => Err("a command status cannot be used as text".into()),
         }
     }
 
@@ -181,7 +166,6 @@ impl Value {
                 format!("({})", parts.join(" "))
             }
             Self::Nil => "#nil".into(),
-            Self::Status(status) => format!("status {}", status.code),
         }
     }
 }
@@ -336,6 +320,41 @@ enum Mode {
     Condition,
 }
 
+#[derive(Default)]
+struct OutputState {
+    chunks: Vec<OutputChunk>,
+    bytes: usize,
+    observer: Option<Rc<dyn Fn(OutputChunk)>>,
+}
+
+impl OutputState {
+    fn emit(state: &Rc<RefCell<Self>>, mut chunk: OutputChunk) -> Result<(), HostError> {
+        let (observer, overflow) = {
+            let mut state = state.borrow_mut();
+            let remaining = MAX_OUTPUT_BYTES.saturating_sub(state.bytes);
+            let overflow = chunk.bytes.len() > remaining;
+            chunk.bytes.truncate(remaining);
+            state.bytes += chunk.bytes.len();
+            (state.observer.clone(), overflow)
+        };
+        if !chunk.bytes.is_empty() {
+            if let Some(observer) = observer {
+                observer(chunk);
+            } else {
+                state.borrow_mut().chunks.push(chunk);
+            }
+        }
+        if overflow {
+            Err(HostError {
+                code: 2,
+                message: "command output exceeds 8 MiB".into(),
+            })
+        } else {
+            Ok(())
+        }
+    }
+}
+
 pub struct Shell {
     #[cfg(feature = "native")]
     pub cwd: PathBuf,
@@ -351,8 +370,7 @@ pub struct Shell {
     pub job: Option<JobControl>,
     host: Option<SharedHost>,
     host_cwd: String,
-    output: Vec<OutputChunk>,
-    output_bytes: usize,
+    output: Rc<RefCell<OutputState>>,
     syntax_only: bool,
     depth: usize,
     loop_depth: usize,
@@ -470,8 +488,7 @@ impl Shell {
             job: None,
             host: None,
             host_cwd: String::new(),
-            output: Vec::new(),
-            output_bytes: 0,
+            output: Rc::new(RefCell::new(OutputState::default())),
             syntax_only: true,
             depth: 0,
             loop_depth: 0,
@@ -707,7 +724,11 @@ impl Shell {
     }
 
     pub fn take_output(&mut self) -> Vec<OutputChunk> {
-        std::mem::take(&mut self.output)
+        std::mem::take(&mut self.output.borrow_mut().chunks)
+    }
+
+    pub(crate) fn observe_output(&mut self, observer: Option<Rc<dyn Fn(OutputChunk)>>) {
+        self.output.borrow_mut().observer = observer;
     }
 
     #[cfg(feature = "native")]
@@ -739,7 +760,7 @@ impl Shell {
 
     pub fn execute(&mut self, expr: &Expr) -> Result<Value, Error> {
         self.interrupted.store(false, Ordering::Relaxed);
-        self.output_bytes = 0;
+        self.output.borrow_mut().bytes = 0;
         self.macro_depth = 0;
         self.eval(expr, &self.root.clone(), Mode::Normal, &Io::default())
             .map_err(|signal| signal.into_error(expr))
@@ -775,27 +796,7 @@ impl Shell {
     }
 
     fn value(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<Value> {
-        let buffer = Arc::new(Mutex::new(Vec::new()));
-        let nested = Io {
-            output: Output::Capture(buffer.clone()),
-            capture_budget: Some(io.capture_budget.clone().unwrap_or_default()),
-            host_output: None,
-            ..io.clone()
-        };
-        let result = self.eval(expr, env, Mode::Normal, &nested)?;
-        if matches!(result, Value::Status(_)) {
-            let bytes = std::mem::take(&mut *buffer.lock().unwrap());
-            let text = String::from_utf8(bytes).map_err(|_| Error {
-                result: Some(Box::new(self.last_result.clone())),
-                ..Error::new(
-                    expr,
-                    "captured output is not UTF-8; use a pipeline or redirection for binary data",
-                )
-            })?;
-            Ok(Value::Text(text.trim_end_matches('\n').into()))
-        } else {
-            Ok(result)
-        }
+        self.eval(expr, env, Mode::Normal, io)
     }
 
     fn scalar(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<String> {
@@ -820,12 +821,19 @@ impl Shell {
     }
 
     fn condition(&mut self, expr: &Expr, env: &Env, io: &Io) -> EvalResult<bool> {
-        match self.eval(expr, env, Mode::Condition, io)? {
+        Self::condition_value(expr, self.eval(expr, env, Mode::Condition, io)?)
+    }
+
+    fn condition_value(expr: &Expr, value: Value) -> EvalResult<bool> {
+        match value {
             Value::Bool(value) => Ok(value),
-            Value::Status(status) => Ok(status.code == 0),
+            result if execution::is_record(&result, "CallResult") => Ok(matches!(
+                execution::field(&result, "error"),
+                Some(Value::Nil)
+            )),
             _ => Err(Error::new(
                 expr,
-                "a condition must be a boolean or command status; use eq to compare text",
+                "a condition must be a boolean or CallResult; use eq to compare text",
             )
             .into()),
         }
@@ -1278,7 +1286,7 @@ impl Shell {
                         .insert("OLDPWD".into(), self.host_cwd.clone().into());
                     self.environment.insert("PWD".into(), cwd.clone().into());
                     self.host_cwd = cwd;
-                    return Ok(Value::Nil);
+                    return Ok(self.command_status(expr, "cd", 0, mode)?);
                 }
                 #[cfg(feature = "native")]
                 {
@@ -1302,7 +1310,7 @@ impl Shell {
                     self.environment
                         .insert("PWD".into(), path.as_os_str().into());
                     self.cwd = path;
-                    Ok(Value::Nil)
+                    Ok(self.command_status(expr, "cd", 0, mode)?)
                 }
                 #[cfg(not(feature = "native"))]
                 unreachable!("filesystem capability checked before dispatch")
@@ -1314,7 +1322,7 @@ impl Shell {
                 Scope::set(env, variable, &value);
                 self.environment
                     .insert(variable.into(), value.text().unwrap().into());
-                Ok(Value::Nil)
+                Ok(self.command_status(expr, "export", 0, mode)?)
             }
             "exit" => {
                 Self::arity(expr, args, 0, 1)?;
@@ -1793,9 +1801,14 @@ impl Shell {
         Error {
             code: error.code,
             offset: expr.offset,
+            kind: if error.message.contains("8 MiB") {
+                "output-limit"
+            } else {
+                "spawn-failed"
+            }
+            .into(),
             message: error.message,
             exit: false,
-            kind: "spawn-failed".into(),
             ..Error::new(expr, "")
         }
     }
@@ -1871,17 +1884,44 @@ impl Shell {
                 capture: matches!(io.output, Output::Capture(_)),
                 capture_error: io.error_capture.is_some(),
             };
+            let output = self.output.clone();
+            let captured_io = io.clone();
+            let emit = Rc::new(move |chunk: OutputChunk| {
+                let capture = match chunk.stream {
+                    Stream::Stdout if captured_io.host_output.is_none() => {
+                        match &captured_io.output {
+                            Output::Capture(buffer) => Some(buffer),
+                            _ => None,
+                        }
+                    }
+                    Stream::Stderr if captured_io.host_error.is_none() => {
+                        captured_io.error_capture.as_ref()
+                    }
+                    _ => return Ok(()),
+                };
+                if let Some(buffer) = capture {
+                    crate::streams::append_capture(
+                        buffer,
+                        captured_io.capture_budget.as_ref(),
+                        &chunk.bytes,
+                    )
+                    .map_err(|error| HostError {
+                        code: 2,
+                        message: error.to_string(),
+                    })
+                } else {
+                    OutputState::emit(&output, chunk)
+                }
+            });
             let executed =
                 host.borrow_mut()
-                    .run(stages, &self.host_cwd, &self.environment, streams);
+                    .run(stages, &self.host_cwd, &self.environment, streams, emit);
             match executed {
                 Ok(CommandOutput {
                     code,
-                    chunks,
                     stages: host_stages,
                     error: execution_error,
                 }) => {
-                    let execution_failed = execution_error.is_some();
                     if let Some(error) = execution_error {
                         incomplete = true;
                         issue = Some(Error {
@@ -1900,39 +1940,6 @@ impl Shell {
                     } else {
                         host_stages
                     };
-                    for chunk in chunks {
-                        let capture = if chunk.stream == Stream::Stdout && io.host_output.is_none()
-                        {
-                            match &io.output {
-                                Output::Capture(buffer) => Some(buffer),
-                                _ => None,
-                            }
-                        } else if chunk.stream == Stream::Stderr && io.host_error.is_none() {
-                            io.error_capture.as_ref()
-                        } else {
-                            None
-                        };
-                        if let Some(buffer) = capture {
-                            if let Err(error) = crate::streams::append_capture(
-                                buffer,
-                                io.capture_budget.as_ref(),
-                                &chunk.bytes,
-                            ) {
-                                issue = Some(Error {
-                                    kind: "output-limit".into(),
-                                    ..Error::new(expr, error.to_string())
-                                });
-                            }
-                        } else if !execution_failed {
-                            // A failed buffered host call only exposes partial bytes to captures.
-                            self.output_bytes = self.output_bytes.saturating_add(chunk.bytes.len());
-                            if self.output_bytes > MAX_OUTPUT_BYTES {
-                                issue = Some(Error::new(expr, "command output exceeds 8 MiB"));
-                            } else {
-                                self.output.push(chunk);
-                            }
-                        }
-                    }
                 }
                 Err(error) => issue = Some(Self::host_error(expr, error)),
             }
@@ -2096,18 +2103,12 @@ impl Shell {
             if mode == Mode::Condition
                 && matches!(error.kind.as_str(), "command-failed" | "signaled")
             {
-                Ok(Value::Status(CommandStatus {
-                    code,
-                    result: Box::new(self.last_result.clone()),
-                }))
+                Ok(self.last_result.clone())
             } else {
                 Err(Signal::Error(Box::new(error)))
             }
         } else {
-            Ok(Value::Status(CommandStatus {
-                code,
-                result: Box::new(self.last_result.clone()),
-            }))
+            Ok(self.last_result.clone())
         };
         // Reuse the already published command metadata and attach this invocation's output.
         self.publish_invocation(expr, &mut outcome, io, positions);
@@ -2137,10 +2138,7 @@ impl Shell {
             error.result = Some(Box::new(self.last_result.clone()));
             return Err(error);
         }
-        Ok(Value::Status(CommandStatus {
-            code,
-            result: Box::new(self.last_result.clone()),
-        }))
+        Ok(self.last_result.clone())
     }
 
     /// Write builtin output through the same destinations as external commands.
@@ -2151,10 +2149,6 @@ impl Shell {
         stream: Stream,
         bytes: Vec<u8>,
     ) -> Result<(), Error> {
-        self.output_bytes = self.output_bytes.saturating_add(bytes.len());
-        if self.output_bytes > MAX_OUTPUT_BYTES {
-            return Err(Error::new(expr, "command output exceeds 8 MiB"));
-        }
         let host_file = match stream {
             Stream::Stdout => &io.host_output,
             Stream::Stderr => &io.host_error,
@@ -2186,8 +2180,8 @@ impl Shell {
                 });
         }
         if self.host.is_some() || self.syntax_only {
-            self.output.push(OutputChunk { stream, bytes });
-            return Ok(());
+            return OutputState::emit(&self.output, OutputChunk { stream, bytes })
+                .map_err(|error| Self::host_error(expr, error));
         }
         #[cfg(feature = "native")]
         {

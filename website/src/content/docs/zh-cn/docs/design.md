@@ -24,13 +24,13 @@ parsh 没有正式的宣言。下面这些是实现在反复回归的原则，�
 动态转换使用 `int`、`float`、`bool`：
 
 ```parsh
-(eq 001 1)
-(= #001 #1)
+(dump (eq 001 1))
+(dump (= #001 #1))
 (let mode fast)
-(if (eq $mode fast) (echo fast))
+(dump (if (eq $mode fast) (echo fast)))
 ```
 
-条件必须产生布尔值或命令状态。文本永远不会被隐式当作真值。
+条件必须产生布尔值或 `CallResult`。文本永远不会被隐式当作真值。
 
 ## 不做隐式转换
 
@@ -39,7 +39,7 @@ parsh 没有正式的宣言。下面这些是实现在反复回归的原则，�
 ```parsh
 (let files (list "a file.rs" "b.rs"))
 (printf "<%s>\n" $files)
-(for file (glob "*.rs") (echo $file))
+(dump (for file (glob "*.rs") (echo $file)))
 ```
 
 重点在于：脚本写的是什么，执行的就是什么——没有隐式拆词，没有隐藏的路径展开，
@@ -50,9 +50,10 @@ parsh 没有正式的宣言。下面这些是实现在反复回归的原则，�
 一个表达式可以调用内置形式、宏、函数、结构体构造器或外部程序。外部程序直接启动：
 表达式不会再交给另一个 Shell 解析，因此没有第二轮引号处理，也没有注入层。
 
-命令结果是值。命令出现在值位置时，stdout 按 UTF-8 文本捕获并去掉尾部换行；
-二进制输出走重定向、管道或显式原始字节捕获；退出状态是一个 `status` 值。普通非零状态会中止当前批次，
-但条件与显式捕获可以检查它。完整结果保留退出和信号信息，异常机制用于恢复执行。参见[命令与组合](/parsh/zh-cn/docs/commands/)。
+命令调用始终返回 `CallResult`，stdout/stderr 向当前目标输出，默认不缓冲。
+需要捕获时显式使用 `capture/stdout`、`capture/stderr` 或 `capture-call`。
+普通失败会中止当前批次，条件位置可以检查结果，异常机制用于恢复执行。
+完整结果保留退出、信号和管道阶段信息。
 
 ## 值语义与词法作用域
 

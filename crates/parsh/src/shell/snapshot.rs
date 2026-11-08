@@ -15,7 +15,6 @@ enum FrozenValue {
     Bytes(Arc<[u8]>),
     Struct(String, IndexMap<String, FrozenValue>),
     Nil,
-    Status(i32, Box<FrozenValue>),
 }
 #[derive(Clone)]
 struct FrozenScope {
@@ -105,7 +104,6 @@ impl Builder {
                     .collect(),
             ),
             Value::Nil => FrozenValue::Nil,
-            Value::Status(s) => FrozenValue::Status(s.code, Box::new(self.value(&s.result))),
         }
     }
     fn finish(self, value: FrozenValue) -> Frozen {
@@ -156,10 +154,6 @@ impl Restored {
                     .collect(),
             },
             FrozenValue::Nil => Value::Nil,
-            FrozenValue::Status(code, result) => Value::Status(CommandStatus {
-                code: *code,
-                result: Box::new(self.value(result)),
-            }),
         }
     }
 }

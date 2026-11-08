@@ -11,14 +11,14 @@ The `$ ()` prompt supplies the outer parentheses. Type `echo hello` and press En
 
 ```parsh
 (echo "hello, parsh")
-(let here (pwd))
+(let here (capture/stdout-trim pwd))
 (echo (str "working in " $here))
 (| (sort fruits.txt) (uniq -c))
 (|> results.txt (<| numbers.txt (sort -n)))
 (cat results.txt)
 ```
 
-Commands print their output directly. Expressions such as `(str hello)` display their return value (for example, the text `"hello"`). Nil and command exit statuses are not printed.
+Commands stream their output while executing. Expression return values are silent; use `(dump (str hello))` to display `"hello"`.
 
 ## Commands and files
 
@@ -37,13 +37,13 @@ Files, `cd`, explicit `glob`, command capture, pipes, and all parsh redirection 
 (|>> greeting.txt (echo parsh))
 (cp greeting.txt copy.txt)
 (printf "%s\n" (glob *.txt))
-(if (test -f copy.txt) (cat copy.txt) (echo missing))
+(dump (if (test -f copy.txt) (cat copy.txt) (echo missing)))
 (cd ..)
 ```
 
-Nested commands capture UTF-8 stdout, remove trailing LF characters, and keep the result as one argument. Explicit output redirections inside the captured expression take precedence. Files and pipelines preserve binary bytes.
+Nested commands also stream output and return `CallResult`. Capture text explicitly with `capture/stdout` or `capture/stderr`; both preserve newlines. Explicit file redirection takes precedence over capture. Files and pipelines preserve binary bytes.
 
-Browser pipelines run one stage at a time with buffered output. They report the rightmost nonzero status, but do not reproduce native streaming or SIGPIPE behavior. stdin is EOF unless supplied by a file or pipeline. Each command's output and each pipeline buffer are limited to 8 MiB; the virtual filesystem is limited to 32 MiB. Commands such as `grep`, `sed`, and `find` and interactive programs are not included.
+Browser pipelines run one stage at a time with buffered output. They report the rightmost nonzero status, and terminal stdout/stderr are forwarded as bytes are written. Pipeline stages remain buffered rather than concurrent, and SIGPIPE behavior differs from native. stdin is EOF unless supplied by a file or pipeline. Each command's output and each pipeline buffer are limited to 8 MiB; the virtual filesystem is limited to 32 MiB. Commands such as `grep`, `sed`, and `find` and interactive programs are not included.
 
 ## Language and execution
 
@@ -61,8 +61,9 @@ that cannot implicitly become text, including maps and structs.
 | Signals and background tasks | Unavailable | Supported |
 | `http/request`, `http/get`, `http/post` | Unavailable | Supported |
 
-`capture-call` preserves raw bytes and newlines; ordinary value-position command
-capture returns UTF-8 text with trailing LF removed. The previous REPL value `$_`
+`capture-call` preserves raw bytes; `capture/stdout` and `capture/stderr` return
+UTF-8 text with all newlines preserved. Their `capture/stdout-trim` and
+`capture/stderr-trim` variants remove surrounding whitespace. The previous REPL value `$_`
 and previous execution result `$?` have different update rules; see
 [variables and scope](/parsh/en/docs/variables/).
 

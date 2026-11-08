@@ -12,15 +12,15 @@ creates an explicit external reference, even if a function has the same name:
 (let print (command printf))
 ($print "<%s>\n" "a b")
 (apply $print "<%s>\n" [first second])
-(apply + [#1 #2])
+(dump (apply + [#1 #2]))
 ```
 
 `apply` accepts a function, command reference, or text name. The text may be a
 quoted string, so namespace names can be selected dynamically:
 
 ```parsh
-(apply "str/join" [[a b] ","])
-(apply "map/get" [{name parsh} name])
+(dump (apply "str/join" [[a b] ","]))
+(dump (apply "map/get" [{name parsh} name]))
 ```
 
 `function` obtains only user functions and ordinary builtins. `command` stores a
@@ -33,19 +33,44 @@ as ordinary callees.
 Arguments evaluate once from left to right, and values passed by `apply` are never
 reparsed as source.
 
-Ordinary calls keep their existing behavior: `(let here (pwd))` obtains stdout as
-UTF-8 text with trailing LF characters removed, while arithmetic and typed functions
-return their language values. A function ending with a command can return its captured
-output; an explicit typed return retains that value.
+Ordinary commands stream stdout/stderr and return `CallResult`; both stream fields
+are `#nil` by default. `(let result (pwd))` prints the directory and binds the
+result structure. Value position never implies capture. External commands,
+pipelines, `type`, `cd`, and `export` share this result type. Arithmetic and data
+builtins retain their types; user functions return their body value, including a
+command's `CallResult` when it is the final expression.
+
+Use `(capture/stdout pwd)` or `(capture/stderr callee args...)` for text. These
+capture only the selected stream, decode UTF-8 strictly, and preserve every
+newline; the other stream keeps its current destination. Empty capture returns
+empty text, while an uncaptured stream returns nil. Command failures throw with
+the captured result attached.
+
+Use `capture/stdout-trim` or `capture/stderr-trim` to remove surrounding whitespace.
+Each is equivalent to wrapping the corresponding capture helper in `str/trim`:
+it removes leading and trailing Unicode whitespace, including spaces, tabs, and
+newlines, and preserves everything in between. Empty or whitespace-only output
+returns empty text. The raw bytes in `$?` are never trimmed. When the selected
+stream is redirected and cannot be captured, the trimmed helper reports
+`expected text`, just like the explicit composition.
+
+```parsh
+(let here (capture/stdout-trim pwd))
+(dump $here)
+```
 
 | Call | Arguments and result |
 | --- | --- |
 | `(command name)` | One nonempty text program name; returns `<command name>` |
 | `(apply callee fixed... args)` | Expands only the final list into call arguments |
+| `(capture/stdout callee args...)` | Captures stdout as UTF-8 text, preserving newlines |
+| `(capture/stderr callee args...)` | Captures stderr as UTF-8 text, preserving newlines |
+| `(capture/stdout-trim callee args...)` | Captures stdout as UTF-8 text with surrounding whitespace removed |
+| `(capture/stderr-trim callee args...)` | Captures stderr as UTF-8 text with surrounding whitespace removed |
 | `(capture-call callee args...)` | Flat arguments; returns a complete synchronous `CallResult` |
 | `(spawn callee args...)` | Flat arguments; returns a native `Job` |
 
-Lists passed to `capture-call` and `spawn` remain one language argument; external
+Lists passed to capture helpers and `spawn` remain one language argument; external
 command calls then apply the usual one-level list expansion to argv. None of
 these operations takes an unevaluated command expression as its first argument.
 Wrap multiple expressions or a pipeline in `(fn () ...)` instead.
@@ -57,9 +82,9 @@ Wrap multiple expressions or a pipeline in `(fn () ...)` instead.
 
 ```parsh
 (let result (capture-call printf "hello\n"))
-(list (stdout-text $result) (exit-code $result) (signal $result))
+(dump (list (stdout-text $result) (exit-code $result) (signal $result)))
 (let sum (capture-call + #2 #3))
-(CallResult.value $sum)
+(dump (CallResult.value $sum))
 ```
 
 | Field | Meaning |
@@ -114,14 +139,14 @@ result. Uncaptured foreground commands keep streaming. Pipelines still accept on
 external stages; wrap a pipeline in a function to capture or spawn it:
 
 ```parsh
-(capture-call (fn () (| (printf "b\na\n") (sort))))
+(dump (capture-call (fn () (| (printf "b\na\n") (sort)))))
 ```
 
 Raw capture also accepts binary output without decoding it:
 
 ```parsh
 (let binary (capture-call printf "\\377\\000\\101"))
-(bytes/hex-encode (CallResult.stdout $binary))
+(dump (bytes/hex-encode (CallResult.stdout $binary)))
 ```
 
 The result is `"ff0041"`. Use the [bytes functions](/parsh/en/docs/stdlib/#bytes)
@@ -133,9 +158,9 @@ for slicing, concatenation, and explicit text conversion.
 same value. It is a complete structure, so obtain the numeric exit code explicitly:
 
 ```parsh
-(let here (pwd))
+(let here (capture/stdout-trim pwd))
 (let saved $?)
-(list $here (exit-code $saved) (signal $saved))
+(dump (list $here (exit-code $saved) (signal $saved)))
 (echo "exit=$(exit-code $?)")
 ```
 
@@ -143,10 +168,10 @@ External commands, pipelines, user functions, and command builtins such as `cd`,
 `export`, and `type` publish results. Failures publish before throwing. Pure data
 builtins, field access, variable reads, and task-status queries do not replace the
 result. Binding, control-flow, and `apply` wrappers preserve their target's result.
-`capture-call`, `wait`, and `check` publish the result they handle.
+Capture helpers, `wait`, and `check` publish the result they handle.
 
-A normal call records only output already captured by its value context; it does
-not silently buffer terminal output. Save `$?` in a binding to keep a snapshot
+Normal calls leave both stream fields nil. Only explicit capture retains bytes;
+terminal output is never silently buffered. Save `$?` in a binding to keep a snapshot
 before another command. Neither assignment, export, nor parameters can use `?`.
 Quoted interpolation recognizes `$?` but does not implicitly stringify its structure;
 use a field expression. Single quotes and `\$` preserve literal dollars.
@@ -179,10 +204,10 @@ difference between script reading and interactive batch validation.
 
 ```parsh
 (let job (spawn printf "hello %s\n" world))
-(job-status $job)
+(dump (job-status $job))
 (let completed (wait $job))
-(stdout-text $completed)
-(check $completed)
+(dump (stdout-text $completed))
+(dump (check $completed))
 ```
 
 `spawn` accepts external commands, user functions, and ordinary builtins with flat

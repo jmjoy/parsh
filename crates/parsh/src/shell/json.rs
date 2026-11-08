@@ -72,7 +72,6 @@ fn to_json(value: &Value) -> Result<JsonValue, String> {
         Value::Function(_) => Err("json/encode does not support functions".into()),
         Value::Command(_) => Err("json/encode does not support commands".into()),
         Value::Bytes(_) => Err("json/encode does not support bytes".into()),
-        Value::Status(_) => Err("json/encode does not support command statuses".into()),
     }
 }
 

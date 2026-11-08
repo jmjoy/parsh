@@ -13,7 +13,7 @@ interface WasmSession {
 }
 interface WasmModule {
   default(options: { module_or_path: string }): Promise<unknown>;
-  Session: new (onActivity: (busy: boolean) => void, host: CoreutilsHost["call"]) => WasmSession;
+  Session: new (onActivity: (busy: boolean) => void, onEvents: (events: TerminalEvent[]) => void, host: CoreutilsHost["call"]) => WasmSession;
 }
 
 let session: WasmSession | undefined;
@@ -27,7 +27,11 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
         wasm.default({ module_or_path: `${data.base}wasm/parsh_bg.wasm` }),
         CoreutilsHost.load(data.base),
       ]);
-      session = new wasm.Session((busy) => send({ type: "activity", busy }), host.call);
+      session = new wasm.Session(
+        (busy) => send({ type: "activity", busy }),
+        (events) => send({ type: "events", events }),
+        host.call,
+      );
       send({ type: "ready" });
       send({ type: "events", events: session.resize(data.columns, data.rows) });
       return;
@@ -48,7 +52,7 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
         events = session.reset();
         break;
     }
-    send({ type: "events", events });
+    if (events.length) send({ type: "events", events });
   } catch (error) {
     send({
       type: "error",

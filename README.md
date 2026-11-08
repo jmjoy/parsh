@@ -22,16 +22,16 @@ and control flow follow the same rules in both. Command calls are expressions:
 
 ```parsh
 (let name world)
-(str "hello, " $name)
+(dump (str "hello, " $name))
 
 (defn greet (who)
   (str "hello, " $who))
-(greet parsh)
+(dump (greet parsh))
 ```
 
-An interactive session displays `"hello, world"` and `"hello, parsh"` for the two
-calls. Scripts use the same syntax and print explicitly with `echo`, `printf`, or
-`dump`.
+Both interactive sessions and scripts print explicitly with `echo`, `printf`, or
+`dump`. The two `dump` calls above display `"hello, world"` and `"hello, parsh"`.
+Expression return values are never printed automatically.
 
 ## Arguments stay intact
 
@@ -40,7 +40,7 @@ No implicit word splitting or globbing, and no guessing what spaces will do:
 
 ```parsh
 (let files (list "a file.rs" "b.rs"))
-(list $files)
+(dump (list $files))
 ```
 
 ## Real commands, structured composition
@@ -60,7 +60,7 @@ script; programs, pipes, and redirections are expressions too. With fewer quotin
 layers to guess, generated scripts read the way they run:
 
 ```parsh
-(let count (int (| (ls) (wc -l))))
+(let count (int (capture/stdout-trim (fn () (| (ls) (wc -l))))))
 (echo "entries: $count; doubled: $(* $count #2)")
 ```
 

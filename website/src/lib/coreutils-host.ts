@@ -17,7 +17,8 @@ interface RunRequest {
   capture: boolean;
   capture_error: boolean;
 }
-interface Chunk { stream: "stdout" | "stderr"; bytes: Uint8Array }
+type OutputStream = "stdout" | "stderr";
+type OutputSink = (stream: OutputStream, bytes: Uint8Array) => string | undefined;
 class HostFailure extends Error {
   constructor(message: string, readonly code = 2) { super(message); }
 }
@@ -55,12 +56,12 @@ export class CoreutilsHost {
     return new CoreutilsHost(module, commands);
   }
 
-  readonly call = (operation: string, args: unknown): unknown => {
+  readonly call = (operation: string, args: unknown, emit?: OutputSink): unknown => {
     try {
       let value: unknown;
       switch (operation) {
         case "reset": value = this.reset(); break;
-        case "run": value = this.run(args as RunRequest); break;
+        case "run": value = this.run(args as RunRequest, emit!); break;
         case "open": {
           const [cwd, path, mode] = args as [string, string, string];
           value = this.open(cwd, path, mode); break;
@@ -188,24 +189,30 @@ export class CoreutilsHost {
     }
   }
 
-  private run(request: RunRequest): { code: number; stages: number[]; chunks: Chunk[]; error?: string } {
+  private run(request: RunRequest, output: OutputSink): { code: number; stages: number[]; error?: string } {
     // Resolve the supported command set before running any stage.
     for (const argv of request.stages) {
       if ((!argv[0] || !this.commands.has(argv[0]))) throw new HostFailure(`command '${argv[0]}' is not available in this playground`, 127);
       if (argv.some(arg => arg.includes("\0"))) throw new HostFailure("command arguments cannot contain NUL");
     }
-    const chunks: Chunk[] = [];
     let outputBytes = 0;
-    const emit = (stream: Chunk["stream"], bytes: Uint8Array): void => {
+    const send = (stream: OutputStream, bytes: Uint8Array): void => {
+      // The sink copies bytes before WASI guest memory can change or grow.
+      const error = output(stream, bytes);
+      if (error !== undefined) throw new HostFailure(error);
+    };
+    const emit = (stream: OutputStream, bytes: Uint8Array): void => {
       const remaining = Math.max(0, OUTPUT_LIMIT - outputBytes);
       if (bytes.length > remaining) {
-        if (remaining > 0) chunks.push({ stream, bytes: bytes.slice(0, remaining) });
+        if (remaining > 0) send(stream, bytes.subarray(0, remaining));
         outputBytes = OUTPUT_LIMIT;
         throw new HostFailure("command output exceeds 8 MiB");
       }
       outputBytes += bytes.length;
-      // Copy out of guest memory before it changes or grows.
-      chunks.push({ stream, bytes: bytes.slice() });
+      // Bound each message while retaining stream and byte order.
+      for (let start = 0; start < bytes.length; start += 16384) {
+        send(stream, bytes.subarray(start, start + 16384));
+      }
     };
     let input: OpenFile = this.handle(request.input) ?? new OpenFile(new File(new Uint8Array()));
     let code = 0;
@@ -259,9 +266,9 @@ export class CoreutilsHost {
       }
     } catch (error) {
       if (!(error instanceof HostFailure)) throw error;
-      return { code: error.code, stages, chunks, error: error.message };
+      return { code: error.code, stages, error: error.message };
     }
-    return { code, stages, chunks };
+    return { code, stages };
   }
 
   private fixImports(wasi: WASI): void {

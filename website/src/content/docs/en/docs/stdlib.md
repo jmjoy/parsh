@@ -15,11 +15,11 @@ Text, list, and map operations use `module/member` names, such as
 `str/join`, `list/append`, and `map/get`. These are ordinary builtin functions:
 
 ```parsh
-(str/join [a b] ",")
-(list/append [a] b)
-(map/get {name parsh} name)
-(apply (function str/join) [[a b] ","])
-(apply "str/join" [[a b] ","])
+(dump (str/join [a b] ","))
+(dump (list/append [a] b))
+(dump (map/get {name parsh} name))
+(dump (apply (function str/join) [[a b] ","]))
+(dump (apply "str/join" [[a b] ","]))
 ```
 
 The constructors are `str`, `list`, and `map`.
@@ -45,15 +45,15 @@ Numeric text is trimmed and must parse completely. For `int`, text containing a
 point or exponent is first parsed as f64, so integrality is checked after f64
 rounding. Integer text must fit in i64; `(float "9223372036854775808")` can instead
 parse directly as a finite float. Booleans are not numbers, and no conversion
-accepts collections, forms, functions, nil, or command statuses. Text `"#1"` and
+accepts collections, forms, functions, nil, or `CallResult` structures. Text `"#1"` and
 `"#false"` is not re-read as literal syntax. Errors have exit status `2` and point
 to the operand.
 
 ```parsh
-(int " 1.0 ")
-(float #1)
-(bool " false ")
-(apply (function int) ["1e2"])
+(dump (int " 1.0 "))
+(dump (float #1))
+(dump (bool " false "))
+(dump (apply (function int) ["1e2"]))
 ```
 
 Results are `#1`, `#1.0`, `#false`, and `#100`.
@@ -61,23 +61,22 @@ Results are `#1`, `#1.0`, `#false`, and `#100`.
 ## Type predicates
 
 `typeof` returns a type name as text: `text`, `int`, `float`, `bool`, `list`,
-`map`, `form`, `struct`, `bytes`, `function`, `command`, `nil`, or `status`.
+`map`, `form`, `struct`, `bytes`, `function`, `command`, `nil`.
 Corresponding predicates are `text?`, `int?`, `float?`, `bool?`, `list?`, `map?`,
-`form?`, `struct?`, `bytes?`, `function?`, `command?`, `nil?`, and `status?`.
+`form?`, `struct?`, `bytes?`, `function?`, `command?`, `nil?`.
 `number?` accepts both integers and floats. `callable?` accepts function and command
 reference values; it returns false for text names even though the call interface
 can resolve them. `empty?` accepts only text, lists, and maps.
 
 ```parsh
-(list (typeof (command echo)) (command? (command echo))
-      (callable? (function +)) (callable? echo))
+(dump (list (typeof (command echo)) (command? (command echo))
+      (callable? (function +)) (callable? echo)))
 ```
 
 The result is `("command" #true #true #false)`.
 
 Predicates inspect runtime types strictly: `(number? 123)` is false because the
-bare word is text; `(number? #123)` is true. Commands in value position are
-captured as text. `type` continues to inspect command lookup.
+bare word is text; `(number? #123)` is true. Commands in value position return `CallResult` (a `struct`); use `CallResult?` to identify it. `type` continues to inspect command lookup.
 
 ## Numeric helpers
 
@@ -92,7 +91,7 @@ captured as text. `type` continues to inspect command lookup.
 | `(round n)` | Nearest i64, with ties away from zero |
 
 ```parsh
-(list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5))
+(dump (list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5)))
 ```
 
 The result is `(#-2 #-1 #3 #-3)`. `quot/rem` require int values; other numeric helpers require int or float
@@ -115,10 +114,10 @@ zero, integer overflow, rounding outside i64, and non-finite values are language
 ```parsh
 (let original [a b])
 (let updated (list/append $original [c d]))
-(list $original $updated)
-(list/concat $original [c d])
-(list/get $updated #-1)
-(list/slice $updated #1 #-1)
+(dump (list $original $updated))
+(dump (list/concat $original [c d]))
+(dump (list/get $updated #-1))
+(dump (list/slice $updated #1 #-1))
 ```
 
 Indices start at zero. Negative indices count from the end; `#-1` is the last
@@ -141,9 +140,9 @@ reversed ranges return an empty list.
 | `(str/contains text part)` | Boolean indicating a literal substring match |
 
 ```parsh
-(list (str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3))
-(str/join (str/split "a,b,c" ",") " / ")
-(str/lines "a\r\nb\n")
+(dump (list (str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3)))
+(dump (str/join (str/split "a,b,c" ",") " / "))
+(dump (str/lines "a\r\nb\n"))
 ```
 
 Text shares list indexing, slicing, negative-index, and default rules. The unit
@@ -159,9 +158,9 @@ between characters and at both ends.
 Higher-order list functions take the function first and return new values:
 
 ```parsh
-(list/map (fn (value) (str $value "!")) [a b])
-(list/filter (fn (value) (eq $value yes)) [yes no yes])
-(list/fold (fn (total value) (+ $total $value)) #0 [#1 #2 #3])
+(dump (list/map (fn (value) (str $value "!")) [a b]))
+(dump (list/filter (fn (value) (eq $value yes)) [yes no yes]))
+(dump (list/fold (fn (total value) (+ $total $value)) #0 [#1 #2 #3]))
 ```
 
 | Call | Result |
@@ -175,15 +174,15 @@ Higher-order list functions take the function first and return new values:
 | `(list/contains xs value)` | Boolean membership using `eq` type-and-value equality |
 
 Callbacks accept function values, external references, or text names supported by
-`apply`. `filter`, `any`, and `all` require boolean callback results; command statuses
+`apply`. `filter`, `any`, and `all` require boolean callback results; `CallResult` structures
 are not accepted as predicate results. `fold` returns `initial` for an empty list.
 
 Maps support shallow merging and ordered entry conversion:
 
 ```parsh
-(map/merge {name parsh} {version #1})
-(map/entries {name parsh version #1})
-(map/from-entries [[name parsh] [version #1]])
+(dump (map/merge {name parsh} {version #1}))
+(dump (map/entries {name parsh version #1}))
+(dump (map/from-entries [[name parsh] [version #1]]))
 ```
 
 | Call | Result |
@@ -205,8 +204,8 @@ propagates its errors:
 
 ```parsh
 (let calls #0)
-(map/get {name parsh} name (do (set calls (+ $calls #1)) fallback))
-(list $calls)
+(dump (map/get {name parsh} name (do (set calls (+ $calls #1)) fallback)))
+(dump (list $calls))
 ```
 
 Results are `"parsh"` and `(#1)`. A stored nil value counts as present and returns
@@ -224,10 +223,10 @@ become lists, and `null` becomes nil.
 (defstruct User name admin)
 (let body (json/encode (User parsh #true)))
 (let value (json/decode $body))
-(map/get $value name)
+(dump (map/get $value name))
 ```
 
-Encoding rejects functions, command references, forms, bytes, statuses, and
+Encoding rejects functions, command references, forms, bytes, and
 non-finite numbers. Decoding a struct's JSON returns a map; it does not reconstruct
 the struct's name. JSON objects preserve input order; duplicate keys use the last
 value. Decoded numbers use i64 when possible and finite f64 otherwise, so very
@@ -253,8 +252,8 @@ lowercase digits, requires an even length, and rejects whitespace and non-hex te
 
 ```parsh
 (let raw (bytes/hex-decode "00ff41"))
-(list (bytes/len $raw) (bytes/base64-encode $raw)
-      (bytes/to-text (bytes/slice $raw #-1)))
+(dump (list (bytes/len $raw) (bytes/base64-encode $raw)
+      (bytes/to-text (bytes/slice $raw #-1))))
 ```
 
 The result is `(#3 "AP9B" "A")`. Bytes display as `<bytes N>` and cannot implicitly
@@ -275,7 +274,7 @@ capture rules as other builtin output:
 Use `capture-call` when the printed representation is needed as text:
 
 ```parsh
-(stdout-text (capture-call dump {name parsh}))
+(dump (stdout-text (capture-call dump {name parsh})))
 ```
 
 The result is `"(map \"name\" \"parsh\")\n"`. Ordinary `(let value (dump ...))`
@@ -295,9 +294,9 @@ with your service's endpoint:
 (let response
   (http/get "http://127.0.0.1:8080/data"
             {accept [application/json]}))
-(if (HttpResponse.ok $response)
+(dump (if (HttpResponse.ok $response)
     (json/decode (HttpResponse.body $response))
-    (HttpResponse.status $response))
+    (HttpResponse.status $response)))
 ```
 
 The available calls are:
@@ -321,4 +320,4 @@ called or redefined.
 
 ## Calls, results, and tasks
 
-`command`, `command?`, `callable?`, `bytes?`, `capture-call`, `stdout-text`, `stderr-text`, `exit-code`, `signal`, `check`, and `throw` work in native and browser sessions. `spawn`, `wait`, `job-status`, and `cancel` require native task support. All are ordinary builtins available through `function` and `apply`. See [execution results and tasks](/parsh/en/docs/execution/) for signatures and result structures.
+`command`, `command?`, `callable?`, `bytes?`, `capture/stdout`, `capture/stderr`, `capture/stdout-trim`, `capture/stderr-trim`, `capture-call`, `stdout-text`, `stderr-text`, `exit-code`, `signal`, `check`, and `throw` work in native and browser sessions. `spawn`, `wait`, `job-status`, and `cancel` require native task support. All are ordinary builtins available through `function` and `apply`. See [execution results and tasks](/parsh/en/docs/execution/) for signatures and result structures.

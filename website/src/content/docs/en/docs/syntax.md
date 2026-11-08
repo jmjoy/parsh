@@ -6,8 +6,8 @@ description: "Words, strings, value types, and structured comments."
 Every call is a parenthesized expression. Inner calls are evaluated as arguments:
 
 ```parsh
-(str "hello, " (str "a " "friend"))
-(list one "two words" #true)
+(dump (str "hello, " (str "a " "friend")))
+(dump (list one "two words" #true))
 ```
 
 In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no
@@ -21,16 +21,16 @@ bindings, and environment settings.
 The reader creates text, scalar literals, variable references, interpolated strings,
 and lists of expressions. Runtime values include text, ints, floats, booleans, lists,
 maps, quoted forms, functions, external command references, bytes, structs, nil, and
-command statuses. Words such as `true` and `nil` themselves remain text.
+`CallResult` structures. Words such as `true` and `nil` themselves remain text.
 See [type predicates](/parsh/en/docs/stdlib/#type-predicates) for runtime type names.
 
 ```parsh
-(eq true true)
-(not #false)
-(list a "b c" #true)
+(dump (eq true true))
+(dump (not #false))
+(dump (list a "b c" #true))
 ```
 
-The interactive results are `#true`, `#true`, and `("a" "b c" #true)`. Text is displayed with quotes and escapes; nil is not displayed. A file or `-c` script runs expressions without automatically printing their results.
+The explicit `dump` calls print `#true`, `#true`, and `("a" "b c" #true)`. `dump` displays text with quotes and escapes and nil as `#nil`. Neither the REPL nor scripts automatically print return values.
 
 `(map name parsh)` constructs a map and displays as `(map "name" "parsh")`.
 Maps have text keys and preserve insertion order. See [maps](/parsh/en/docs/variables/#maps)
@@ -44,12 +44,11 @@ Use `#` to create typed scalars: `#1` is an int, `#1.0` and `#1e3` are floats,
 
 ```parsh
 (let config {retries #3 timeout #1.5 enabled #false})
-(list (typeof #1) (typeof 1) (eq #1 1))
+(dump (list (typeof #1) (typeof 1) (eq #1 1)))
 ```
 
 The list displays as `("int" "text" #false)`. Numeric and boolean results display
-with `#`, including inside collections; nested nil displays as `#nil`. A top-level
-nil result stays silent. `str`, interpolation, external arguments, and environment
+with `#`, including inside collections; nested nil displays as `#nil`. All return values stay silent unless explicitly printed. `str`, interpolation, external arguments, and environment
 values use ordinary text without the prefix: `(str #1 #false)` returns `"1false"`.
 
 All unquoted words beginning with `#` are reserved. Invalid forms such as `#flase`,
@@ -78,17 +77,17 @@ command failure behavior. Numeric values and nil are not implicit conditions.
 `[...]` is shorthand for `(list ...)`, and `{...}` is shorthand for `(map ...)`:
 
 ```parsh
-[]
-[one "two words" #true]
-{}
-{name parsh items [one two] nested {enabled #true}}
+(dump [])
+(dump [one "two words" #true])
+(dump {})
+(dump {name parsh items [one two] nested {enabled #true}})
 (let items [a (; ignored) b])
 ```
 
 Elements are separated by whitespace. Maps take alternating keys and values,
 with the same text-key and duplicate-key rules as `map`. Elements, keys, and values
 evaluate once from left to right. Collections can nest and appear anywhere a call can.
-Interactive results keep their existing format: `("one" "two words" #true)` and `(map ...)`.
+`dump` uses the usual value format: `("one" "two words" #true)` and `(map ...)`.
 
 All three delimiter pairs, `()`, `[]`, and `{}`, must match, including inside
 structured comments. Only `(; ...)` introduces a comment; `[; a]` contains two text values.
@@ -96,21 +95,22 @@ Outside strings, brackets and braces delimit expressions even without whitespace
 Quote literal text and glob patterns containing them, for example `(glob 'file[12].txt')`.
 Brackets and braces inside strings are ordinary text, and `${name}` remains literal text.
 
-At the prompt, type or paste a collection directly. Enter can supply one final
-matching `]` or `}` when that completes the entire input; unfinished nested structures
-continue on a new line. The gray closing delimiter is only a display hint until submission.
+At the prompt, place collections inside a call, for example `dump [one two]`.
+Only a leading `(` selects explicit source; `#`, `[` and `{` keep the implicit
+outer call. Enter supplies one missing final delimiter when that completes the
+whole input, otherwise it inserts a newline.
 
 ## Strings and interpolation
 
 ```parsh
 (let name parsh)
-(str "hello, $name")
-(str "$(get name)_suffix")
-(str "sum=$(+ #1 #2)")
-(str "nested=$(str "a" 'b')")
-(str "cwd=$(pwd)")
-(str '$name $(+ 1 2)\n')
-(str "\$name \$(+ 1 2)")
+(dump (str "hello, $name"))
+(dump (str "$(get name)_suffix"))
+(dump (str "sum=$(+ #1 #2)"))
+(dump (str "nested=$(str "a" 'b')"))
+(dump (str "cwd=$(capture/stdout-trim pwd)"))
+(dump (str '$name $(+ 1 2)\n'))
+(dump (str "\$name \$(+ 1 2)"))
 ```
 
 `$name` reads the longest valid variable name. Use `$(get name)` when text such
@@ -127,9 +127,9 @@ Parts evaluate once from left to right. Each parenthesized part has its own
 lexical scope, while `let` binds in the surrounding expression scope; side effects
 and errors otherwise match ordinary calls. Scalars convert as `str` does: numbers and
 booleans become text and nil becomes empty text. Collections, structs, forms, functions,
-command references, bytes, and statuses cannot implicitly become text. External
-commands capture UTF-8 stdout and remove trailing LF characters; stderr keeps
-its destination. Errors stop the current batch. The resulting text stays one
+command references and bytes cannot implicitly become text. External
+commands stream both outputs and return `CallResult`; use `capture/stdout` or
+`capture/stderr` explicitly for text, preserving newlines. Errors stop the current batch. The resulting text stays one
 argument, and inserted values are never parsed or interpolated again.
 
 Ordinary single quotes preserve everything until the next single quote, including
@@ -144,10 +144,10 @@ same kind without escaping them. `"""..."""` supports the same interpolation and
 escapes as ordinary double quotes; `'''...'''` preserves all content literally:
 
 ```parsh
-(str """hello, "$name"
-sum=$(+ #1 #2)""")
-(str '''literal '$name'
-$(pwd)\n''')
+(dump (str """hello, "$name"
+sum=$(+ #1 #2)"""))
+(dump (str '''literal '$name'
+$(pwd)\n'''))
 ```
 
 All newlines, indentation, and leading or trailing whitespace are preserved,
@@ -208,7 +208,7 @@ can also lose large integer precision.
 
 ```parsh
 (let count (+ #1 #2))
-(if (>= $count #3) (str "at least three") (str fewer))
+(dump (if (>= $count #3) (str "at least three") (str fewer)))
 ```
 
 Numbers display with `#`, and floats retain a decimal point or exponent,

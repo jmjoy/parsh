@@ -8,14 +8,14 @@ description: "Paredit structural editing, the parenthesis prompt, completion, pa
   effective user ID; the browser uses `$ ()`. Parentheses are gray while input
   is blank; the implicit `(` returns to the default color when you start typing.
   The prefix and gray closing hint are display-only.
-- A first non-whitespace `#` switches the current input to direct literal source, hiding the implicit gray parentheses immediately. Deleting the prefix restores command input. Literal history entries keep their exact source and place the cursor at the end. Tab offers `#true`, `#false`, and `#nil`; paths starting with `#` are quoted when inserted.
+- Return values are silent. Use `dump`, `echo`, or `printf` to display output.
 - Enter checks the entire edit buffer, wherever the cursor is. Complete source
   executes immediately; otherwise parsh tries appending exactly one `)`. If the
   source is still unfinished, Enter inserts a newline at the cursor. Ctrl+J
   always inserts a newline. Blank input does not execute or enter history.
-- Opening delimiters insert a matching closer. Starting fresh input with `(`, `[` or `{`
+- Opening delimiters insert a matching closer. Starting fresh input with `(`
   switches to explicit source, so an expression keeps its own delimiters exactly once.
-  Typing a closer moves past its match without executing; the implicit outer `)` stays a display hint.
+  `#`, `[` and `{` keep the implicit outer call. Typing a closer moves past its match without executing; the implicit outer `)` stays a display hint.
 - Pasting only inserts text, including newlines and tabs; it never executes.
   Press Enter to submit. Every top-level expression must be complete and valid
   before any expression in the batch executes. Syntax errors report their

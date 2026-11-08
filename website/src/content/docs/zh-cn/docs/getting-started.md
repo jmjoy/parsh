@@ -34,15 +34,15 @@ parsh - first < examples/hello.parsh
 
 ## 第一次交互
 
-在 `$ ()` 提示符中输入 `str "hello, " "parsh"` 并按 Enter，parsh 会补上外层右括号，显示 `"hello, parsh"`。输入未完成时 Enter 换行，Ctrl+J 始终换行。
+在 `$ ()` 提示符中输入 `dump (str "hello, " "parsh")` 并按 Enter，parsh 会补上外层右括号，显示 `"hello, parsh"`。输入未完成时 Enter 换行，Ctrl+J 始终换行。
 
 ```parsh
 (let name world)
-(str "hello, " $name)
+(dump (str "hello, " $name))
 (echo hello $name)
 ```
 
-第一个表达式绑定变量。第二个返回文本，交互环境会显示它。第三个调用原生 `echo` 程序并输出到 stdout。脚本模式不会自动打印表达式返回值。
+第一个表达式绑定变量。第二个通过 `dump` 显式打印文本。第三个调用原生 `echo` 程序并输出到 stdout。交互与脚本模式都不会自动打印返回值。
 
 [浏览器终端](/parsh/zh-cn/playground/)支持语言表达式和 coreutils 命令；命令清单与临时文件说明见[支持范围](/parsh/zh-cn/docs/playground/)。
 

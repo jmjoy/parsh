@@ -6,8 +6,8 @@ description: "裸词、字符串、值的类型与结构化注释。"
 每次调用都是括号包裹的表达式。内层调用先求值，再作为参数传入：
 
 ```parsh
-(str "hello, " (str "a " "friend"))
-(list one "two words" #true)
+(dump (str "hello, " (str "a " "friend")))
+(dump (list one "two words" #true))
 ```
 
 在值的位置，裸词表示文本：`123`、`true`、`false` 和 `nil` 都没有特殊的字面量含义。
@@ -16,16 +16,16 @@ description: "裸词、字符串、值的类型与结构化注释。"
 读取变量值时使用 `$name`；绑定和赋值目标使用裸名字，包括函数参数、循环绑定和环境变量设置。
 
 reader 读取文本、标量字面值、变量引用、插值字符串和表达式列表。
-运行时值包括文本、整数、浮点数、布尔值、列表、映射、引用表单、函数、外部命令引用、bytes、结构体、nil 和命令状态。
+运行时值包括文本、整数、浮点数、布尔值、列表、映射、引用表单、函数、外部命令引用、bytes、结构体和 nil。
 裸词 `true` 和 `nil` 本身仍是文本；运行时类型名见[类型判断](/parsh/zh-cn/docs/stdlib/#类型判断)。
 
 ```parsh
-(eq true true)
-(not #false)
-(list a "b c" #true)
+(dump (eq true true))
+(dump (not #false))
+(dump (list a "b c" #true))
 ```
 
-交互返回值依次为 `#true`、`#true` 和 `("a" "b c" #true)`。文本以引号与转义形式显示；nil 不显示。文件和 `-c` 脚本不会自动打印返回值。
+显式 `dump` 依次打印 `#true`、`#true` 和 `("a" "b c" #true)`。`dump` 使用引号与转义显示文本，将 nil 显示为 `#nil`。REPL 与脚本都不会自动打印返回值。
 
 `(map name parsh)` 构造映射，显示为 `(map "name" "parsh")`。
 映射使用文本键并保留插入顺序，构造、读取与修改方式见[映射](/parsh/zh-cn/docs/variables/#映射)。
@@ -37,11 +37,11 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 
 ```parsh
 (let config {retries #3 timeout #1.5 enabled #false})
-(list (typeof #1) (typeof 1) (eq #1 1))
+(dump (list (typeof #1) (typeof 1) (eq #1 1)))
 ```
 
 列表显示为 `("int" "text" #false)`。数字和布尔结果显示时带 `#`，包括集合中的元素；
-集合中的 nil 显示为 `#nil`，顶层 nil 结果继续静默。
+集合中的 nil 显示为 `#nil`，返回值都不自动回显。
 `str`、字符串插值、外部参数和环境变量使用不带前缀的文本：`(str #1 #false)` 返回 `"1false"`。
 
 所有以 `#` 开头的裸词都已保留，`#flase`、`#123abc` 和单独的 `#` 均为读取错误。
@@ -65,16 +65,16 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 `[...]` 是 `(list ...)` 的简写，`{...}` 是 `(map ...)` 的简写：
 
 ```parsh
-[]
-[one "two words" #true]
-{}
-{name parsh items [one two] nested {enabled #true}}
+(dump [])
+(dump [one "two words" #true])
+(dump {})
+(dump {name parsh items [one two] nested {enabled #true}})
 (let items [a (; 忽略这段注释) b])
 ```
 
 元素以空白分隔。映射使用交替的键和值，沿用 `map` 的文本键和重复键规则。
 元素、键和值从左到右各求值一次。集合可以嵌套，并用于任何允许调用表达式的位置。
-交互返回值沿用现有格式：`("one" "two words" #true)` 和 `(map ...)`。
+`dump` 使用值的显示格式：`("one" "two words" #true)` 和 `(map ...)`。
 
 三种括号 `()`、`[]`、`{}` 都必须配对，包括结构化注释内部。
 只有 `(; ...)` 表示注释；`[; a]` 包含两个文本值。
@@ -82,21 +82,21 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 包含它们的字面文本和 glob 模式需要加引号，例如 `(glob 'file[12].txt')`。
 字符串内的方括号和花括号保持为普通文本，`${name}` 仍然是字面文本。
 
-提示符中可以直接输入或粘贴集合。按 Enter 时，如果补入一个匹配的 `]` 或 `}`
-就能使整个输入完整，会自动补入并提交；未完成的嵌套结构会继续换行。
-灰色闭括号在提交前只参与显示。
+提示符中将集合放入调用，例如 `dump [one two]`。只有以 `(` 开头时进入显式源码模式，
+`#`、`[`、`{` 保留隐式外层调用。Enter 在补一个闭合符即可使整份输入完整时提交，
+否则插入换行。
 
 ## 字符串与插值
 
 ```parsh
 (let name parsh)
-(str "hello, $name")
-(str "$(get name)_suffix")
-(str "sum=$(+ #1 #2)")
-(str "nested=$(str "a" 'b')")
-(str "cwd=$(pwd)")
-(str '$name $(+ 1 2)\n')
-(str "\$name \$(+ 1 2)")
+(dump (str "hello, $name"))
+(dump (str "$(get name)_suffix"))
+(dump (str "sum=$(+ #1 #2)"))
+(dump (str "nested=$(str "a" 'b')"))
+(dump (str "cwd=$(capture/stdout-trim pwd)"))
+(dump (str '$name $(+ 1 2)\n'))
+(dump (str "\$name \$(+ 1 2)"))
 ```
 
 `$name` 读取最长的合法变量名。变量名后紧接 `_suffix` 等文本时，使用 `$(get name)` 明确边界。
@@ -109,8 +109,8 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 各片段从左到右各求值一次。每个括号片段都有自己的词法作用域，`let` 会把绑定写入外围表达式作用域；
 其他副作用与错误规则与普通调用相同。
 标量按 `str` 的规则转换：数值、布尔值转文本，nil 转空文本；
-集合、结构体、表单、函数、命令引用、bytes 和命令状态不能隐式转成文本。
-外部命令捕获 UTF-8 标准输出并移除末尾 LF 换行符，标准错误保留原来的输出目标。
+集合、结构体、表单、函数、命令引用和 bytes 不能隐式转成文本。
+外部命令返回 `CallResult` 并输出两路流。需要文本时显式使用 `capture/stdout` 或 `capture/stderr`，换行保持原样。
 错误会停止当前批次。整个结果保持为一个参数，插入的值不会再次解析或插值。
 
 普通单引号保留直到下一个单引号之间的全部内容，包括反斜杠、美元符和换行。
@@ -122,10 +122,10 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 `"""..."""` 支持与普通双引号相同的插值和转义，`'''...'''` 完全保留原文：
 
 ```parsh
-(str """hello, "$name"
-sum=$(+ #1 #2)""")
-(str '''literal '$name'
-$(pwd)\n''')
+(dump (str """hello, "$name"
+sum=$(+ #1 #2)"""))
+(dump (str '''literal '$name'
+$(pwd)\n'''))
 ```
 
 所有换行、缩进及首尾空白都会保留，包括起始分隔符后紧接的换行。
@@ -178,7 +178,7 @@ $(pwd)\n''')
 
 ```parsh
 (let count (+ #1 #2))
-(if (>= $count #3) (str "at least three") (str fewer))
+(dump (if (>= $count #3) (str "at least three") (str fewer)))
 ```
 
 数值显示带 `#`，浮点数保留小数点或指数，包括 `#4.0` 和 `#-0.0`；

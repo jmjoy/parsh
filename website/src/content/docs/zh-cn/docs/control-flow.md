@@ -7,24 +7,24 @@ description: "词法函数、条件分支、顺序求值与循环。"
 (defn greet (name)
   (echo hello $name))
 
-(if (test -d crates/parsh/src)
+(dump (if (test -d crates/parsh/src)
     (greet developer)
-    (echo missing))
+    (echo missing)))
 
 (export EDITOR vim)
-(if (eq $EDITOR vim)
-    (echo using vim))
+(dump (if (eq $EDITOR vim)
+    (echo using vim)))
 
-(if (not (test -f config.txt))
-    (echo configuration missing))
+(dump (if (not (test -f config.txt))
+    (echo configuration missing)))
 
-(do
+(dump (do
   (let message "multiple expressions")
-  (echo $message))
+  (echo $message)))
 ```
 
-`if` 只对选中的分支求值。条件必须产生布尔值（来自 `eq`、数值比较或 `not`）或命令退出状态；
-退出状态为零表示真。文本和数值不会隐式转换为布尔值。每个括号表达式都会创建新的词法作用域，
+`if` 只对选中的分支求值。条件必须产生布尔值（来自 `eq`、数值比较或 `not`）或 `CallResult`；
+结果的 `error` 为 `#nil` 时表示真。文本和数值不会隐式转换为布尔值。每个括号表达式都会创建新的词法作用域，
 因此分支中的 `let` 不会泄漏到 `if` 外部。
 `do` 创建一个作用域，并在其中依次执行表达式；直接写在其体内的 `let` 绑定留在这个作用域中。
 `for` 先在循环外求值列表，再为每次迭代创建新的词法作用域和循环绑定。
@@ -33,15 +33,15 @@ description: "词法函数、条件分支、顺序求值与循环。"
 独立作用域：`let` 的绑定留在本轮中，`set` 可以更新外层绑定。
 
 `and/or` 从左到右短路，统一返回布尔值；`(and)` 为真，`(or)` 为假。
-它们沿用 `if` 的条件规则，可直接检查命令状态。
+它们沿用 `if` 的条件规则，可直接检查 `CallResult`。
 
 ```parsh
 (let count #0)
-(while (< $count #5)
+(dump (while (< $count #5)
   (set count (+ $count #1))
   (if (= $count #2) (continue))
   (if (= $count #4) (break (list stopped $count)))
-  (echo iteration $count))
+  (echo iteration $count)))
 ```
 
 `(continue)` 跳过本轮剩余表达式。`(break)` 结束最近一层循环；`(break 值)` 对值求值一次，
@@ -56,9 +56,9 @@ description: "词法函数、条件分支、顺序求值与循环。"
 函数名和参数声明使用裸名字；读取参数和局部变量的值时使用 `$name`。
 每次函数调用创建新的调用作用域；函数体中的 `let` 绑定留在该作用域中，
 同一作用域重复 `let` 会报错。函数捕获定义时的词法作用域，并返回最后一个表达式的值。
-参数表达式在绑定形参之前求值。函数既可以返回命令输出，也可以返回数值、列表、映射和布尔值。
-函数用作值时，会捕获整个函数体的标准输出：如果最后一个表达式产生命令退出状态，
-则返回捕获的输出文本；否则直接返回最后一个表达式的值，此前捕获的输出不再显示。
+参数表达式在绑定形参之前求值。函数可以返回数值、列表、映射、布尔值和 `CallResult`。
+无论函数出现在何处，内部命令都向当前目标输出；以命令结束时直接返回该 `CallResult`。
+需要捕获函数输出时显式使用 `(capture/stdout function-name args...)`。
 
 ## 函数值与参数
 
@@ -67,16 +67,16 @@ description: "词法函数、条件分支、顺序求值与循环。"
 
 ```parsh
 (let inc (fn (x) (+ $x #1)))
-($inc #2)
-((fn (x) (* $x #2)) #3)
+(dump ($inc #2))
+(dump ((fn (x) (* $x #2)) #3))
 (let add (function +))
-(apply $add #1 [#2 #3])
+(dump (apply $add #1 [#2 #3]))
 
 (defn sum (first &optional (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
-(sum #1 #2 #3 #4)
+(dump (sum #1 #2 #3 #4))
 ```
 
 参数顺序为必选参数、`&optional`、`&rest name`。可选参数可以只写名字，缺省为 nil；
@@ -93,7 +93,7 @@ description: "词法函数、条件分支、顺序求值与循环。"
 
 `(return)` 提前返回 nil，`(return expr)` 求值一次并退出当前函数；可以穿过循环、
 嵌套表达式和重定向，不会退出调用方函数。在函数外使用会报错。
-命令表达式作为返回值时沿用普通值位置的输出捕获规则。
+命令表达式作为返回值时继续输出，并直接返回 `CallResult`；文本捕获必须显式调用。
 宏体也可用 return 提前返回表单；宏展开代码中的 return 则作用于调用方函数。
 
 ## 观察返回值
@@ -101,9 +101,9 @@ description: "词法函数、条件分支、顺序求值与循环。"
 ```parsh
 (defn greet (who)
   (str "hello, " $who))
-(greet parsh)
-(if #true (list yes) (list no))
-(for item (list first last) (str $item))
+(dump (greet parsh))
+(dump (if #true (list yes) (list no)))
+(dump (for item (list first last) (str $item)))
 ```
 
 交互环境依次显示 `"hello, parsh"`、`("yes")` 和 `"last"`。循环返回最后一次循环体的结果，不会收集每次迭代的值。这组示例可以直接在浏览器终端中运行。

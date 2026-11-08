@@ -11,7 +11,7 @@ The prompt is `$ ()`. Type `str hello` and press Enter to evaluate `(str hello)`
 (let name world)
 (defn greet (who)
   (str "hello, " $who))
-(greet $name)
+(dump (greet $name))
 ```
 
 The interactive result is `"hello, world"`. Scripts use exactly the same syntax; on Linux, expressions can also launch real programs, build pipelines, and redirect files.
@@ -30,7 +30,7 @@ The interactive result is `"hello, world"`. Scripts use exactly the same syntax;
 Shell scripts often push their logic into `awk`, `sed`, or an inline interpreter, and each layer brings its own quoting rules. parsh keeps it all in the script: arithmetic, lists and maps, functions, and loops behave as in a general-purpose language, while [external commands](/parsh/en/docs/commands/), pipelines, and redirections share the same syntax. Values are never split or globbed implicitly, so a script means exactly what it says.
 
 ```parsh
-(let count (int (| (find . -name "*.rs") (wc -l))))
+(let count (int (capture/stdout-trim (fn () (| (find . -name "*.rs") (wc -l))))))
 (echo "rust files: $count; doubled: $(* $count #2)")
 ```
 

@@ -1,15 +1,5 @@
 use super::*;
 
-fn values(events: &[Event]) -> Vec<&str> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::Value(value) => Some(value.as_str()),
-            _ => None,
-        })
-        .collect()
-}
-
 fn diagnostics(events: &[Event]) -> Vec<&str> {
     events
         .iter()
@@ -21,7 +11,7 @@ fn diagnostics(events: &[Event]) -> Vec<&str> {
 }
 
 fn assert_values(source: &str, expected: &[&str]) {
-    let events = execute(&mut Repl::new(), source);
+    let events = evaluate(&mut Repl::new(), source);
     assert!(diagnostics(&events).is_empty(), "{events:?}");
     assert_eq!(values(&events), expected, "{source}");
 }
@@ -232,8 +222,8 @@ fn operands_evaluate_once_in_order_and_use_the_initial_map_value() {
 #[test]
 fn construction_errors_stop_before_invalid_values_and_locate_the_key() {
     let mut repl = Repl::new();
-    execute(&mut repl, "(let trace (str))");
-    let events = execute(
+    evaluate(&mut repl, "(let trace (str))");
+    let events = evaluate(
         &mut repl,
         r#"(map (do (set trace (str $trace k)) key)
                (do (set trace (str $trace v)) first)
@@ -247,17 +237,17 @@ fn construction_errors_stop_before_invalid_values_and_locate_the_key() {
         "{errors:?}"
     );
     assert!(errors[0].starts_with("interactive:3:16:"), "{errors:?}");
-    assert_eq!(values(&execute(&mut repl, "(get trace)")), [r#""kvd""#]);
+    assert_eq!(values(&evaluate(&mut repl, "(get trace)")), [r#""kvd""#]);
 
-    let events = execute(&mut repl, "(map (set trace wrong))");
+    let events = evaluate(&mut repl, "(map (set trace wrong))");
     assert!(diagnostics(&events)[0].contains("alternating keys and values"));
-    assert_eq!(values(&execute(&mut repl, "(get trace)")), [r#""kvd""#]);
+    assert_eq!(values(&evaluate(&mut repl, "(get trace)")), [r#""kvd""#]);
 
     for key in ["(+ #1)", "(eq a a)", "(do)", "(list a)", "(map)"] {
-        let events = execute(&mut repl, &format!("(map {key} (set trace wrong))"));
+        let events = evaluate(&mut repl, &format!("(map {key} (set trace wrong))"));
         assert!(diagnostics(&events)[0].contains("map keys must be text"));
         assert!(diagnostics(&events)[0].starts_with("interactive:1:6:"));
-        assert_eq!(values(&execute(&mut repl, "(get trace)")), [r#""kvd""#]);
+        assert_eq!(values(&evaluate(&mut repl, "(get trace)")), [r#""kvd""#]);
     }
 }
 
@@ -273,7 +263,7 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
         ("map/len", ""),
     ] {
         let mut repl = Repl::new();
-        execute(
+        evaluate(
             &mut repl,
             "(let m (map key value)) (let text scalar) (let calls #0)",
         );
@@ -290,7 +280,7 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
             ("[]", "expected a map"),
         ] {
             let source = format!("({command} {target} {tail})");
-            let events = execute(&mut repl, &source);
+            let events = evaluate(&mut repl, &source);
             assert_eq!(diagnostics(&events).len(), 1, "{source}: {events:?}");
             assert!(
                 diagnostics(&events)[0].contains(message),
@@ -303,14 +293,14 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
         }
         for target in ["$m", "{key value}", "(map key value)", "(do $m)"] {
             let source = format!("({command} {target} {tail})");
-            let events = execute(&mut repl, &source);
+            let events = evaluate(&mut repl, &source);
             assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
         }
         for source in [
             format!("({command})"),
             format!("({command} (set calls (+ $calls #1)) {tail} extra extra)"),
         ] {
-            let events = execute(&mut repl, &source);
+            let events = evaluate(&mut repl, &source);
             assert!(
                 diagnostics(&events)[0].contains("arguments"),
                 "{source}: {events:?}"
@@ -322,16 +312,16 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
             _ => "",
         };
         let source = format!("({command} scalar{effects})");
-        let events = execute(&mut repl, &source);
+        let events = evaluate(&mut repl, &source);
         assert!(
             diagnostics(&events)[0].contains("expected a map"),
             "{source}: {events:?}"
         );
         assert_eq!(
-            values(&execute(&mut repl, "(get calls)")),
+            values(&evaluate(&mut repl, "(get calls)")),
             [if command == "map/get" { "#1" } else { "#0" }]
         );
-        let events = execute(
+        let events = evaluate(
             &mut repl,
             &format!("(defn shadow (m) ({command} $m {tail})) (shadow text)"),
         );
@@ -340,7 +330,7 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
             "{events:?}"
         );
         assert_eq!(
-            values(&execute(&mut repl, "(map/get $m key)")),
+            values(&evaluate(&mut repl, "(map/get $m key)")),
             [r#""value""#]
         );
     }
@@ -349,10 +339,10 @@ fn commands_validate_map_values_and_arity_before_evaluating_later_arguments() {
 #[test]
 fn missing_and_invalid_keys_report_errors_without_overwriting_or_evaluating_values() {
     let mut repl = Repl::new();
-    execute(&mut repl, "(let m (map key value)) (let calls #0)");
+    evaluate(&mut repl, "(let m (map key value)) (let calls #0)");
     for command in ["map/get", "map/del"] {
         let source = format!("(set m ({command} $m missing))");
-        let events = execute(&mut repl, &source);
+        let events = evaluate(&mut repl, &source);
         assert!(diagnostics(&events)[0].contains("map key \"missing\" not found"));
         assert!(diagnostics(&events)[0].starts_with(&format!(
             "interactive:1:{}:",
@@ -366,7 +356,7 @@ fn missing_and_invalid_keys_report_errors_without_overwriting_or_evaluating_valu
             } else {
                 ""
             };
-            let events = execute(&mut repl, &format!("({command} $m {key}{tail})"));
+            let events = evaluate(&mut repl, &format!("({command} $m {key}{tail})"));
             assert!(
                 diagnostics(&events)[0].contains("map keys must be text"),
                 "{events:?}"
@@ -374,15 +364,15 @@ fn missing_and_invalid_keys_report_errors_without_overwriting_or_evaluating_valu
         }
     }
     assert_eq!(
-        values(&execute(&mut repl, "(list $calls $m)")),
+        values(&evaluate(&mut repl, "(list $calls $m)")),
         [r#"(#0 (map "key" "value"))"#]
     );
-    let events = execute(
+    let events = evaluate(
         &mut repl,
         "(map/get $missing key (set calls (+ $calls #1)))",
     );
     assert!(diagnostics(&events)[0].contains("undefined variable $missing"));
-    assert_eq!(values(&execute(&mut repl, "(get calls)")), ["#0"]);
+    assert_eq!(values(&evaluate(&mut repl, "(get calls)")), ["#0"]);
 }
 
 #[test]
@@ -396,8 +386,8 @@ fn maps_are_rejected_in_scalar_positions() {
         "(printf %s (list $m))",
     ] {
         let mut repl = Repl::new();
-        execute(&mut repl, "(let m (map key value))");
-        let events = execute(&mut repl, source);
+        evaluate(&mut repl, "(let m (map key value))");
+        let events = evaluate(&mut repl, source);
         assert!(
             diagnostics(&events)[0].contains("expected a scalar value, got a map"),
             "{events:?}"
@@ -411,10 +401,13 @@ fn map_names_are_reserved_and_recognized_by_type() {
         "map", "map/get", "map/set", "map/del", "map/has", "map/keys", "map/vals", "map/len",
     ] {
         let mut repl = Repl::new();
-        let events = execute(&mut repl, &format!("(str (type -t {command}))"));
+        let events = evaluate(
+            &mut repl,
+            &format!("(str/trim (capture/stdout type -t {command}))"),
+        );
         assert!(diagnostics(&events).is_empty(), "{events:?}");
         assert_eq!(values(&events), [r#""builtin""#]);
-        let events = execute(&mut repl, &format!("(defn {command} () (exit 9))"));
+        let events = evaluate(&mut repl, &format!("(defn {command} () (exit 9))"));
         assert!(diagnostics(&events)[0].contains("function name is reserved"));
     }
 }

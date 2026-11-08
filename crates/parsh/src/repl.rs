@@ -76,7 +76,7 @@ fn submission(source: &str) -> Submission {
 
 impl Input {
     fn implicit(&self) -> bool {
-        !self.explicit && !self.body.trim_start().starts_with('#')
+        !self.explicit
     }
 
     fn source(&self) -> String {
@@ -99,7 +99,7 @@ impl Input {
     }
 
     fn insert(&mut self, ch: char) {
-        if closing_delimiter(ch).is_some() && self.body.trim().is_empty() {
+        if ch == '(' && self.body.trim().is_empty() {
             self.explicit = true;
         }
         self.body.insert(self.cursor, ch);
@@ -387,7 +387,6 @@ pub(crate) trait ConsoleBackend {
     fn completions(&mut self, candidates: &[String]) -> io::Result<()>;
     fn pause(&mut self) -> io::Result<()>;
     fn resume(&mut self) -> io::Result<()>;
-    fn value(&mut self, text: &str) -> io::Result<()>;
     fn diagnostic(&mut self, text: &str) -> io::Result<()>;
     fn output(&mut self, _stream: Stream, _bytes: &[u8]) -> io::Result<()> {
         Ok(())
@@ -494,9 +493,6 @@ impl Session {
                     if !matches!(expr.kind, Kind::Comment) {
                         shell.record_repl_value(value.clone());
                     }
-                    if !matches!(value, Value::Nil | Value::Status(_)) {
-                        console.value(&value.display())?;
-                    }
                     self.last_code = 0;
                 }
                 Err(error) => {
@@ -536,7 +532,7 @@ impl Session {
                 .trim_start()
                 .chars()
                 .next()
-                .is_some_and(|ch| closing_delimiter(ch).is_some())
+                .is_some_and(|ch| ch == '(')
         {
             self.input.explicit = true;
         }
@@ -546,6 +542,11 @@ impl Session {
         self.editing.record(before, &self.input, false);
     }
 }
+
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+use test_support::{enter_value, evaluate, previous, values};
 
 #[cfg(test)]
 fn execute(repl: &mut Repl, source: &str) -> Vec<Event> {
@@ -783,7 +784,6 @@ pub enum Event {
     Completions {
         lines: Vec<String>,
     },
-    Value(String),
     Output {
         stream: Stream,
         bytes: Vec<u8>,
@@ -797,6 +797,17 @@ struct EventConsole {
     columns: usize,
     rows: usize,
     events: Vec<Event>,
+    event_observer: Option<Rc<dyn Fn(Event)>>,
+}
+
+impl EventConsole {
+    fn emit(&mut self, event: Event) {
+        if let Some(observer) = &self.event_observer {
+            observer(event);
+        } else {
+            self.events.push(event);
+        }
+    }
 }
 
 impl ConsoleBackend for EventConsole {
@@ -807,7 +818,7 @@ impl ConsoleBackend for EventConsole {
     }
     fn draw(&mut self, input: &Input, search: Option<&str>) -> io::Result<()> {
         let view = view_layout(input, search, "$ ", self.columns, self.rows);
-        self.events.push(Event::Render {
+        self.emit(Event::Render {
             lines: view.lines,
             row: view.cursor.0,
             column: view.cursor.1,
@@ -816,33 +827,29 @@ impl ConsoleBackend for EventConsole {
         Ok(())
     }
     fn clear_screen(&mut self) -> io::Result<()> {
-        self.events.push(Event::ClearScreen);
+        self.emit(Event::ClearScreen);
         Ok(())
     }
     fn completions(&mut self, candidates: &[String]) -> io::Result<()> {
-        self.events.push(Event::Commit);
-        self.events.push(Event::Completions {
+        self.emit(Event::Commit);
+        self.emit(Event::Completions {
             lines: completion_lines(candidates, self.columns),
         });
         Ok(())
     }
     fn pause(&mut self) -> io::Result<()> {
-        self.events.push(Event::Commit);
+        self.emit(Event::Commit);
         Ok(())
     }
     fn resume(&mut self) -> io::Result<()> {
         Ok(())
     }
-    fn value(&mut self, text: &str) -> io::Result<()> {
-        self.events.push(Event::Value(text.into()));
-        Ok(())
-    }
     fn diagnostic(&mut self, text: &str) -> io::Result<()> {
-        self.events.push(Event::Diagnostic(text.into()));
+        self.emit(Event::Diagnostic(text.into()));
         Ok(())
     }
     fn output(&mut self, stream: Stream, bytes: &[u8]) -> io::Result<()> {
-        self.events.push(Event::Output {
+        self.emit(Event::Output {
             stream,
             bytes: bytes.into(),
         });
@@ -853,6 +860,7 @@ impl ConsoleBackend for EventConsole {
 /// A persistent language-only REPL with no host filesystem, environment or processes.
 pub struct Repl {
     observer: Option<Rc<dyn Fn(bool)>>,
+    event_observer: Option<Rc<dyn Fn(Event)>>,
     shell: Shell,
     session: Session,
     columns: usize,
@@ -871,6 +879,7 @@ impl Repl {
         let session = Session::new(&mut shell);
         Self {
             observer: None,
+            event_observer: None,
             shell,
             session,
             columns: 80,
@@ -893,6 +902,24 @@ impl Repl {
         self.observer = Some(Rc::new(observer));
     }
 
+    /// Deliver events as they happen. Observed events are not returned again.
+    pub fn observe_events(&mut self, observer: impl Fn(Event) + 'static) {
+        self.event_observer = Some(Rc::new(observer));
+        self.connect_output();
+    }
+
+    fn connect_output(&mut self) {
+        self.shell
+            .observe_output(self.event_observer.clone().map(|observer| {
+                Rc::new(move |chunk: crate::host::OutputChunk| {
+                    observer(Event::Output {
+                        stream: chunk.stream,
+                        bytes: chunk.bytes,
+                    });
+                }) as Rc<dyn Fn(crate::host::OutputChunk)>
+            }));
+    }
+
     fn dispatch(
         &mut self,
         operation: impl FnOnce(&mut Session, &mut Shell, &mut EventConsole) -> io::Result<Option<i32>>,
@@ -905,12 +932,13 @@ impl Repl {
             columns: self.columns,
             rows: self.rows,
             events: Vec::new(),
+            event_observer: self.event_observer.clone(),
         };
         if let Some(code) = operation(&mut self.session, &mut self.shell, &mut console)
             .expect("event console operations cannot fail")
         {
             self.closed = true;
-            console.events.push(Event::Exit(code));
+            console.emit(Event::Exit(code));
         } else {
             self.session
                 .draw(&mut console)
@@ -941,9 +969,15 @@ impl Repl {
         self.closed = false;
         let result = self.shell.reset_session();
         self.session = Session::new(&mut self.shell);
+        self.connect_output();
         let mut events = Vec::new();
         if let Err(error) = result {
-            events.push(Event::Diagnostic(error.message));
+            let event = Event::Diagnostic(error.message);
+            if let Some(observer) = &self.event_observer {
+                observer(event);
+            } else {
+                events.push(event);
+            }
         }
         events.extend(self.resize(columns, rows));
         events
@@ -960,15 +994,6 @@ mod syntax_tests {
             .collect()
     }
 
-    fn values(events: &[Event]) -> Vec<&str> {
-        events
-            .iter()
-            .filter_map(|event| match event {
-                Event::Value(text) => Some(text.as_str()),
-                _ => None,
-            })
-            .collect()
-    }
     fn diagnostics(events: &[Event]) -> Vec<&str> {
         events
             .iter()
@@ -982,36 +1007,37 @@ mod syntax_tests {
     #[test]
     fn syntax_session_has_no_host_environment_and_keeps_its_bindings() {
         let mut repl = Repl::new();
-        assert_eq!(values(&execute(&mut repl, "(list $args)")), ["(())"]);
+        assert_eq!(values(&evaluate(&mut repl, "(list $args)")), ["(())"]);
         assert!(
-            diagnostics(&execute(&mut repl, "(str $HOME)"))[0].contains("undefined variable $HOME")
+            diagnostics(&evaluate(&mut repl, "(str $HOME)"))[0]
+                .contains("undefined variable $HOME")
         );
         assert!(
-            values(&execute(
+            values(&evaluate(
                 &mut repl,
                 "(let name world) (export GREETING hello)"
             ))
             .is_empty()
         );
         assert_eq!(
-            values(&execute(&mut repl, r#"(str $GREETING ", " $name)"#)),
+            values(&evaluate(&mut repl, r#"(str $GREETING ", " $name)"#)),
             ["\"hello, world\""]
         );
         repl.input(Key::Interrupt);
-        assert_eq!(values(&execute(&mut repl, "(str $name)")), ["\"world\""]);
+        assert_eq!(values(&evaluate(&mut repl, "(str $name)")), ["\"world\""]);
         repl.reset();
-        assert!(diagnostics(&execute(&mut repl, "(str $name)"))[0].contains("undefined variable"));
+        assert!(diagnostics(&evaluate(&mut repl, "(str $name)"))[0].contains("undefined variable"));
     }
 
     #[test]
     fn type_inspects_syntax_builtins_and_functions_and_captures_output() {
         let mut repl = Repl::new();
-        let events = execute(
+        let events = evaluate(
             &mut repl,
             r#"
             (defn known () (exit 9))
             (type type cd known)
-            (str (type -t known))
+            (str/trim (capture/stdout type -t known))
             (if (type -t unknown) (exit 9) (str missing))
             (type -p type)
             "#,
@@ -1038,7 +1064,7 @@ mod syntax_tests {
 
     #[test]
     fn strings_interpolate_variables_calls_and_nested_strings() {
-        let events = execute(
+        let events = evaluate(
             &mut Repl::new(),
             r#"
             (let name parsh)
@@ -1066,7 +1092,7 @@ mod syntax_tests {
 
     #[test]
     fn triple_quoted_strings_preserve_whitespace_and_evaluate_interpolations_once() {
-        let events = execute(
+        let events = evaluate(
             &mut Repl::new(),
             r#"
             (let name 世界)
@@ -1101,7 +1127,7 @@ mod syntax_tests {
 
     #[test]
     fn get_preserves_types_and_shares_lexical_and_environment_lookup() {
-        let events = execute(
+        let events = evaluate(
             &mut Repl::new(),
             r#"
             (export GREETING hello)
@@ -1132,7 +1158,7 @@ mod syntax_tests {
 
     #[test]
     fn interpolations_evaluate_once_in_order_and_at_call_time() {
-        let events = execute(
+        let events = evaluate(
             &mut Repl::new(),
             r#"
             (let count #0)
@@ -1183,14 +1209,14 @@ mod syntax_tests {
             ),
         ] {
             let mut repl = Repl::new();
-            let events = execute(&mut repl, &format!("{source} (str skipped)"));
+            let events = evaluate(&mut repl, &format!("{source} (str skipped)"));
             let errors = diagnostics(&events);
             assert_eq!(errors.len(), 1, "{events:?}");
             assert!(errors[0].starts_with(location), "{errors:?}");
             assert!(errors[0].contains(message), "{errors:?}");
             assert!(values(&events).is_empty(), "{events:?}");
             assert_eq!(
-                values(&execute(&mut repl, "(str recovered)")),
+                values(&evaluate(&mut repl, "(str recovered)")),
                 [r#""recovered""#]
             );
         }
@@ -1202,7 +1228,7 @@ mod syntax_tests {
             ("(get missing)", "undefined variable $missing"),
             ("(defn get () (str invalid))", "function name is reserved"),
         ] {
-            let events = execute(&mut Repl::new(), source);
+            let events = evaluate(&mut Repl::new(), source);
             assert!(
                 diagnostics(&events)[0].contains(message),
                 "{source}: {events:?}"
@@ -1215,15 +1241,16 @@ mod syntax_tests {
         let mut repl = Repl::new();
         repl.paste("(str before) (str \"$(+ #1");
         let events = repl.input(Key::Enter);
-        assert!(values(&events).is_empty());
+        assert_eq!(previous(&mut repl), Value::Nil);
         assert!(diagnostics(&events).is_empty());
         type_text(&mut repl, " #2)\")");
-        assert_eq!(values(&repl.input(Key::Enter)), [r#""before""#, r#""3""#]);
+        assert_eq!([enter_value(&mut repl)], [r#""3""#]);
 
         repl.paste("(str 'line");
-        assert!(values(&repl.input(Key::Enter)).is_empty());
+        repl.input(Key::Enter);
+        assert!(repl.session.input.body.contains("line"));
         type_text(&mut repl, "two')");
-        assert_eq!(values(&repl.input(Key::Enter)), [r#""line\ntwo""#]);
+        assert_eq!([enter_value(&mut repl)], [r#""line\ntwo""#]);
     }
 
     #[test]
@@ -1232,15 +1259,15 @@ mod syntax_tests {
             let mut repl = Repl::new();
             repl.paste(&format!("(str before) (str {delimiter}line"));
             let events = repl.input(Key::Enter);
-            assert!(values(&events).is_empty());
+            assert_eq!(previous(&mut repl), Value::Nil);
             assert!(diagnostics(&events).is_empty());
             type_text(&mut repl, &format!("two{}", &delimiter[..2]));
             let events = repl.input(Key::Enter);
-            assert!(values(&events).is_empty());
+            assert_eq!(previous(&mut repl), Value::Nil);
             assert!(diagnostics(&events).is_empty());
             type_text(&mut repl, &format!("three{delimiter})"));
             let expected = Value::Text(format!("line\ntwo{}\nthree", &delimiter[..2])).display();
-            assert_eq!(values(&repl.input(Key::Enter)), [r#""before""#, &expected]);
+            assert_eq!([enter_value(&mut repl)], [expected]);
         }
     }
 
@@ -1254,7 +1281,7 @@ mod syntax_tests {
                 for _ in 0..70 {
                     source = format!("(str \"${source}\")");
                 }
-                let events = execute(&mut Repl::new(), &source);
+                let events = evaluate(&mut Repl::new(), &source);
                 assert!(
                     diagnostics(&events)[0].contains("evaluation nesting exceeds 128"),
                     "{events:?}"
@@ -1310,7 +1337,7 @@ mod syntax_tests {
                 r#"("123" "00123" #3 #4.0)"#,
             ),
         ] {
-            let events = execute(&mut Repl::new(), source);
+            let events = evaluate(&mut Repl::new(), source);
             assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
             assert_eq!(values(&events), [expected], "{source}");
         }
@@ -1337,7 +1364,7 @@ mod syntax_tests {
             ("(= #9223372036854775807 #9223372036854775808.0)", "#false"),
             ("(= #-9223372036854775808 #-9223372036854775808.0)", "#true"),
         ] {
-            let events = execute(&mut Repl::new(), source);
+            let events = evaluate(&mut Repl::new(), source);
             assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
             assert_eq!(values(&events), [expected], "{source}");
         }
@@ -1382,7 +1409,7 @@ mod syntax_tests {
             ("(if (> #3 #2) (str yes) (unavailable))", r#""yes""#),
             ("(if (< #3 #2) (unavailable) (str no))", r#""no""#),
         ] {
-            let events = execute(&mut Repl::new(), source);
+            let events = evaluate(&mut Repl::new(), source);
             assert!(diagnostics(&events).is_empty(), "{source}: {events:?}");
             assert_eq!(values(&events), [expected], "{source}");
         }
@@ -1390,7 +1417,7 @@ mod syntax_tests {
 
     #[test]
     fn numeric_comparisons_evaluate_operands_once_from_left_to_right() {
-        let events = execute(
+        let events = evaluate(
             &mut Repl::new(),
             r#"
             (let count #0)
@@ -1416,7 +1443,7 @@ mod syntax_tests {
         for operator in ["!=", "<", "<=", ">", ">="] {
             for args in ["", "1", "1 2 3"] {
                 let source = format!("({operator} {args})");
-                let events = execute(&mut Repl::new(), &source);
+                let events = evaluate(&mut Repl::new(), &source);
                 let errors = diagnostics(&events);
                 assert_eq!(errors.len(), 1, "{source}: {events:?}");
                 assert!(
@@ -1435,7 +1462,7 @@ mod syntax_tests {
             ] {
                 let mut repl = Repl::new();
                 let source = format!("({operator} #1\n {operand}) (str skipped)");
-                let events = execute(&mut repl, &source);
+                let events = evaluate(&mut repl, &source);
                 let errors = diagnostics(&events);
                 assert_eq!(errors.len(), 1, "{source}: {events:?}");
                 assert!(
@@ -1445,7 +1472,7 @@ mod syntax_tests {
                 assert!(errors[0].contains(message), "{source}: {errors:?}");
                 assert!(values(&events).is_empty(), "{source}: {events:?}");
                 assert_eq!(
-                    values(&execute(&mut repl, "(str recovered)")),
+                    values(&evaluate(&mut repl, "(str recovered)")),
                     [r#""recovered""#]
                 );
             }
@@ -1454,7 +1481,7 @@ mod syntax_tests {
 
     #[test]
     fn numeric_values_survive_bindings_functions_and_left_to_right_evaluation() {
-        let events = execute(
+        let events = evaluate(
             &mut Repl::new(),
             r#"
             (let n (+ #1 #2))
@@ -1520,17 +1547,17 @@ mod syntax_tests {
             ("(= #1 #1 #1)", "expected 2 arguments"),
             (
                 "(if (+ #0) (str yes))",
-                "a condition must be a boolean or command status",
+                "a condition must be a boolean or CallResult",
             ),
         ] {
-            let events = execute(&mut Repl::new(), source);
+            let events = evaluate(&mut Repl::new(), source);
             let errors = diagnostics(&events);
             assert_eq!(errors.len(), 1, "{source}: {events:?}");
             assert!(errors[0].contains(message), "{source}: {errors:?}");
             assert!(values(&events).is_empty(), "{source}: {events:?}");
         }
         for operator in ["+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">="] {
-            let events = execute(
+            let events = evaluate(
                 &mut Repl::new(),
                 &format!("(defn {operator} () (str invalid))"),
             );
@@ -1541,18 +1568,18 @@ mod syntax_tests {
     #[test]
     fn numeric_diagnostics_locate_the_operand_and_halt_only_the_current_batch() {
         let mut repl = Repl::new();
-        let events = execute(&mut repl, "(str before)\n(+ #1\n bad)\n(str skipped)");
+        let events = evaluate(&mut repl, "(str before)\n(+ #1\n bad)\n(str skipped)");
         assert_eq!(values(&events), [r#""before""#]);
         let errors = diagnostics(&events);
         assert_eq!(errors.len(), 1, "{events:?}");
         assert!(errors[0].starts_with("interactive:3:2:"), "{errors:?}");
         assert!(errors[0].contains("expected a number"), "{errors:?}");
-        assert_eq!(values(&execute(&mut repl, "(+ #2 #3)")), ["#5"]);
+        assert_eq!(values(&evaluate(&mut repl, "(+ #2 #3)")), ["#5"]);
     }
 
     #[test]
     fn bare_binding_names_and_variable_references_have_distinct_roles() {
-        let events = execute(
+        let events = evaluate(
             &mut Repl::new(),
             r#"
             (let name world)
@@ -1601,7 +1628,7 @@ mod syntax_tests {
                 format!("(defn f ({target}) (str bad))"),
                 format!("(export {target} value)"),
             ] {
-                let events = execute(&mut Repl::new(), &source);
+                let events = evaluate(&mut Repl::new(), &source);
                 let errors = diagnostics(&events);
                 assert_eq!(errors.len(), 1, "{source}: {events:?}");
                 assert!(errors[0].contains(message), "{source}: {errors:?}");
@@ -1619,7 +1646,7 @@ mod syntax_tests {
                 "function parameters must be a list of bare variable names",
             ),
         ] {
-            let events = execute(&mut Repl::new(), source);
+            let events = evaluate(&mut Repl::new(), source);
             let errors = diagnostics(&events);
             assert_eq!(errors.len(), 1, "{source}: {events:?}");
             assert!(errors[0].contains(message), "{source}: {errors:?}");
@@ -1628,7 +1655,7 @@ mod syntax_tests {
 
     #[test]
     fn functions_capture_lexical_scope_and_return_typed_values() {
-        let events = execute(
+        let events = evaluate(
             &mut Repl::new(),
             r#"
             (let name outer)
@@ -1651,7 +1678,7 @@ mod syntax_tests {
 
     #[test]
     fn conditions_comments_and_loops_follow_native_value_semantics() {
-        let events = execute(
+        let events = evaluate(
             &mut Repl::new(),
             r#"
             (; (echo $undefined) (; nested))
@@ -1676,7 +1703,7 @@ mod syntax_tests {
             "(<| input.txt (str x))",
             "(|2>> errors.txt (str x))",
         ] {
-            let events = execute(&mut Repl::new(), source);
+            let events = evaluate(&mut Repl::new(), source);
             let errors = diagnostics(&events);
             assert_eq!(errors.len(), 1, "{source}: {events:?}");
             assert!(errors[0].starts_with("interactive:1:1:"), "{errors:?}");
@@ -1689,10 +1716,18 @@ mod syntax_tests {
     fn enter_submits_implicit_explicit_and_manually_closed_source() {
         for text in ["str hello", "str hello)", "(str hello", "(str hello)"] {
             let mut repl = Repl::new();
-            assert!(values(&type_text(&mut repl, text)).is_empty());
-            assert_eq!(values(&repl.input(Key::Enter)), ["\"hello\""]);
+            assert!(
+                type_text(&mut repl, text)
+                    .iter()
+                    .all(|event| matches!(event, Event::Render { .. }))
+            );
+            assert_eq!([enter_value(&mut repl)], ["\"hello\""]);
             assert_eq!(repl.session.history.entries, ["(str hello)"]);
-            assert_eq!(values(&repl.input(Key::Enter)), Vec::<&str>::new());
+            assert!(
+                repl.input(Key::Enter)
+                    .iter()
+                    .all(|event| matches!(event, Event::Render { .. }))
+            );
         }
     }
 
@@ -1702,7 +1737,7 @@ mod syntax_tests {
             let mut repl = Repl::new();
             type_text(&mut repl, "str hello");
             repl.session.input.cursor = cursor;
-            assert_eq!(values(&repl.input(Key::Enter)), ["\"hello\""]);
+            assert_eq!([enter_value(&mut repl)], ["\"hello\""]);
             assert!(repl.session.input.body.is_empty());
         }
     }
@@ -1718,7 +1753,11 @@ mod syntax_tests {
             let mut repl = Repl::new();
             repl.paste(text);
             let events = repl.input(Key::Enter);
-            assert!(values(&events).is_empty());
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| matches!(event, Event::Output { .. }))
+            );
             assert!(diagnostics(&events).is_empty());
             assert_eq!(repl.session.input.body, format!("{text}\n"));
             assert!(repl.session.history.entries.is_empty());
@@ -1734,8 +1773,12 @@ mod syntax_tests {
     fn forced_newlines_and_string_parentheses_follow_the_reader() {
         let mut repl = Repl::new();
         type_text(&mut repl, "str \"x)\" (str y)");
-        assert!(values(&repl.input(Key::Newline)).is_empty());
-        assert_eq!(values(&repl.input(Key::Enter)), ["\"x)y\""]);
+        assert!(
+            repl.input(Key::Newline)
+                .iter()
+                .all(|event| matches!(event, Event::Render { .. }))
+        );
+        assert_eq!([enter_value(&mut repl)], ["\"x)y\""]);
         assert_eq!(repl.session.history.entries, ["(str \"x)\" (str y)\n)"]);
     }
 
@@ -1750,13 +1793,13 @@ mod syntax_tests {
         );
         assert!(repl.session.history.entries.is_empty());
         assert_eq!(repl.session.input.body, "(let name saved)\n(str $name)\n");
-        assert_eq!(values(&repl.input(Key::Enter)), ["\"saved\""]);
+        assert_eq!([enter_value(&mut repl)], ["\"saved\""]);
         assert_eq!(
             repl.session.history.entries,
             ["(let name saved)", "\n(str $name)\n"]
         );
         assert_eq!(
-            values(&execute(&mut repl, "(str a) (str b")),
+            values(&evaluate(&mut repl, "(str a) (str b)")),
             ["\"a\"", "\"b\""]
         );
     }
@@ -1771,7 +1814,11 @@ mod syntax_tests {
             let mut repl = Repl::new();
             let events = execute(&mut repl, source);
             assert_eq!(diagnostics(&events).len(), 1, "{events:?}");
-            assert!(values(&events).is_empty());
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| matches!(event, Event::Output { .. }))
+            );
             assert_eq!(repl.session.input.body, source);
             assert!(repl.session.history.entries.is_empty());
             assert_eq!(repl.session.last_code, 2);
@@ -1788,7 +1835,11 @@ mod syntax_tests {
         let mut repl = Repl::new();
         let source = "(let name bad) (str (str unfinished";
         let events = execute(&mut repl, source);
-        assert!(values(&events).is_empty());
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, Event::Output { .. }))
+        );
         assert!(diagnostics(&events).is_empty());
         assert_eq!(repl.session.input.body, format!("{source}\n"));
         assert!(repl.session.history.entries.is_empty());
@@ -1800,11 +1851,11 @@ mod syntax_tests {
     fn runtime_errors_stop_only_the_submitted_batch() {
         let mut repl = Repl::new();
         let events = execute(&mut repl, "(str before) (str $missing) (str skipped)");
-        assert_eq!(values(&events), ["\"before\""]);
+        assert_eq!(previous(&mut repl).display(), "\"before\"");
         assert_eq!(diagnostics(&events).len(), 1);
         assert_eq!(repl.session.history.entries.len(), 2);
         assert_eq!(
-            values(&execute(&mut repl, "(str recovered)")),
+            values(&evaluate(&mut repl, "(str recovered)")),
             ["\"recovered\""]
         );
     }
@@ -1830,10 +1881,10 @@ mod syntax_tests {
                 assert_eq!(repl.session.input.source(), source);
             }
             assert!(!repl.session.input.explicit);
-            assert_eq!(values(&repl.input(Key::Enter)), ["\"saved\""]);
+            assert_eq!([enter_value(&mut repl)], ["\"saved\""]);
             repl.input(previous);
             type_text(&mut repl, " 你好");
-            assert_eq!(values(&repl.input(Key::Enter)), ["\"saved你好\""]);
+            assert_eq!([enter_value(&mut repl)], ["\"saved你好\""]);
         }
     }
 
@@ -1844,7 +1895,11 @@ mod syntax_tests {
         repl.paste(" \n\t");
         for _ in 0..3 {
             let events = repl.input(Key::Enter);
-            assert!(values(&events).is_empty());
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| matches!(event, Event::Output { .. }))
+            );
             assert!(diagnostics(&events).is_empty());
             assert_eq!(repl.session.last_code, 17);
             assert!(repl.session.history.entries.is_empty());
@@ -1860,7 +1915,7 @@ mod syntax_tests {
         assert!(repl.input(Key::Eof).contains(&Event::Exit(0)));
         repl.reset();
         assert_eq!(
-            values(&execute(&mut repl, "(str restarted)")),
+            values(&evaluate(&mut repl, "(str restarted)")),
             ["\"restarted\""]
         );
     }
@@ -1885,6 +1940,7 @@ mod host_tests {
             cwd: &str,
             environment: &HashMap<OsString, OsString>,
             _streams: HostStreams,
+            emit: crate::host::OutputSink,
         ) -> Result<CommandOutput, HostError> {
             let argv = &stages[0];
             let text = match argv[0].as_str() {
@@ -1894,7 +1950,22 @@ mod host_tests {
                     "{}\n",
                     environment[&OsString::from(&argv[1])].to_string_lossy()
                 ),
+                "both" => {
+                    emit(OutputChunk {
+                        stream: Stream::Stdout,
+                        bytes: b"out\n\n".to_vec(),
+                    })?;
+                    emit(OutputChunk {
+                        stream: Stream::Stderr,
+                        bytes: b"err\n".to_vec(),
+                    })?;
+                    String::new()
+                }
                 "partial" => {
+                    emit(OutputChunk {
+                        stream: Stream::Stdout,
+                        bytes: b"prefix".to_vec(),
+                    })?;
                     return Ok(CommandOutput {
                         code: 2,
                         stages: Vec::new(),
@@ -1902,10 +1973,6 @@ mod host_tests {
                             code: 2,
                             message: "command output exceeds 8 MiB".into(),
                         }),
-                        chunks: vec![OutputChunk {
-                            stream: Stream::Stdout,
-                            bytes: b"prefix".to_vec(),
-                        }],
                     });
                 }
                 "false" => {
@@ -1913,18 +1980,17 @@ mod host_tests {
                         error: None,
                         stages: Vec::new(),
                         code: 1,
-                        chunks: vec![],
                     });
                 }
                 "binary" => {
+                    emit(OutputChunk {
+                        stream: Stream::Stdout,
+                        bytes: vec![255],
+                    })?;
                     return Ok(CommandOutput {
                         error: None,
                         stages: Vec::new(),
                         code: 0,
-                        chunks: vec![OutputChunk {
-                            stream: Stream::Stdout,
-                            bytes: vec![255],
-                        }],
                     });
                 }
                 _ => {
@@ -1934,14 +2000,14 @@ mod host_tests {
                     });
                 }
             };
+            emit(OutputChunk {
+                stream: Stream::Stdout,
+                bytes: text.into_bytes(),
+            })?;
             Ok(CommandOutput {
                 error: None,
                 stages: Vec::new(),
                 code: 0,
-                chunks: vec![OutputChunk {
-                    stream: Stream::Stdout,
-                    bytes: text.into_bytes(),
-                }],
             })
         }
         fn open(&mut self, _cwd: &str, _path: &str, _mode: FileMode) -> Result<u32, HostError> {
@@ -1985,7 +2051,7 @@ mod host_tests {
     }
 
     #[test]
-    fn type_uses_host_command_metadata_and_never_native_path_or_command_execution() {
+    fn type_uses_host_metadata_and_explicit_capture() {
         let mut repl = Repl::with_host(TestHost).unwrap();
         let events = execute(
             &mut repl,
@@ -1995,18 +2061,18 @@ mod host_tests {
             (type -a echo)
             (type -P echo)
             (type -f echo)
-            (str (type -t binary))
+            (dump (str/trim (capture/stdout type -t binary)))
             (if (type -t /bin/sh) (exit 9))
-            "#,
+        "#,
         );
         assert_eq!(
             outputs(&events),
             concat!(
                 "type is a shell builtin\necho is a function\npwd is an external command\n",
-                "echo is a function\necho is an external command\necho\necho is an external command\n"
+                "echo is a function\necho is an external command\necho\necho is an external command\n",
+                "\"file\"\n"
             )
         );
-        assert!(events.contains(&Event::Value("\"file\"".into())));
         assert!(
             !events
                 .iter()
@@ -2016,107 +2082,75 @@ mod host_tests {
     }
 
     #[test]
-    fn host_failures_retain_partial_captured_output_without_a_fake_exit_status() {
+    fn host_failures_retain_partial_capture_without_a_fake_exit_status() {
         let mut repl = Repl::with_host(TestHost).unwrap();
         let events = execute(
             &mut repl,
             r#"
             (try (capture-call partial)
-              (catch e (list (Error.kind $e) (stdout-text (Error.result $e))
-                             (nil? (CallResult.termination (Error.result $e))))))
+              (catch e (dump (list (Error.kind $e) (stdout-text (Error.result $e))
+                             (nil? (CallResult.termination (Error.result $e)))))))
         "#,
         );
-        assert!(
-            events.contains(&Event::Value(r#"("output-limit" "prefix" #true)"#.into())),
-            "{events:?}"
-        );
-        assert!(outputs(&events).is_empty());
+        assert_eq!(outputs(&events), "(\"output-limit\" \"prefix\" #true)\n");
     }
 
     #[test]
-    fn interpolated_host_commands_capture_stdout_and_propagate_failures() {
+    fn interpolation_requires_explicit_command_capture() {
         let mut repl = Repl::with_host(TestHost).unwrap();
-        let events = execute(&mut repl, r#"(str "cwd=$(pwd); $(echo "a b")")"#);
-        assert!(outputs(&events).is_empty(), "{events:?}");
-        assert!(
-            events.contains(&Event::Value(r#""cwd=/home/playground; a b""#.into())),
-            "{events:?}"
+        let events = execute(&mut repl, r#"(str "cwd=$(pwd)") (echo skipped)"#);
+        assert_eq!(outputs(&events), "/home/playground\n");
+        assert!(events.iter().any(
+            |event| matches!(event, Event::Diagnostic(text) if text.contains("got a struct"))
+        ));
+        let events = execute(
+            &mut repl,
+            r#"(dump (str "cwd=$(str/trim (capture/stdout pwd)); $(str/trim (capture/stdout echo "a b"))"))"#,
         );
-        for source in [
-            r#"(str "$(false)") (echo skipped)"#,
-            r#"(str "$(binary)") (echo skipped)"#,
-        ] {
-            let events = execute(&mut repl, source);
-            assert!(outputs(&events).is_empty(), "{events:?}");
-            assert!(
-                events
-                    .iter()
-                    .any(|event| matches!(event, Event::Diagnostic(_))),
-                "{events:?}"
-            );
-        }
-        assert_eq!(
-            outputs(&execute(&mut repl, "(echo recovered)")),
-            "recovered\n"
-        );
+        assert_eq!(outputs(&events), "\"cwd=/home/playground; a b\"\n");
     }
 
     #[test]
-    fn host_commands_capture_through_functions_without_leaking_output() {
+    fn functions_stream_output_and_return_command_results() {
         let mut repl = Repl::with_host(TestHost).unwrap();
         let events = execute(
             &mut repl,
-            "(defn place () (echo (pwd))) (let path (place)) (echo $path) (str $path)",
+            "(defn place () (pwd)) (let result (place)) (dump (CallResult? $result)) (dump (nil? (CallResult.stdout $result)))",
         );
-        assert_eq!(outputs(&events), "/home/playground\n");
-        assert!(events.contains(&Event::Value("\"/home/playground\"".into())));
+        assert_eq!(outputs(&events), "/home/playground\n#true\n#true\n");
         assert!(
             !events
                 .iter()
-                .any(|event| matches!(event, Event::Diagnostic(_)))
+                .any(|event| matches!(event, Event::Diagnostic(_))),
+            "{events:?}"
         );
     }
 
     #[test]
-    fn host_previous_value_preserves_command_statuses_and_resets_to_nil() {
+    fn previous_value_preserves_command_results_and_resets_to_nil() {
         let mut repl = Repl::with_host(TestHost).unwrap();
-        let Read::Form(previous) = Reader::new("(get _)").read() else {
-            unreachable!()
-        };
         let Read::Form(last_result) = Reader::new("(get ?)").read() else {
             unreachable!()
         };
-        assert_eq!(repl.shell.execute(&previous).unwrap(), Value::Nil);
+        assert_eq!(previous(&mut repl), Value::Nil);
         let events = execute(&mut repl, "(str before) (echo output)");
         assert_eq!(outputs(&events), "output\n");
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| matches!(event, Event::Value(_)))
-                .count(),
-            1
-        );
-        let Value::Status(status) = repl.shell.execute(&previous).unwrap() else {
-            panic!("expected the original command status")
-        };
-        assert_eq!(status.code, 0);
-        assert_eq!(*status.result, repl.shell.execute(&last_result).unwrap());
+        let result = previous(&mut repl);
+        assert!(matches!(&result, Value::Struct { name, .. } if name == "CallResult"));
+        assert_eq!(result, repl.shell.execute(&last_result).unwrap());
         let events = execute(&mut repl, "(false)");
         assert!(
             events
                 .iter()
                 .any(|event| matches!(event, Event::Diagnostic(_)))
         );
-        let Value::Status(unchanged) = repl.shell.execute(&previous).unwrap() else {
-            panic!("failed command replaced the previous value")
-        };
-        assert_eq!(unchanged.result, status.result);
-        let events = execute(&mut repl, "(if $_ #7 #9)");
-        assert!(events.contains(&Event::Value("#7".into())));
+        assert_eq!(previous(&mut repl), result);
+        execute(&mut repl, "(if $_ #7 #9)");
+        assert_eq!(previous(&mut repl).display(), "#7");
         repl.reset();
-        assert_eq!(repl.shell.execute(&previous).unwrap(), Value::Nil);
-        let events = execute(&mut repl, "(+ #1 #2) (+ $_ #4)");
-        assert!(events.contains(&Event::Value("#7".into())));
+        assert_eq!(previous(&mut repl), Value::Nil);
+        execute(&mut repl, "(+ #1 #2) (+ $_ #4)");
+        assert_eq!(previous(&mut repl).display(), "#7");
     }
 
     #[test]
@@ -2124,12 +2158,13 @@ mod host_tests {
         let mut repl = Repl::with_host(TestHost).unwrap();
         let events = execute(
             &mut repl,
-            "(export MESSAGE hello) (printenv MESSAGE) (if (false) (echo wrong) (echo right)) (glob *.txt) (cd /tmp) (pwd)",
+            "(export MESSAGE hello) (printenv MESSAGE) (if (false) (echo wrong) (echo right)) (dump (glob *.txt)) (cd /tmp) (pwd)",
         );
-        assert_eq!(outputs(&events), "hello\nright\n/tmp\n");
-        assert!(events.contains(&Event::Value("(\"a.txt\" \"b.txt\")".into())));
-        let events = execute(&mut repl, "(glob /)");
-        assert!(events.contains(&Event::Value("(\"/\")".into())));
+        assert_eq!(
+            outputs(&events),
+            "hello\nright\n(\"a.txt\" \"b.txt\")\n/tmp\n"
+        );
+        assert_eq!(outputs(&execute(&mut repl, "(dump (glob /))")), "(\"/\")\n");
         repl.reset();
         let events = execute(&mut repl, "(pwd) (str $MESSAGE)");
         assert_eq!(outputs(&events), "/home/playground\n");
@@ -2137,14 +2172,20 @@ mod host_tests {
     }
 
     #[test]
-    fn failed_host_commands_and_non_utf8_capture_halt_only_the_current_batch() {
+    fn binary_output_is_raw_and_only_text_capture_decodes_it() {
         let mut repl = Repl::with_host(TestHost).unwrap();
-        let events = execute(&mut repl, "(missing) (echo skipped)");
-        assert!(outputs(&events).is_empty());
-        assert!(events.iter().any(
-            |event| matches!(event, Event::Diagnostic(text) if text.contains("missing command"))
-        ));
-        let events = execute(&mut repl, "(let bytes (binary)) (echo skipped)");
+        let events = execute(&mut repl, "(let result (binary)) (echo after)");
+        let bytes: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Output { bytes, .. } => Some(bytes.as_slice()),
+                _ => None,
+            })
+            .flatten()
+            .copied()
+            .collect();
+        assert_eq!(bytes, b"\xffafter\n");
+        let events = execute(&mut repl, "(capture/stdout binary) (echo skipped)");
         assert!(outputs(&events).is_empty());
         assert!(
             events.iter().any(
@@ -2155,6 +2196,111 @@ mod host_tests {
             outputs(&execute(&mut repl, "(echo recovered)")),
             "recovered\n"
         );
+    }
+
+    #[test]
+    fn single_stream_captures_preserve_newlines_and_the_other_stream() {
+        let mut repl = Repl::with_host(TestHost).unwrap();
+        let events = execute(&mut repl, "(let text (capture/stdout both)) (dump $text)");
+        assert_eq!(outputs(&events), "\"out\\n\\n\"\n");
+        assert!(events.contains(&Event::Output {
+            stream: Stream::Stderr,
+            bytes: b"err\n".to_vec()
+        }));
+        let events = execute(&mut repl, "(set text (capture/stderr both)) (dump $text)");
+        assert_eq!(outputs(&events), "out\n\n\"err\\n\"\n");
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            Event::Output {
+                stream: Stream::Stderr,
+                ..
+            }
+        )));
+        for source in ["(capture/stdout false)", "(capture/stderr false)"] {
+            assert!(
+                execute(&mut repl, source)
+                    .iter()
+                    .any(|event| matches!(event, Event::Diagnostic(_)))
+            );
+        }
+    }
+
+    #[test]
+    fn trimmed_capture_helpers_preserve_raw_results_and_support_function_calls() {
+        for (stream, other, expected, raw) in [
+            ("stdout", "stderr", "out", r#""out\n\n""#),
+            ("stderr", "stdout", "err", r#""err\n""#),
+        ] {
+            let mut repl = Repl::with_host(TestHost).unwrap();
+            let result = evaluate(
+                &mut repl,
+                &format!(
+                    r#"
+                (let trimmed (capture/{stream}-trim both))
+                (let saved $?)
+                (list $trimmed ({stream}-text $saved)
+                    (nil? (CallResult.{other} $saved))
+                    (eq $trimmed (str/trim (capture/{stream} both)))
+                    ((function capture/{stream}-trim) (command both))
+                    (apply "capture/{stream}-trim" [(fn () (both))]))
+            "#
+                ),
+            );
+            assert!(
+                !result
+                    .iter()
+                    .any(|event| matches!(event, Event::Diagnostic(_))),
+                "{result:?}"
+            );
+            assert_eq!(
+                values(&result),
+                [format!(
+                    "(\"{expected}\" {raw} #true #true \"{expected}\" \"{expected}\")"
+                )]
+            );
+            for source in [
+                format!("(capture/{stream}-trim false)"),
+                format!("(capture/{stream}-trim)"),
+            ] {
+                assert!(
+                    execute(&mut repl, &source)
+                        .iter()
+                        .any(|event| matches!(event, Event::Diagnostic(_)))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn event_observer_receives_output_during_execution_without_replay() {
+        use std::cell::{Cell, RefCell};
+        let mut repl = Repl::with_host(TestHost).unwrap();
+        let busy = Rc::new(Cell::new(false));
+        let activity = busy.clone();
+        repl.observe_execution(move |value| activity.set(value));
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let observed = events.clone();
+        repl.observe_events(move |event| {
+            if matches!(event, Event::Output { .. }) {
+                assert!(busy.get());
+            }
+            observed.borrow_mut().push(event);
+        });
+        assert!(execute(&mut repl, "(do (echo one) (dump #2) (echo three))").is_empty());
+        assert_eq!(outputs(&events.borrow()), "one\n#2\nthree\n");
+        let events = events.borrow();
+        let commit = events
+            .iter()
+            .position(|event| matches!(event, Event::Commit))
+            .unwrap();
+        let output = events
+            .iter()
+            .position(|event| matches!(event, Event::Output { .. }))
+            .unwrap();
+        assert!(commit < output);
+        drop(events);
+        repl.reset();
+        assert!(execute(&mut repl, "(echo reset)").is_empty());
     }
 }
 

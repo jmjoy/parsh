@@ -1,9 +1,9 @@
 use parsh::host::{
-    CommandOutput, ExecutionHost, FileMode, HostError, HostStreams, OutputChunk, Stream,
+    CommandOutput, ExecutionHost, FileMode, HostError, HostStreams, OutputChunk, OutputSink, Stream,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ffi::OsString};
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsValue, closure::Closure};
 
 pub struct BrowserHost(pub js_sys::Function);
 
@@ -31,18 +31,12 @@ fn default_code() -> i32 {
 }
 
 #[derive(Deserialize)]
-struct Chunk {
-    stream: String,
-    bytes: Vec<u8>,
-}
-#[derive(Deserialize)]
 struct Output {
     code: i32,
     #[serde(default)]
     error: Option<String>,
     #[serde(default)]
     stages: Vec<i32>,
-    chunks: Vec<Chunk>,
 }
 
 impl BrowserHost {
@@ -51,11 +45,20 @@ impl BrowserHost {
         op: &str,
         args: &impl Serialize,
     ) -> Result<T, HostError> {
+        self.call_with_output(op, args, &JsValue::UNDEFINED)
+    }
+
+    fn call_with_output<T: for<'de> Deserialize<'de>>(
+        &self,
+        op: &str,
+        args: &impl Serialize,
+        emit: &JsValue,
+    ) -> Result<T, HostError> {
         let invoke = || -> Result<Response<T>, String> {
             let args = serde_wasm_bindgen::to_value(args).map_err(|e| e.to_string())?;
             let result = self
                 .0
-                .call2(&JsValue::NULL, &JsValue::from_str(op), &args)
+                .call3(&JsValue::NULL, &JsValue::from_str(op), &args, emit)
                 .map_err(|e| format!("host: {e:?}"))?;
             serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
         };
@@ -79,8 +82,22 @@ impl ExecutionHost for BrowserHost {
         cwd: &str,
         environment: &HashMap<OsString, OsString>,
         io: HostStreams,
+        emit: OutputSink,
     ) -> Result<CommandOutput, HostError> {
-        let result: Output = self.call(
+        let output = Closure::<dyn FnMut(String, js_sys::Uint8Array) -> JsValue>::new(
+            move |stream: String, bytes: js_sys::Uint8Array| match emit(OutputChunk {
+                stream: if stream == "stdout" {
+                    Stream::Stdout
+                } else {
+                    Stream::Stderr
+                },
+                bytes: bytes.to_vec(),
+            }) {
+                Ok(()) => JsValue::UNDEFINED,
+                Err(error) => JsValue::from_str(&error.message),
+            },
+        );
+        let result: Output = self.call_with_output(
             "run",
             &Run {
                 stages,
@@ -100,6 +117,7 @@ impl ExecutionHost for BrowserHost {
                 capture: io.capture,
                 capture_error: io.capture_error,
             },
+            output.as_ref(),
         )?;
         Ok(CommandOutput {
             code: result.code,
@@ -111,18 +129,6 @@ impl ExecutionHost for BrowserHost {
                 .stages
                 .into_iter()
                 .map(parsh::host::Termination::Exited)
-                .collect(),
-            chunks: result
-                .chunks
-                .into_iter()
-                .map(|chunk| OutputChunk {
-                    stream: if chunk.stream == "stdout" {
-                        Stream::Stdout
-                    } else {
-                        Stream::Stderr
-                    },
-                    bytes: chunk.bytes,
-                })
                 .collect(),
         })
     }

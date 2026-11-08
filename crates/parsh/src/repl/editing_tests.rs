@@ -204,10 +204,7 @@ fn yanking_and_undoing_complete_source_never_submit() {
     edited(&repl.input(Key::Undo));
     assert_eq!(repl.session.input.source(), "(str safe)");
     assert!(repl.session.history.entries.is_empty());
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value("\"safe\"".into()))
-    );
+    assert_eq!(enter_value(&mut repl), "\"safe\"");
 }
 
 #[test]
@@ -268,10 +265,7 @@ fn search_walks_both_directions_and_accepts_without_execution() {
     assert_eq!(repl.session.input.source(), "(str first-again)");
     repl.input(Key::Undo); // Search acceptance is a fresh editing baseline.
     assert_eq!(repl.session.input.source(), "(str first-again)");
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value("\"first-again\"".into()))
-    );
+    assert_eq!(enter_value(&mut repl), "\"first-again\"");
 }
 
 #[test]

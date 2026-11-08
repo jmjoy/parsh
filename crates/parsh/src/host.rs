@@ -1,5 +1,5 @@
 //! Synchronous execution and filesystem services supplied by an isolated host.
-use std::{collections::HashMap, ffi::OsString};
+use std::{collections::HashMap, ffi::OsString, rc::Rc};
 
 pub const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 
@@ -33,7 +33,6 @@ impl Termination {
 #[derive(Debug)]
 pub struct CommandOutput {
     pub code: i32,
-    pub chunks: Vec<OutputChunk>,
     pub stages: Vec<Termination>,
     /// Execution errors may retain partial output and completed pipeline stages.
     pub error: Option<HostError>,
@@ -61,6 +60,9 @@ pub struct HostError {
     pub message: String,
 }
 
+/// Receives owned output bytes synchronously, before the host call returns.
+pub type OutputSink = Rc<dyn Fn(OutputChunk) -> Result<(), HostError>>;
+
 /// No host parses parsh source: it receives evaluated argv and explicit streams.
 pub trait ExecutionHost {
     /// Recreate the initial filesystem and return its working directory.
@@ -71,6 +73,7 @@ pub trait ExecutionHost {
         cwd: &str,
         environment: &HashMap<OsString, OsString>,
         streams: HostStreams,
+        emit: OutputSink,
     ) -> Result<CommandOutput, HostError>;
     fn open(&mut self, cwd: &str, path: &str, mode: FileMode) -> Result<u32, HostError>;
     /// Write builtin output to an open redirection handle.

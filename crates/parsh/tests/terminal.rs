@@ -238,7 +238,7 @@ fn prompt_uses_effective_uid_despite_the_user_environment() {
         command.env("USER", if root { "ordinary-user" } else { "root" });
     });
     terminal.expect(prompt.as_bytes(), 0);
-    let offset = terminal.send(b"str PROMPT_TEST\r");
+    let offset = terminal.send(b"dump PROMPT_TEST\r");
     let end = terminal.expect(b"\r\n\"PROMPT_TEST\"\r\n", offset);
     terminal.ready_after(end);
     terminal.expect(prompt.as_bytes(), end);
@@ -255,7 +255,7 @@ fn enter_submits_and_typed_closers_remain_edits() {
     terminal.send(b"\r");
     let end = terminal.expect(b"\r\nENTER_TEST\r\n", offset);
     terminal.ready_after(end);
-    let offset = terminal.send(b"echo \"x)\" (printf y)\r");
+    let offset = terminal.send(b"echo \"x)\" (capture/stdout printf y)\r");
     let end = terminal.expect(b"\r\nx) y\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);
@@ -274,7 +274,7 @@ fn previous_value_is_initialized_and_updated_by_the_native_repl() {
         ("(set _ #42) (nil? $_)", "#true"),
         ("(echo LAST_VALUE_OUTPUT) (if $_ #11 #12)", "#11"),
     ] {
-        let offset = terminal.execute(source);
+        let offset = terminal.execute(&format!("{source} (do (dump $_) $_)"));
         let end = terminal.expect(format!("\r\n{expected}\r\n").as_bytes(), offset);
         terminal.ready_after(end);
     }
@@ -500,15 +500,15 @@ fn tab_completes_path_programs_files_and_variables_through_real_terminal_keys() 
     let offset = terminal.send(b"tab-pro\tTAB_COMMAND\r");
     let end = terminal.expect(b"\r\nTAB_COMMAND\r\n", offset);
     terminal.ready_after(end);
-    let offset = terminal.send(b"str fru\t\r");
+    let offset = terminal.send(b"dump fru\t\r");
     let end = terminal.expect(b"\r\n\"fruits.txt\"\r\n", offset);
     terminal.ready_after(end);
     let offset = terminal.execute("(let TAB_VALUE retained)");
     terminal.ready_after(offset);
-    let offset = terminal.send(b"str $TAB_V\t\r");
+    let offset = terminal.send(b"dump $TAB_V\t\r");
     let end = terminal.expect(b"\r\n\"retained\"\r\n", offset);
     terminal.ready_after(end);
-    let offset = terminal.send("str 你\t\r".as_bytes());
+    let offset = terminal.send("dump 你\t\r".as_bytes());
     let end = terminal.expect("\r\n\"你好 file.txt\"\r\n".as_bytes(), offset);
     terminal.ready_after(end);
     terminal.exit(0);
@@ -518,7 +518,7 @@ fn tab_completes_path_programs_files_and_variables_through_real_terminal_keys() 
 fn double_tab_prints_candidates_and_keeps_editing_the_same_expression() {
     let mut terminal = Terminal::new();
     let offset = terminal
-        .execute("(defn tab-alpha () (str TAB_ALPHA)) (defn tab-alpine () (str TAB_ALPINE))");
+        .execute("(defn tab-alpha () (dump TAB_ALPHA)) (defn tab-alpine () (dump TAB_ALPINE))");
     terminal.ready_after(offset);
     let offset = terminal.send(b"tab-a\t");
     terminal.expect(b"(tab-alp", offset);
@@ -576,8 +576,8 @@ fn emacs_alt_backspace_and_split_escape_prefix_share_the_kill_ring() {
 #[test]
 fn paredit_typed_pairs_triple_quotes_and_safe_deletion_use_real_keys() {
     let mut terminal = Terminal::new();
-    let offset = terminal.send(b"(str \"PAREDIT_PAIR");
-    terminal.expect(b"(str \"PAREDIT_PAIR\")", offset);
+    let offset = terminal.send(b"(dump \"PAREDIT_PAIR");
+    terminal.expect(b"(dump \"PAREDIT_PAIR\")", offset);
     terminal.drain();
     assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\n\"PAREDIT_PAIR\"\r\n"));
     terminal.send(b"\r");
@@ -627,6 +627,8 @@ fn paredit_navigation_and_all_four_reshape_keys_work_in_the_terminal() {
     ] {
         let offset = terminal.paste(source);
         terminal.send(keys);
+        terminal.ready_after(offset);
+        let offset = terminal.execute("(dump $_)");
         let end = terminal.expect(format!("\r\n{expected}\r\n").as_bytes(), offset);
         terminal.ready_after(end);
     }
@@ -634,6 +636,8 @@ fn paredit_navigation_and_all_four_reshape_keys_work_in_the_terminal() {
     terminal.send(b"\x01\x06\x06\x06\x06\x06\x1b(");
     terminal.expect(b"(list (abc))", offset);
     terminal.send(b"\x1bs\r");
+    terminal.ready_after(offset);
+    let offset = terminal.execute("(dump $_)");
     let end = terminal.expect(b"\r\n(\"abc\")\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);
@@ -682,16 +686,45 @@ fn emacs_clear_screen_preserves_the_draft_and_search() {
 }
 
 #[test]
-fn literal_input_and_history_use_direct_source_without_prompt_parentheses() {
+fn literal_prefix_keeps_the_implicit_call_and_history_preserves_explicit_source() {
     let mut terminal = Terminal::new();
     let offset = terminal.send(b"#1");
-    terminal.expect(b"#1", offset);
-    let output = terminal.send(b"\r");
-    terminal.expect(b"#1\r\n", output);
-    let offset = terminal.send(b"\x10");
-    terminal.expect(b"#1", offset);
+    terminal.expect(b"(#1", offset);
     let offset = terminal.send(b"\r");
-    terminal.expect(b"#1\r\n", offset);
-    let offset = terminal.execute("(printf \"%s\" (bool false))");
-    terminal.expect(b"false", offset);
+    terminal.expect(b"is not callable", offset);
+    terminal.ready_after(offset);
+    let offset = terminal.execute("(do #1)");
+    terminal.ready_after(offset);
+    let offset = terminal.send(b"\x10");
+    terminal.expect(b"(do #1)", offset);
+    let offset = terminal.send(b"\r");
+    terminal.ready_after(offset);
+    let offset = terminal.execute("(dump $_)");
+    let end = terminal.expect(b"\r\n#1\r\n", offset);
+    terminal.ready_after(end);
+    terminal.exit(0);
+}
+
+#[test]
+fn evaluation_is_silent_and_explicit_dump_displays_the_previous_value() {
+    let mut terminal = Terminal::new();
+    let offset = terminal.execute("(+ #1 #1)");
+    terminal.ready_after(offset);
+    terminal.drain();
+    assert!(!visible_text(&terminal.bytes[offset..]).contains("\r\n#2\r\n"));
+    let offset = terminal.execute("(dump $_)");
+    let end = terminal.expect(b"\r\n#2\r\n", offset);
+    terminal.ready_after(end);
+    terminal.exit(0);
+}
+
+#[test]
+fn a_command_in_an_assignment_streams_both_outputs_before_completion() {
+    let mut terminal = Terminal::new();
+    let offset = terminal
+        .execute("(let result (sh -c 'printf STREAM_START; printf STREAM_ERROR >&2; sleep 30'))");
+    terminal.expect(b"STREAM_STARTSTREAM_ERROR", offset);
+    terminal.send(b"\x03");
+    terminal.ready_after(offset);
+    terminal.exit(0);
 }

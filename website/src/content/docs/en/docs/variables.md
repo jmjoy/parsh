@@ -42,15 +42,15 @@ right-hand side is evaluated. It then evaluates the right-hand side and updates 
 binding. Lookups fall back to the inherited environment.
 `(export name value)` converts a scalar to text, sets the environment for subsequent
 children, and updates an existing local binding of the same name to that text.
-Lists, maps, structs, forms, functions, commands, bytes, and statuses cannot be exported
+Lists, maps, structs, forms, functions, commands, and bytes cannot be exported
 implicitly. Environment and working directory changes belong to this parsh session.
 
 `get` takes exactly one text variable name, which can itself be an expression,
 and returns the original value using the same lookup rules as `$name`:
 
 ```parsh
-(get name)
-(get (str na me))
+(dump (get name))
+(dump (get (str na me)))
 (echo "hello, $(get name)_friend")
 ```
 
@@ -62,8 +62,8 @@ For expression interpolation and literal dollars, see [strings](/parsh/en/docs/s
 ```parsh
 (let files (list "a file.rs" other.rs))
 (printf "<%s>\n" $files)
-(for file (glob *.rs)
-  (echo $file))
+(dump (for file (glob *.rs)
+  (echo $file)))
 ```
 
 Lists expand by one level into external command arguments. Text stays a single
@@ -88,10 +88,10 @@ before evaluating that key's value.
 ```parsh
 (let config (map name parsh version #1 nested (map enabled #true)))
 (let updated (map/set $config name new-name))
-(map/get $config name)
-(map/get $updated name)
-(map/get $config missing fallback)
-(map/keys $config)
+(dump (map/get $config name))
+(dump (map/get $updated name))
+(dump (map/get $config missing fallback))
+(dump (map/keys $config))
 (set config (map/del $updated version))
 ```
 
@@ -124,9 +124,9 @@ before the value expression.
 Operations compose directly, without binding intermediate maps:
 
 ```parsh
-(map/set {name parsh} version v1)
-(map/get (map/set $config name other) name)
-(map/set (map/set $config name other) version v2)
+(dump (map/set {name parsh} version v1))
+(dump (map/get (map/set $config name other) name))
+(dump (map/set (map/set $config name other) version v2))
 ```
 
 Updating a key keeps its position. New keys append; deleting preserves the order
@@ -156,14 +156,14 @@ returns to `#nil` when the session is reset.
 ```parsh
 (+ #1 #2)
 (+ $_ #4)
-(get _)
+(dump $_)
 ```
 
-These expressions return `#3`, `#7`, and `#7`. Each expression updates `_` before
+The first two expressions silently return `#3` and `#7`; the last prints `#7` and returns nil. Each expression updates `_` before
 the next expression runs, including multiple expressions submitted together.
 Nested calls do not automatically update it. Values retain their original types,
-including lists, maps, functions, nil, and command statuses; storing a command
-status does not capture its terminal output. Nil and statuses remain undisplayed.
+including lists, maps, functions, nil, and `CallResult`. Storing a result does not
+capture terminal output. No return value is displayed automatically.
 
 `_` is an ordinary session binding: `set`, `export`, and local shadowing follow
 the usual rules. It is already bound at the top level, so another top-level

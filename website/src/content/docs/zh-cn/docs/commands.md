@@ -21,8 +21,8 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 (defn greet (name) (echo hello $name))
 (type greet)
 (type -a echo)
-(let kind (type -t greet))
-(if (type -t optional-tool) (optional-tool))
+(let kind (capture/stdout-trim type -t greet))
+(dump (if (type -t optional-tool) (optional-tool)))
 ```
 
 `type` 接受多个名称，也支持列表参数，并提供类似 Bash 的选项：
@@ -39,7 +39,7 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 `-p` 和 `-P` 返回这些名称。
 
 ```parsh
-(echo (pwd))
+(echo (capture/stdout-trim pwd))
 (| (find . -name "*.rs") (sort))
 (|> files.txt (| (find . -name "*.rs") (sort)))
 (|>> log.txt (echo another entry))
@@ -75,8 +75,9 @@ description: "原生命令、管道、输出捕获与文件重定向。"
     (make)))
 ```
 
-顶层命令实时输出。外部命令或管道用作值时，会将标准输出按 UTF-8 捕获，
-移除末尾的 LF 换行符，并将结果保持为一个参数。标准错误仍写入原来的目标。
-二进制输出应使用管道、文件重定向或 `capture-call` 原始字节捕获。显式重定向优先于对该表达式输出的捕获。
+普通命令无论出现在顶层、赋值、参数还是插值中，都向当前目标输出并返回 `CallResult`。
+结果的 stdout/stderr 默认是 `#nil`；需要文本时显式使用 `capture/stdout` 或 `capture/stderr`，
+需要两路原始字节时使用 `capture-call`。文本捕获保留所有换行，不会自动裁剪。
+显式文件重定向优先于捕获，管道和文件保留二进制字节。
 
 完整结果、原始字节捕获、`$?`、异常和后台执行见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。

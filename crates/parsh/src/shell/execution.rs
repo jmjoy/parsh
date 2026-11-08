@@ -86,6 +86,12 @@ fn set_field(value: &mut Value, key: &str, replacement: Value) {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Capture {
+    Result { all_errors: bool },
+    Text(Stream),
+}
+
 impl Error {
     pub(super) fn as_value(&self, with_result: bool) -> Value {
         record(
@@ -196,7 +202,7 @@ impl Shell {
         positions: (usize, usize),
     ) {
         let mut r = match outcome {
-            Ok(Value::Status(status)) => (*status.result).clone(),
+            Ok(value) if is_record(value, "CallResult") => value.clone(),
             Ok(v) => result_record(v.clone(), Value::Nil, Value::Nil, Value::List(Vec::new())),
             Err(Signal::Error(e)) if e.exit => {
                 let error = if e.code == 0 {
@@ -221,11 +227,17 @@ impl Shell {
             Err(_) => return,
         };
         let (out, err) = Self::captured(io, positions);
-        set_field(&mut r, "stdout", out);
-        set_field(&mut r, "stderr", err);
+        // A returned result is a value snapshot. Only an active capture replaces
+        // its stream fields; an ordinary function must pass saved results through.
+        if !matches!(out, Value::Nil) {
+            set_field(&mut r, "stdout", out);
+        }
+        if !matches!(err, Value::Nil) {
+            set_field(&mut r, "stderr", err);
+        }
         match outcome {
             Err(Signal::Error(e)) => e.result = Some(Box::new(r.clone())),
-            Ok(Value::Status(status)) => *status.result = r.clone(),
+            Ok(value) if is_record(value, "CallResult") => *value = r.clone(),
             _ => {}
         }
         self.publish(r);
@@ -329,6 +341,25 @@ impl Shell {
         io: &Io,
         all_errors: bool,
     ) -> EvalResult<Value> {
+        self.capture_invocation(
+            expr,
+            callee,
+            values,
+            env,
+            io,
+            Capture::Result { all_errors },
+        )
+    }
+
+    fn capture_invocation(
+        &mut self,
+        expr: &Expr,
+        callee: Value,
+        values: &[Value],
+        env: &Env,
+        io: &Io,
+        capture: Capture,
+    ) -> EvalResult<Value> {
         // Explicit nested captures allocate buffers and keep a full invocation frame alive.
         // Bound them independently of ordinary evaluation, as with macro expansion.
         if self.capture_depth >= 32 {
@@ -343,26 +374,41 @@ impl Shell {
             let file_output = matches!(nested.output, Output::File(_));
             #[cfg(not(feature = "native"))]
             let file_output = false;
-            if !file_output {
+            if !file_output && !matches!(capture, Capture::Text(Stream::Stderr)) {
                 nested.output = Output::Capture(stdout);
             }
-            nested.error_capture = Some(stderr);
-            nested.capture_budget = Some(Arc::new(crate::streams::CaptureBudget::default()));
+            if !matches!(capture, Capture::Text(Stream::Stdout)) {
+                nested.error_capture = Some(stderr);
+            }
+            nested.capture_budget = Some(match capture {
+                // A single-stream capture keeps the other stream's inherited buffer,
+                // so it must also retain that buffer's budget.
+                Capture::Text(_) => io.capture_budget.clone().unwrap_or_default(),
+                Capture::Result { .. } => Arc::new(crate::streams::CaptureBudget::default()),
+            });
             let positions = Self::capture_positions(&nested);
             let mut outcome = self.call_value(
                 expr,
                 callee,
                 Arguments::Values(values),
                 env,
-                Mode::Condition,
+                if matches!(capture, Capture::Result { .. }) {
+                    Mode::Condition
+                } else {
+                    Mode::Normal
+                },
                 &nested,
             );
             self.publish_invocation(expr, &mut outcome, &nested, positions);
             match outcome {
-                Ok(_) => Ok(self.last_result.clone()),
+                Ok(_) => match capture {
+                    Capture::Result { .. } => Ok(self.last_result.clone()),
+                    Capture::Text(stream) => Self::captured_text(expr, &self.last_result, stream),
+                },
                 Err(Signal::Error(e))
-                    if all_errors
-                        || (!e.exit
+                    if matches!(capture, Capture::Result { all_errors: true })
+                        || (matches!(capture, Capture::Result { .. })
+                            && !e.exit
                             && matches!(e.kind.as_str(), "command-failed" | "signaled")) =>
                 {
                     Ok(self.last_result.clone())
@@ -402,6 +448,24 @@ impl Shell {
             "capture-call" => {
                 let callee = values.remove(0);
                 self.capture_call(expr, callee, &values, env, io, false)
+            }
+            "capture/stdout" | "capture/stderr" | "capture/stdout-trim" | "capture/stderr-trim" => {
+                let callee = values.remove(0);
+                let stream = if matches!(name, "capture/stdout" | "capture/stdout-trim") {
+                    Stream::Stdout
+                } else {
+                    Stream::Stderr
+                };
+                let value =
+                    self.capture_invocation(expr, callee, &values, env, io, Capture::Text(stream))?;
+                if name.ends_with("-trim") {
+                    let Value::Text(text) = value else {
+                        return Err(Error::new(expr, "expected text").into());
+                    };
+                    Ok(Value::Text(text.trim().into()))
+                } else {
+                    Ok(value)
+                }
             }
             "spawn" | "wait" | "job-status" | "cancel" => {
                 #[cfg(feature = "native")]
@@ -467,25 +531,37 @@ impl Shell {
                 })
             }
             "stdout-text" | "stderr-text" => {
-                let r = &values[0];
-                Self::expect_result(expr, r)?;
-                let key = if name == "stdout-text" {
-                    "stdout"
-                } else {
-                    "stderr"
-                };
-                match field(r, key) {
-                    Some(Value::Nil) => Ok(Value::Nil),
-                    Some(Value::Bytes(b)) => Ok(Value::Text(
-                        String::from_utf8(b.to_vec()).map_err(|_| Error {
-                            result: Some(Box::new(r.clone())),
-                            ..Error::new(expr, format!("{key} is not UTF-8"))
-                        })?,
-                    )),
-                    _ => Err(Error::new(expr, "invalid captured output").into()),
-                }
+                Self::expect_result(expr, &values[0])?;
+                Self::captured_text(
+                    expr,
+                    &values[0],
+                    if name == "stdout-text" {
+                        Stream::Stdout
+                    } else {
+                        Stream::Stderr
+                    },
+                )
             }
+
             _ => unreachable!(),
+        }
+    }
+
+    fn captured_text(expr: &Expr, result: &Value, stream: Stream) -> EvalResult<Value> {
+        let key = if stream == Stream::Stdout {
+            "stdout"
+        } else {
+            "stderr"
+        };
+        match field(result, key) {
+            Some(Value::Nil) => Ok(Value::Nil),
+            Some(Value::Bytes(bytes)) => Ok(Value::Text(
+                String::from_utf8(bytes.to_vec()).map_err(|_| Error {
+                    result: Some(Box::new(result.clone())),
+                    ..Error::new(expr, format!("{key} is not UTF-8"))
+                })?,
+            )),
+            _ => Err(Error::new(expr, "invalid captured output").into()),
         }
     }
 

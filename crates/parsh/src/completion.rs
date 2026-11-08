@@ -118,7 +118,16 @@ impl Context {
             || (frame.items == 1
                 && matches!(
                     frame.head.as_deref(),
-                    Some("command" | "capture-call" | "spawn" | "apply")
+                    Some(
+                        "command"
+                            | "capture-call"
+                            | "capture/stdout"
+                            | "capture/stderr"
+                            | "capture/stdout-trim"
+                            | "capture/stderr-trim"
+                            | "spawn"
+                            | "apply"
+                    )
                 ))
         {
             Kind::Command

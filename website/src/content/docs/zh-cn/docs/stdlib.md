@@ -13,11 +13,11 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 它们都是普通内置函数：
 
 ```parsh
-(str/join [a b] ",")
-(list/append [a] b)
-(map/get {name parsh} name)
-(apply (function str/join) [[a b] ","])
-(apply "str/join" [[a b] ","])
+(dump (str/join [a b] ","))
+(dump (list/append [a] b))
+(dump (map/get {name parsh} name))
+(dump (apply (function str/join) [[a b] ","]))
+(dump (apply "str/join" [[a b] ","]))
 ```
 
 构造器使用 `str`、`list` 和 `map`。
@@ -39,14 +39,14 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 数值文本去掉首尾空白后必须完整解析。`int` 遇到带小数点或指数的文本时，先解析成 f64，
 再按舍入后的值判断是否为整值。整数文本必须在 i64 范围内；
 `(float "9223372036854775808")` 则可以直接解析成有限浮点数。
-布尔值不能转为数字，集合、表单、函数、nil 和命令状态都不是转换输入。
+布尔值不能转为数字，集合、表单、函数、nil 和`CallResult`都不是转换输入。
 文本 `"#1"`、`"#false"` 不会重新按字面值读取。错误指向操作数，退出码为 `2`。
 
 ```parsh
-(int " 1.0 ")
-(float #1)
-(bool " false ")
-(apply (function int) ["1e2"])
+(dump (int " 1.0 "))
+(dump (float #1))
+(dump (bool " false "))
+(dump (apply (function int) ["1e2"]))
 ```
 
 结果依次为 `#1`、`#1.0`、`#false`、`#100`。
@@ -54,21 +54,21 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 ## 类型判断
 
 `typeof` 返回类型名称文本：`text`、`int`、`float`、`bool`、`list`、`map`、`form`、
-`struct`、`bytes`、`function`、`command`、`nil`、`status`。
+`struct`、`bytes`、`function`、`command`、`nil`。
 对应判定为 `text?`、`int?`、`float?`、`bool?`、`list?`、`map?`、`form?`、`struct?`、`bytes?`、
-`function?`、`command?`、`nil?`、`status?`。`number?` 同时接受整数和浮点数。
+`function?`、`command?`、`nil?`。`number?` 同时接受整数和浮点数。
 `callable?` 接受函数值和命令引用；文本名称即使可通过调用接口解析，也仍返回假。
 `empty?` 只接受文本、列表和映射。
 
 ```parsh
-(list (typeof (command echo)) (command? (command echo))
-      (callable? (function +)) (callable? echo))
+(dump (list (typeof (command echo)) (command? (command echo))
+      (callable? (function +)) (callable? echo)))
 ```
 
 结果为 `("command" #true #true #false)`。
 
 判断严格检查运行时类型：裸词 `123` 是文本，因此 `(number? 123)` 为假，
-`(number? #123)` 为真。普通命令在值位置会捕获成文本；`type` 继续用于查询命令解析。
+`(number? #123)` 为真。普通命令在值位置返回 `CallResult`（`struct`），用 `CallResult?` 判断；`type` 继续用于查询命令解析。
 
 ## 基础数值函数
 
@@ -83,7 +83,7 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 | `(round n)` | 最接近的 i64，中点远离零 |
 
 ```parsh
-(list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5))
+(dump (list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5)))
 ```
 
 结果为 `(#-2 #-1 #3 #-3)`。`quot/rem` 仅接受 int，其他数值函数只接受 int 或 float；文本应先用 `int`、`float` 显式转换。
@@ -105,10 +105,10 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 ```parsh
 (let original [a b])
 (let updated (list/append $original [c d]))
-(list $original $updated)
-(list/concat $original [c d])
-(list/get $updated #-1)
-(list/slice $updated #1 #-1)
+(dump (list $original $updated))
+(dump (list/concat $original [c d]))
+(dump (list/get $updated #-1))
+(dump (list/slice $updated #1 #-1))
 ```
 
 索引从 0 开始；负数从末尾计算，`#-1` 为最后一项。
@@ -130,9 +130,9 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 | `(str/contains text part)` | 是否包含字面子串，返回布尔值 |
 
 ```parsh
-(list (str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3))
-(str/join (str/split "a,b,c" ",") " / ")
-(str/lines "a\r\nb\n")
+(dump (list (str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3)))
+(dump (str/join (str/split "a,b,c" ",") " / "))
+(dump (str/lines "a\r\nb\n"))
 ```
 
 字符串索引和切片与列表共用负数、越界和默认值规则。
@@ -146,9 +146,9 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 高阶列表函数把函数放在首位，并返回新值：
 
 ```parsh
-(list/map (fn (value) (str $value "!")) [a b])
-(list/filter (fn (value) (eq $value yes)) [yes no yes])
-(list/fold (fn (total value) (+ $total $value)) #0 [#1 #2 #3])
+(dump (list/map (fn (value) (str $value "!")) [a b]))
+(dump (list/filter (fn (value) (eq $value yes)) [yes no yes]))
+(dump (list/fold (fn (total value) (+ $total $value)) #0 [#1 #2 #3]))
 ```
 
 | 调用 | 返回值 |
@@ -162,15 +162,15 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 | `(list/contains xs value)` | 按 `eq` 的类型和值相等规则判断成员关系 |
 
 回调可以是函数值、外部命令引用或 `apply` 支持的文本名称。
-`filter`、`any`、`all` 的回调必须返回布尔值，命令状态不能用作谓词结果。
+`filter`、`any`、`all` 的回调必须返回布尔值，`CallResult`不能用作谓词结果。
 空列表上的 `fold` 返回 `initial`。
 
 映射支持浅合并和有序 entries 转换：
 
 ```parsh
-(map/merge {name parsh} {version #1})
-(map/entries {name parsh version #1})
-(map/from-entries [[name parsh] [version #1]])
+(dump (map/merge {name parsh} {version #1}))
+(dump (map/entries {name parsh version #1}))
+(dump (map/from-entries [[name parsh] [version #1]]))
 ```
 
 | 调用 | 返回值 |
@@ -190,8 +190,8 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 
 ```parsh
 (let calls #0)
-(map/get {name parsh} name (do (set calls (+ $calls #1)) fallback))
-(list $calls)
+(dump (map/get {name parsh} name (do (set calls (+ $calls #1)) fallback)))
+(dump (list $calls))
 ```
 
 结果为 `"parsh"` 和 `(#1)`。已有 nil 值的键仍然命中，返回 nil；默认值仍被求值。
@@ -206,7 +206,7 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 (defstruct User name admin)
 (let body (json/encode (User parsh #true)))
 (let value (json/decode $body))
-(map/get $value name)
+(dump (map/get $value name))
 ```
 
 编码函数、命令引用、表单、bytes、状态和非有限数值都会报错。
@@ -233,8 +233,8 @@ JSON 错误的 `Error.kind` 为 `json`。
 
 ```parsh
 (let raw (bytes/hex-decode "00ff41"))
-(list (bytes/len $raw) (bytes/base64-encode $raw)
-      (bytes/to-text (bytes/slice $raw #-1)))
+(dump (list (bytes/len $raw) (bytes/base64-encode $raw)
+      (bytes/to-text (bytes/slice $raw #-1))))
 ```
 
 结果为 `(#3 "AP9B" "A")`。bytes 显示为 `<bytes N>`，不能隐式变成文本，需显式解码或编码。
@@ -252,7 +252,7 @@ JSON 错误的 `Error.kind` 为 `json`。
 需要把显示形式保存为文本时使用 `capture-call`：
 
 ```parsh
-(stdout-text (capture-call dump {name parsh}))
+(dump (stdout-text (capture-call dump {name parsh})))
 ```
 
 结果为 `"(map \"name\" \"parsh\")\n"`。普通 `(let value (dump ...))` 绑定的是 nil，
@@ -269,9 +269,9 @@ JSON 错误的 `Error.kind` 为 `json`。
 (let response
   (http/get "http://127.0.0.1:8080/data"
             {accept [application/json]}))
-(if (HttpResponse.ok $response)
+(dump (if (HttpResponse.ok $response)
     (json/decode (HttpResponse.body $response))
-    (HttpResponse.status $response))
+    (HttpResponse.status $response)))
 ```
 
 可用函数如下：
@@ -291,4 +291,4 @@ JSON 错误的 `Error.kind` 为 `json`。
 
 ## 调用、结果与任务
 
-`command`、`command?`、`callable?`、`bytes?`、`capture-call`、`stdout-text`、`stderr-text`、`exit-code`、`signal`、`check`、`throw` 在原生与浏览器环境共用实现；`spawn`、`wait`、`job-status`、`cancel` 要求原生任务支持。这些普通内置都可通过 `function` 和 `apply` 调用。签名及结构体见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。
+`command`、`command?`、`callable?`、`bytes?`、`capture/stdout`、`capture/stderr`、`capture/stdout-trim`、`capture/stderr-trim`、`capture-call`、`stdout-text`、`stderr-text`、`exit-code`、`signal`、`check`、`throw` 在原生与浏览器环境共用实现；`spawn`、`wait`、`job-status`、`cancel` 要求原生任务支持。这些普通内置都可通过 `function` 和 `apply` 调用。签名及结构体见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。

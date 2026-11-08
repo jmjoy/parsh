@@ -84,7 +84,6 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "struct?",
     "function?",
     "nil?",
-    "status?",
     "empty?",
     "quot",
     "rem",
@@ -100,6 +99,10 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "callable?",
     "bytes?",
     "capture-call",
+    "capture/stdout",
+    "capture/stderr",
+    "capture/stdout-trim",
+    "capture/stderr-trim",
     "spawn",
     "wait",
     "job-status",
@@ -260,7 +263,6 @@ impl Value {
             Self::Bytes(_) => "bytes",
             Self::Struct { .. } => "struct",
             Self::Nil => "nil",
-            Self::Status(_) => "status",
         }
     }
 }
@@ -270,7 +272,12 @@ fn arity(name: &str) -> (usize, usize) {
         "list" | "str" | "map" | "+" | "*" | "list/concat" => (0, usize::MAX),
         "-" | "/" | "min" | "max" | "list/append" => (1, usize::MAX),
         "apply" => (2, usize::MAX),
-        "capture-call" | "spawn" => (1, usize::MAX),
+        "capture-call"
+        | "capture/stdout"
+        | "capture/stderr"
+        | "capture/stdout-trim"
+        | "capture/stderr-trim"
+        | "spawn" => (1, usize::MAX),
         "map/get" | "list/get" | "str/get" | "list/slice" | "str/slice" => (2, 3),
         "map/set" | "str/replace" => (3, 3),
         "map/merge" | "bytes/concat" => (0, usize::MAX),
@@ -325,9 +332,25 @@ impl Shell {
             "http/request" | "http/get" | "http/post" | "http/body-text" => {
                 http::call(self, expr, name, args, env, mode, io)
             }
-            "command" | "command?" | "callable?" | "bytes?" | "capture-call" | "spawn" | "wait"
-            | "job-status" | "cancel" | "check" | "stdout-text" | "stderr-text" | "exit-code"
-            | "signal" | "throw" => self.execution_builtin(expr, name, args, env, mode, io),
+            "command"
+            | "command?"
+            | "callable?"
+            | "bytes?"
+            | "capture-call"
+            | "capture/stdout"
+            | "capture/stderr"
+            | "capture/stdout-trim"
+            | "capture/stderr-trim"
+            | "spawn"
+            | "wait"
+            | "job-status"
+            | "cancel"
+            | "check"
+            | "stdout-text"
+            | "stderr-text"
+            | "exit-code"
+            | "signal"
+            | "throw" => self.execution_builtin(expr, name, args, env, mode, io),
             "get" => {
                 let Value::Text(name) = args.value(self, 0, env, io)? else {
                     return Err(
@@ -442,11 +465,7 @@ impl Shell {
                 let condition = if let Arguments::Expressions(expressions) = args {
                     self.condition(&expressions[0], env, io)?
                 } else {
-                    match args.value(self, 0, env, io)? {
-                        Value::Bool(value) => value,
-                        Value::Status(status) => status.code == 0,
-                        _ => return Err(Error::new(args.at(expr, 0), "a condition must be a boolean or command status; use eq to compare text").into()),
-                    }
+                    Self::condition_value(args.at(expr, 0), args.value(self, 0, env, io)?)?
                 };
                 Ok(Value::Bool(!condition))
             }

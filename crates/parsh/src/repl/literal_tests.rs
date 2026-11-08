@@ -1,18 +1,8 @@
 use super::*;
 use crate::{number::Number, reader::complete};
 
-fn values(events: &[Event]) -> Vec<&str> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::Value(value) => Some(value.as_str()),
-            _ => None,
-        })
-        .collect()
-}
-
 fn succeeds(source: &str, expected: &[&str]) {
-    let events = execute(&mut Repl::new(), source);
+    let events = evaluate(&mut Repl::new(), source);
     assert!(
         !events
             .iter()
@@ -23,7 +13,7 @@ fn succeeds(source: &str, expected: &[&str]) {
 }
 
 fn fails(repl: &mut Repl, source: &str, expected: &str) {
-    let events = execute(repl, source);
+    let events = evaluate(repl, source);
     assert!(
         events
             .iter()
@@ -210,21 +200,21 @@ fn invalid_conversions_fail_before_continuing_and_evaluate_once() {
         fails(&mut Repl::new(), source, message);
     }
     let mut repl = Repl::new();
-    execute(&mut repl, "(let calls #0)");
+    evaluate(&mut repl, "(let calls #0)");
     for name in ["int", "float", "bool"] {
         fails(
             &mut repl,
             &format!("({name} (set calls #99) (set calls #99))"),
             "expected 1 arguments",
         );
-        assert_eq!(values(&execute(&mut repl, "(get calls)")), ["#0"]);
+        assert_eq!(values(&evaluate(&mut repl, "(get calls)")), ["#0"]);
     }
     fails(
         &mut repl,
         "(int (do (set calls (+ $calls #1)) #1.5))",
         "integer value",
     );
-    assert_eq!(values(&execute(&mut repl, "(get calls)")), ["#1"]);
+    assert_eq!(values(&evaluate(&mut repl, "(get calls)")), ["#1"]);
 }
 
 #[test]
@@ -251,7 +241,7 @@ fn macro_unquotes_preserve_scalar_types_and_form_equality() {
 #[test]
 fn non_text_command_heads_do_not_evaluate_arguments() {
     let mut repl = Repl::new();
-    execute(
+    evaluate(
         &mut repl,
         "(let trace #0) (let n #1) (let b #false) (let empty #nil)",
     );
@@ -261,7 +251,7 @@ fn non_text_command_heads_do_not_evaluate_arguments() {
             &format!("({head} (set trace #99))"),
             "is not callable",
         );
-        assert_eq!(values(&execute(&mut repl, "(get trace)")), ["#0"]);
+        assert_eq!(values(&evaluate(&mut repl, "(get trace)")), ["#0"]);
     }
     succeeds(
         "(let command str) ($command #1) ((fn () #1))",
@@ -270,62 +260,39 @@ fn non_text_command_heads_do_not_evaluate_arguments() {
 }
 
 #[test]
-fn literal_input_hides_hints_and_preserves_history_and_editing() {
-    for pasted in [false, true] {
-        let mut repl = Repl::new();
-        let source = " #1.0";
-        if pasted {
-            repl.paste(source);
-        } else {
-            for ch in source.chars() {
-                repl.input(Key::Character(ch));
+fn literal_and_collection_prefixes_keep_the_implicit_call() {
+    for source in ["#1.0", "[a]", "{key value}"] {
+        for pasted in [false, true] {
+            let mut repl = Repl::new();
+            if pasted {
+                repl.paste(source);
+            } else {
+                for ch in source.chars() {
+                    repl.input(Key::Character(ch));
+                }
             }
+            assert!(!repl.session.input.explicit);
+            assert_eq!(repl.session.input.source(), format!("({source}"));
+            let view = view_layout(&repl.session.input, None, "$ ", 80, 24);
+            assert_eq!(view.lines, [format!("$ ({source})")]);
+            assert_eq!(view.dimmed_cells.last().unwrap().character, ')');
+            repl.input(Key::Undo);
+            assert!(repl.session.input.body.is_empty());
         }
-        let view = view_layout(&repl.session.input, None, "$ ", 80, 24);
-        assert_eq!(view.lines, ["$  #1.0"]);
-        assert!(view.dimmed_cells.is_empty());
-        assert_eq!(view.cursor, (0, source.len() + 2));
-        assert_eq!(values(&repl.input(Key::Enter)), ["#1.0"]);
-        assert_eq!(repl.session.history.entries, [source]);
-        repl.input(Key::Previous);
-        assert_eq!(repl.session.input.cursor, source.len());
-        assert_eq!(values(&repl.input(Key::Enter)), ["#1.0"]);
     }
     let mut repl = Repl::new();
-    repl.input(Key::Character('#'));
-    assert!(
-        view_layout(&repl.session.input, None, "$ ", 80, 24)
-            .dimmed_cells
-            .is_empty()
-    );
-    repl.input(Key::Backspace);
-    assert_eq!(
-        view_layout(&repl.session.input, None, "$ ", 80, 24)
-            .dimmed_cells
-            .len(),
-        2
-    );
-    repl.paste("#1");
-    repl.input(Key::Undo);
-    assert!(repl.session.input.body.is_empty());
-    repl.paste("#1");
-    repl.input(Key::Home);
-    repl.input(Key::KillEnd);
-    repl.input(Key::Yank);
-    assert_eq!(repl.session.input.source(), "#1");
-    assert_eq!(values(&repl.input(Key::Enter)), ["#1"]);
-    repl.paste("#f");
-    repl.input(Key::Tab);
-    assert_eq!(repl.session.input.source(), "#false ");
-    assert_eq!(values(&repl.input(Key::Enter)), ["#false"]);
-    assert!(values(&execute(&mut repl, "#nil")).is_empty());
+    repl.paste("(do #1.0)");
+    assert_eq!(enter_value(&mut repl), "#1.0");
+    repl.input(Key::Previous);
+    assert_eq!(repl.session.input.source(), "(do #1.0)");
+    assert_eq!(enter_value(&mut repl), "#1.0");
     succeeds("#1 (str next) #false", &["#1", r#""next""#, "#false"]);
 }
 
 #[test]
 fn numeric_operations_reject_text_in_direct_referenced_and_applied_calls() {
     let mut repl = Repl::new();
-    execute(&mut repl, "(let text 1)");
+    evaluate(&mut repl, "(let text 1)");
     for name in [
         "+", "-", "*", "/", "=", "!=", "<", "<=", ">", ">=", "abs", "min", "max", "floor", "ceil",
         "round",
@@ -349,19 +316,19 @@ fn numeric_operations_reject_text_in_direct_referenced_and_applied_calls() {
             }
         }
     }
-    execute(&mut repl, "(let calls #0)");
+    evaluate(&mut repl, "(let calls #0)");
     fails(
         &mut repl,
         "(+ 1 (set calls #99))",
         "int/float to convert text",
     );
-    assert_eq!(values(&execute(&mut repl, "(get calls)")), ["#0"]);
+    assert_eq!(values(&evaluate(&mut repl, "(get calls)")), ["#0"]);
 }
 
 #[test]
 fn integer_operations_and_indices_reject_text_and_integral_floats() {
     let mut repl = Repl::new();
-    execute(&mut repl, "(let text 1)");
+    evaluate(&mut repl, "(let text 1)");
     for (name, first) in [
         ("quot", "#4"),
         ("rem", "#4"),

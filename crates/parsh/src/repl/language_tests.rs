@@ -1,7 +1,7 @@
 use super::*;
 
 fn evaluated(source: &str) -> Vec<String> {
-    let events = execute(&mut Repl::new(), source);
+    let events = evaluate(&mut Repl::new(), source);
     let errors: Vec<_> = events
         .iter()
         .filter_map(|event| {
@@ -13,36 +13,17 @@ fn evaluated(source: &str) -> Vec<String> {
         })
         .collect();
     assert!(errors.is_empty(), "{source}: {errors:?}");
-    events
-        .into_iter()
-        .filter_map(|event| {
-            if let Event::Value(value) = event {
-                Some(value)
-            } else {
-                None
-            }
-        })
-        .collect()
+    events.values
 }
 
 fn fails(source: &str, message: &str) {
-    let events = execute(&mut Repl::new(), source);
+    let events = evaluate(&mut Repl::new(), source);
     assert!(
         events
             .iter()
             .any(|event| matches!(event, Event::Diagnostic(text) if text.contains(message))),
         "{source}: {events:?}"
     );
-}
-
-fn values(events: &[Event]) -> Vec<&str> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::Value(value) => Some(value.as_str()),
-            _ => None,
-        })
-        .collect()
 }
 
 fn diagnostics(events: &[Event]) -> Vec<&str> {
@@ -194,7 +175,7 @@ fn type_queries_distinguish_text_numbers_nil_and_empty_collections() {
         (list (text? 3) (number? 3) (number? #3) (int? #3)
               (float? #3.0) (bool? #true) (list? []) (map? {})
               (form? (quote a)) (struct? (Point a)) (function? (function +))
-              (nil? #nil) (nil? nil) (status? 0)
+              (nil? #nil) (nil? nil) (CallResult? 0)
               (empty? "") (empty? []) (empty? {}) (empty? [a]))
     "#
         ),
@@ -390,7 +371,9 @@ fn module_members_are_reserved_and_legacy_names_can_be_redefined() {
         ("mlen", "map/len"),
     ] {
         assert_eq!(
-            evaluated(&format!("(function {name}) (str (type -t {name}))")),
+            evaluated(&format!(
+                "(function {name}) (str/trim (capture/stdout type -t {name}))"
+            )),
             [format!("<function {name}>"), r#""builtin""#.into()],
         );
         fails(
@@ -461,7 +444,7 @@ fn optional_defaults_are_per_call_and_rest_keeps_each_argument_whole() {
         "(&optional (x 1 2))",
         "(&rest (x 1))",
     ] {
-        let events = execute(&mut Repl::new(), &format!("(fn {parameters} #nil)"));
+        let events = evaluate(&mut Repl::new(), &format!("(fn {parameters} #nil)"));
         assert!(
             events
                 .iter()
@@ -581,16 +564,16 @@ fn list_forms_have_scopes_and_bindings_return_nil() {
     );
 
     let mut repl = Repl::new();
-    let events = execute(&mut repl, "(do (let local value) $local)");
+    let events = evaluate(&mut repl, "(do (let local value) $local)");
     assert!(diagnostics(&events).is_empty(), "{events:?}");
     assert_eq!(values(&events), [r#""value""#]);
-    assert!(diagnostics(&execute(&mut repl, "(get local)"))[0].contains("undefined variable"));
+    assert!(diagnostics(&evaluate(&mut repl, "(get local)"))[0].contains("undefined variable"));
 }
 
 #[test]
 fn let_rejects_duplicate_bindings_before_evaluating_the_rhs() {
     let mut repl = Repl::new();
-    let events = execute(
+    let events = evaluate(
         &mut repl,
         r#"
         (let trace before)
@@ -602,7 +585,7 @@ fn let_rejects_duplicate_bindings_before_evaluating_the_rhs() {
     assert!(diagnostics(&events)[0].contains("already bound in this scope"));
     assert!(values(&events).is_empty(), "{events:?}");
     assert_eq!(
-        values(&execute(&mut repl, "(list $trace $value)")),
+        values(&evaluate(&mut repl, "(list $trace $value)")),
         [r#"("before" "original")"#]
     );
 }
@@ -629,7 +612,7 @@ fn nested_list_scopes_allow_shadowing_without_leaking_bindings() {
 #[test]
 fn set_rejects_undefined_names_before_evaluating_the_rhs() {
     let mut repl = Repl::new();
-    let events = execute(
+    let events = evaluate(
         &mut repl,
         r#"
         (let trace before)
@@ -639,7 +622,7 @@ fn set_rejects_undefined_names_before_evaluating_the_rhs() {
     assert_eq!(diagnostics(&events).len(), 1, "{events:?}");
     assert!(diagnostics(&events)[0].contains("cannot set undefined variable missing"));
     assert!(values(&events).is_empty(), "{events:?}");
-    assert_eq!(values(&execute(&mut repl, "(get trace)")), [r#""before""#]);
+    assert_eq!(values(&evaluate(&mut repl, "(get trace)")), [r#""before""#]);
 }
 
 #[test]
@@ -748,16 +731,16 @@ fn exception_values_and_finally_preserve_function_returns() {
 #[test]
 fn malformed_try_is_validated_before_any_body_side_effect() {
     let mut repl = Repl::new();
-    execute(&mut repl, "(let count #0)");
+    evaluate(&mut repl, "(let count #0)");
     for source in [
         "(try (set count #1) (catch e #2) (catch e #3))",
         "(try (set count #1) (finally #2) (catch e #3))",
         "(try (set count #1) (finally #2) #3)",
         "(try (set count #1))",
     ] {
-        let events = execute(&mut repl, source);
+        let events = evaluate(&mut repl, source);
         assert!(!diagnostics(&events).is_empty(), "{source}");
-        assert_eq!(values(&execute(&mut repl, "(+ $count)")), ["#0"]);
+        assert_eq!(values(&evaluate(&mut repl, "(+ $count)")), ["#0"]);
     }
 }
 

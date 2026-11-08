@@ -152,10 +152,6 @@ impl ConsoleBackend for TerminalConsole {
     fn resume(&mut self) -> io::Result<()> {
         TerminalConsole::resume(self)
     }
-    fn value(&mut self, text: &str) -> io::Result<()> {
-        println!("{text}");
-        Ok(())
-    }
     fn diagnostic(&mut self, text: &str) -> io::Result<()> {
         eprintln!("{text}");
         Ok(())

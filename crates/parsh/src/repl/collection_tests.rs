@@ -1,15 +1,5 @@
 use super::*;
 
-fn values(events: &[Event]) -> Vec<&str> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::Value(value) => Some(value.as_str()),
-            _ => None,
-        })
-        .collect()
-}
-
 fn diagnostics(events: &[Event]) -> Vec<&str> {
     events
         .iter()
@@ -22,7 +12,7 @@ fn diagnostics(events: &[Event]) -> Vec<&str> {
 
 #[test]
 fn collections_match_constructors_and_preserve_types_and_comments() {
-    let events = execute(
+    let events = evaluate(
         &mut Repl::new(),
         r#"
         []{}
@@ -53,7 +43,7 @@ fn collections_match_constructors_and_preserve_types_and_comments() {
 
 #[test]
 fn collection_operands_evaluate_once_from_left_to_right() {
-    let events = execute(
+    let events = evaluate(
         &mut Repl::new(),
         r#"
         (let trace (str))
@@ -90,8 +80,8 @@ fn collection_errors_preserve_source_positions_and_skip_invalid_values() {
         ("[甲 $missing]", 4, "undefined variable $missing"),
     ] {
         let mut repl = Repl::new();
-        execute(&mut repl, "(let trace saved)");
-        let events = execute(&mut repl, source);
+        evaluate(&mut repl, "(let trace saved)");
+        let events = evaluate(&mut repl, source);
         let errors = diagnostics(&events);
         assert_eq!(errors.len(), 1, "{events:?}");
         assert!(
@@ -99,18 +89,20 @@ fn collection_errors_preserve_source_positions_and_skip_invalid_values() {
             "{errors:?}"
         );
         assert!(errors[0].contains(message), "{errors:?}");
-        assert_eq!(values(&execute(&mut repl, "(get trace)")), [r#""saved""#]);
+        assert_eq!(values(&evaluate(&mut repl, "(get trace)")), [r#""saved""#]);
     }
 }
 
 #[test]
-fn typed_and_pasted_collections_submit_with_the_matching_closer_and_keep_history() {
+fn typed_and_pasted_collections_stay_inside_calls_and_keep_history() {
     for (source, accepted, expected) in [
-        ("[a b", "[a b]", r#"("a" "b")"#),
-        ("[a b]", "[a b]", r#"("a" "b")"#),
-        ("{key value", "{key value}", r#"(map "key" "value")"#),
-        ("{key value}", "{key value}", r#"(map "key" "value")"#),
         ("list [a b]", "(list [a b])", r#"(("a" "b"))"#),
+        ("(list [a b])", "(list [a b])", r#"(("a" "b"))"#),
+        (
+            "list {key value}",
+            "(list {key value})",
+            r#"((map "key" "value"))"#,
+        ),
     ] {
         for pasted in [false, true] {
             let mut repl = Repl::new();
@@ -121,61 +113,59 @@ fn typed_and_pasted_collections_submit_with_the_matching_closer_and_keep_history
                     repl.input(Key::Character(ch));
                 }
             }
-            let events = repl.input(Key::Enter);
-            assert!(diagnostics(&events).is_empty(), "{events:?}");
-            assert_eq!(values(&events), [expected], "{source}");
+            assert_eq!(enter_value(&mut repl), expected);
             assert_eq!(repl.session.history.entries, [accepted]);
             repl.input(Key::Previous);
             assert_eq!(repl.session.input.source(), accepted);
             assert_eq!(repl.session.input.cursor, accepted.len() - 1);
-            assert_eq!(values(&repl.input(Key::Enter)), [expected]);
+            assert_eq!(enter_value(&mut repl), expected);
         }
     }
 }
 
 #[test]
 fn collection_hints_and_incomplete_batches_follow_nested_delimiters() {
-    for (source, close) in [("[a", ']'), ("{key value", '}'), ("[] {key [a", ']')] {
+    for (source, close) in [
+        ("list [a", ']'),
+        ("list {key value", '}'),
+        ("list [] {key [a", ']'),
+    ] {
         let mut repl = Repl::new();
         repl.paste(source);
         let view = view_layout(&repl.session.input, None, "$ ", 80, 24);
         assert_eq!(view.dimmed_cells.last().unwrap().character, close);
-        assert_eq!(repl.session.input.source(), source);
+        assert_eq!(repl.session.input.source(), format!("({source}"));
     }
     let mut repl = Repl::new();
-    repl.paste("[] {key [a");
+    repl.paste("list [] {key [a");
     let events = repl.input(Key::Enter);
-    assert!(values(&events).is_empty());
     assert!(diagnostics(&events).is_empty());
+    assert_eq!(previous(&mut repl), Value::Nil);
     assert!(repl.session.history.entries.is_empty());
-    assert_eq!(repl.session.input.source(), "[] {key [a\n");
-    repl.paste("]}");
-    assert_eq!(
-        values(&repl.input(Key::Enter)),
-        ["()", r#"(map "key" ("a"))"#]
-    );
+    assert_eq!(repl.session.input.source(), "(list [] {key [a\n");
+    repl.paste("]})");
+    assert_eq!(enter_value(&mut repl), r#"(() (map "key" ("a")))"#);
 
     repl.paste("(let skipped wrong) [a}");
     let events = repl.input(Key::Enter);
     assert!(diagnostics(&events)[0].contains("expected ']'"));
     assert_eq!(repl.session.input.body, "(let skipped wrong) [a}");
     repl.input(Key::ClearInput);
-    assert!(diagnostics(&execute(&mut repl, "(get skipped)"))[0].contains("undefined variable"));
+    assert!(diagnostics(&evaluate(&mut repl, "(get skipped)"))[0].contains("undefined variable"));
 }
 
 #[test]
-fn yanking_collections_into_a_fresh_prompt_preserves_explicit_source() {
+fn yanking_explicit_calls_with_collections_preserves_source() {
     for (source, expected) in [
-        ("[a]", r#"("a")"#),
-        ("{key value}", r#"(map "key" "value")"#),
+        ("(do [a])", r#"("a")"#),
+        ("(do {key value})", r#"(map "key" "value")"#),
     ] {
         let mut repl = Repl::new();
         repl.paste(source);
         repl.input(Key::KillStart);
         repl.input(Key::Interrupt);
-        let events = repl.input(Key::Yank);
-        assert!(values(&events).is_empty());
+        repl.input(Key::Yank);
         assert_eq!(repl.session.input.source(), source);
-        assert_eq!(values(&repl.input(Key::Enter)), [expected]);
+        assert_eq!(enter_value(&mut repl), expected);
     }
 }

@@ -29,13 +29,13 @@ have no literal meaning in value positions. Explicit literals such as `#123`,
 `int`, `float`, and `bool` convert runtime values explicitly:
 
 ```parsh
-(eq 001 1)
-(= #001 #1)
+(dump (eq 001 1))
+(dump (= #001 #1))
 (let mode fast)
-(if (eq $mode fast) (echo fast))
+(dump (if (eq $mode fast) (echo fast)))
 ```
 
-A condition must produce a boolean or a command status. Text is never
+A condition must produce a boolean or a `CallResult`. Text is never
 implicitly truthy.
 
 ## No implicit conversions
@@ -46,7 +46,7 @@ arguments. Globbing is a call, not a syntax rule:
 ```parsh
 (let files (list "a file.rs" "b.rs"))
 (printf "<%s>\n" $files)
-(for file (glob "*.rs") (echo $file))
+(dump (for file (glob "*.rs") (echo $file)))
 ```
 
 The point is that what a script says is what it runs: no word splitting, no
@@ -59,11 +59,11 @@ a program. External programs start directly: the expression is not handed to
 another shell to parse again, so there is no second round of quoting and no
 injection layer.
 
-Command results are values. A command used as a value captures stdout as UTF-8
-text with trailing LF characters removed. Binary output uses redirection, pipelines,
-or explicit raw-byte capture, and the exit status is a `status` value. A nonzero status stops the
-current batch, but conditions and explicit capture may inspect it. Complete results retain exit and signal information, and exceptions provide recovery.
-See [commands and composition](/parsh/en/docs/commands/).
+Commands always return `CallResult` and write stdout/stderr to their current
+destinations without implicit buffering. Capture explicitly with `capture/stdout`,
+`capture/stderr`, or `capture-call`. Ordinary failures stop the current batch;
+conditions can inspect results, and exceptions provide recovery. Results retain
+exit, signal, and pipeline-stage information.
 
 ## Value semantics and lexical scope
 

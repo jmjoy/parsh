@@ -10,7 +10,7 @@ export type TerminalEvent =
   | { type: "commit" }
   | { type: "clear-screen" }
   | { type: "completions"; lines: string[] }
-  | { type: "value" | "diagnostic"; text: string }
+  | { type: "diagnostic"; text: string }
   | { type: "exit"; code: number };
 
 export type WorkerRequest =

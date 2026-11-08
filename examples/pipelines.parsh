@@ -8,13 +8,16 @@
    (sort)
    (uniq -c))
 
-(; A pipeline used as a value captures stdout and keeps it as one argument. )
+(; Explicitly capture pipeline stdout and keep it as one argument. )
 (let unique
-  (| (printf "%s\n" $fruits)
-     (sort)
-     (uniq)))
+  (capture/stdout-trim (fn ()
+    (| (printf "%s\n" $fruits)
+       (sort)
+       (uniq)))))
 (printf "captured as one argument:\n<%s>\n" $unique)
 
 (; Convert the numeric text produced by an external command before arithmetic. )
-(let lines (int (| (printf "%s\n" $fruits) (wc -l))))
+(let lines
+  (int (capture/stdout (fn ()
+    (| (printf "%s\n" $fruits) (wc -l))))))
 (echo "lines=$lines double=$(* $lines #2)")

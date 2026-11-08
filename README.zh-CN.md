@@ -20,15 +20,15 @@ parsh（**parenthesis shell**）是一个交互命令与脚本共用同一种小
 
 ```parsh
 (let name world)
-(str "hello, " $name)
+(dump (str "hello, " $name))
 
 (defn greet (who)
   (str "hello, " $who))
-(greet parsh)
+(dump (greet parsh))
 ```
 
-交互环境会分别显示 `"hello, world"` 和 `"hello, parsh"`。
-脚本使用相同语法，通过 `echo`、`printf` 或 `dump` 显式输出。
+交互环境与脚本都通过 `echo`、`printf` 或 `dump` 显式输出，不会自动打印返回值。
+上面两次 `dump` 分别显示 `"hello, world"` 和 `"hello, parsh"`。
 
 ## 参数，保持完整
 
@@ -37,7 +37,7 @@ parsh（**parenthesis shell**）是一个交互命令与脚本共用同一种小
 
 ```parsh
 (let files (list "a file.rs" "b.rs"))
-(list $files)
+(dump (list $files))
 ```
 
 ## 真实命令，结构化组合
@@ -56,7 +56,7 @@ parsh（**parenthesis shell**）是一个交互命令与脚本共用同一种小
 少一层需要猜的引号，生成的脚本读起来就是它执行的样子：
 
 ```parsh
-(let count (int (| (ls) (wc -l))))
+(let count (int (capture/stdout-trim (fn () (| (ls) (wc -l))))))
 (echo "entries: $count; doubled: $(* $count #2)")
 ```
 

@@ -41,10 +41,7 @@ fn typed_pairs_are_source_and_closers_only_move() {
     typed(&mut repl, "(str hello");
     assert_eq!(state(&repl), "(str hello|)");
     assert!(repl.session.input.explicit);
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value("\"hello\"".into()))
-    );
+    assert_eq!(enter_value(&mut repl), "\"hello\"");
 }
 
 #[test]
@@ -65,10 +62,7 @@ fn quotes_promote_only_after_three_consecutive_typed_quotes() {
             state(&repl),
             format!("str {0}hello\nworld{0}|", quote.to_string().repeat(3))
         );
-        assert!(
-            repl.input(Key::Enter)
-                .contains(&Event::Value("\"hello\\nworld\"".into()))
-        );
+        assert_eq!(enter_value(&mut repl), "\"hello\\nworld\"");
         repl.input(Key::Undo);
         assert!(repl.session.input.body.is_empty());
     }
@@ -88,10 +82,7 @@ fn strings_keep_literal_brackets_and_edit_embedded_calls() {
     let mut repl = Repl::new();
     typed(&mut repl, "str \"[({ $ ( raw) $(str hi)\"");
     assert_eq!(state(&repl), "str \"[({ $ ( raw) $(str hi)\"|");
-    assert!(
-        repl.input(Key::Enter)
-            .contains(&Event::Value("\"[({ \\$ ( raw) hi\"".into()))
-    );
+    assert_eq!(enter_value(&mut repl), "\"[({ \\$ ( raw) hi\"");
     let mut repl = at("str \"a|b\"");
     typed(&mut repl, "\"");
     assert_eq!(state(&repl), "str \"a\\\"|b\"");
@@ -171,16 +162,16 @@ fn implicit_root_and_interpolation_boundaries_are_protected() {
 }
 
 #[test]
-fn wrapping_a_direct_literal_keeps_its_new_parentheses_explicit() {
+fn wrapping_a_literal_preserves_the_implicit_root() {
     let mut repl = at("#tr|ue");
     assert!(!repl.session.input.explicit);
     repl.input(Key::WrapSexp);
     assert_eq!(state(&repl), "(#tr|ue)");
-    assert_eq!(repl.session.input.source(), "(#true)");
-    assert!(repl.session.input.explicit);
+    assert_eq!(repl.session.input.source(), "((#true)");
+    assert!(!repl.session.input.explicit);
     repl.input(Key::Undo);
     assert_eq!(state(&repl), "#tr|ue");
-    assert_eq!(repl.session.input.source(), "#true");
+    assert_eq!(repl.session.input.source(), "(#true");
     assert!(!repl.session.input.explicit);
 }
 

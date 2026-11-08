@@ -1,15 +1,5 @@
 use super::*;
 
-fn values(events: &[Event]) -> Vec<&str> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::Value(value) => Some(value.as_str()),
-            _ => None,
-        })
-        .collect()
-}
-
 fn diagnostics(events: &[Event]) -> Vec<&str> {
     events
         .iter()
@@ -31,13 +21,13 @@ fn outputs(events: &[Event]) -> String {
 }
 
 fn assert_values(source: &str, expected: &[&str]) {
-    let events = execute(&mut Repl::new(), source);
+    let events = evaluate(&mut Repl::new(), source);
     assert!(diagnostics(&events).is_empty(), "{events:?}");
     assert_eq!(values(&events), expected, "{source}");
 }
 
 fn assert_diagnostic(source: &str, expected: &str) {
-    let events = execute(&mut Repl::new(), source);
+    let events = evaluate(&mut Repl::new(), source);
     assert!(
         diagnostics(&events)
             .iter()
@@ -174,7 +164,7 @@ fn struct_calls_are_validated() {
 
 #[test]
 fn type_describes_struct_members_and_macros() {
-    let events = execute(
+    let events = evaluate(
         &mut Repl::new(),
         r#"
         (defstruct Point x y)
@@ -201,7 +191,7 @@ fn type_describes_struct_members_and_macros() {
 #[test]
 fn completion_offers_struct_members_and_macros() {
     let mut repl = Repl::new();
-    let events = execute(
+    let events = evaluate(
         &mut repl,
         "(defstruct Point x y) (defmacro unless (condition body) `(str x))",
     );

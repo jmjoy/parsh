@@ -42,7 +42,6 @@ fn dump_prints_any_value_using_display_and_returns_nil() {
 <bytes 2>\n\
 <function anonymous>\n"
     );
-    assert!(!events.iter().any(|event| matches!(event, Event::Value(_))));
 }
 
 #[test]
@@ -51,12 +50,12 @@ fn dump_can_be_captured() {
         &mut Repl::new(),
         r#"
         (let result (capture-call dump (map key value)))
-        (stdout-text $result)
+        (dump (stdout-text $result))
         "#,
     );
     assert!(diagnostics(&events).is_empty(), "{events:?}");
-    assert!(events.iter().any(|event| matches!(
-        event,
-        Event::Value(value) if value == "\"(map \\\"key\\\" \\\"value\\\")\\n\""
-    )));
+    assert_eq!(
+        outputs(&events),
+        concat!(r#""(map \"key\" \"value\")\n""#, "\n")
+    );
 }
