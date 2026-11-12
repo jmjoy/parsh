@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 repository = "https://github.com/jmjoy/parsh"
-license = "MulanPSL-2.0"
+license = "MulanPSL-2.0 OR Apache-2.0 OR MIT"
 description = "Browser bridge for the parsh playground"
 
 [lib]

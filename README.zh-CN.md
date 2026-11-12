@@ -67,5 +67,12 @@ parsh（**parenthesis shell**）是一个交互命令与脚本共用同一种小
 
 ## 许可证
 
-本项目采用《木兰宽松许可证，第 2 版》（Mulan Permissive Software License, Version 2）。
-详情见 [LICENSE](LICENSE)。
+本项目提供以下三种许可证，可任选其一：
+
+- [木兰宽松许可证，第 2 版](LICENSE-MULAN)（`MulanPSL-2.0`）
+- [Apache 许可证，第 2.0 版](LICENSE-APACHE)（`Apache-2.0`）
+- [MIT 许可证](LICENSE-MIT)（`MIT`）
+
+SPDX 表达式：`MulanPSL-2.0 OR Apache-2.0 OR MIT`。
+
+第三方代码保留原有许可条款，其中引入的 [uutils pwd](crates/parsh-coreutils/vendor/pwd/) 使用 MIT 许可证。

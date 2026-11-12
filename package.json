@@ -1,6 +1,7 @@
 {
   "name": "parsh",
   "private": true,
+  "license": "MulanPSL-2.0 OR Apache-2.0 OR MIT",
   "packageManager": "pnpm@12.4.2",
   "engines": {
     "node": ">=24"

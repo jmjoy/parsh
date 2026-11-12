@@ -24,3 +24,13 @@ pnpm wasm:build
 cargo clippy -p parsh-wasm --target wasm32-unknown-unknown -- -D warnings
 cargo clippy -p parsh-coreutils --target wasm32-wasip1 -- -D warnings
 ```
+
+## License
+
+Licensed under your choice of:
+
+- [Mulan Permissive Software License, Version 2](LICENSE-MULAN) (`MulanPSL-2.0`)
+- [Apache License, Version 2.0](LICENSE-APACHE) (`Apache-2.0`)
+- [MIT License](LICENSE-MIT) (`MIT`)
+
+SPDX expression: `MulanPSL-2.0 OR Apache-2.0 OR MIT`.

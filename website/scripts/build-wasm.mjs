@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
-import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const output = resolve(root, "website/public/wasm");
@@ -35,6 +35,17 @@ if (result.error) {
   console.error(result.error.message);
 }
 if (result.status !== 0) process.exit(result.status ?? 1);
+// Remove the old license filename when rebuilding an existing output directory.
+rmSync(resolve(output, "LICENSE"), { force: true });
+// Some wasm-pack versions omit extra license files from the npm package list.
+const licenses = ["LICENSE-MULAN", "LICENSE-APACHE", "LICENSE-MIT"];
+for (const name of licenses) {
+  copyFileSync(resolve(root, name), resolve(output, name));
+}
+const packagePath = resolve(output, "package.json");
+const packageData = JSON.parse(readFileSync(packagePath, "utf8"));
+packageData.files = Array.from(new Set([...packageData.files, ...licenses]));
+writeFileSync(packagePath, `${JSON.stringify(packageData, null, 2)}\n`);
 const runner = spawnSync(
   "cargo",
   ["build", "--locked", "--release", "-p", "parsh-coreutils", "--target", "wasm32-wasip1"],

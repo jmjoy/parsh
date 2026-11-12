@@ -40,4 +40,14 @@ Shell 脚本常常把逻辑交给 `awk`、`sed` 或内联的解释器，每多�
 
 parsh 目前是早期实现，版本为 0.1.0。原生版本支持 Linux 前台任务、交互程序、管道与隔离的后台任务。交互式 Tab 支持命令、路径和变量补全。引入库和持久化配置属于后续工作。浏览器终端提供语言核心、29 条 coreutils 命令、临时文件和命令组合。
 
-使用[木兰宽松许可证，第 2 版](https://github.com/jmjoy/parsh/blob/master/LICENSE)。
+## 开源协议
+
+本项目提供以下三种许可证，可任选其一：
+
+- [木兰宽松许可证，第 2 版](https://github.com/jmjoy/parsh/blob/master/LICENSE-MULAN)（`MulanPSL-2.0`）
+- [Apache 许可证，第 2.0 版](https://github.com/jmjoy/parsh/blob/master/LICENSE-APACHE)（`Apache-2.0`）
+- [MIT 许可证](https://github.com/jmjoy/parsh/blob/master/LICENSE-MIT)（`MIT`）
+
+SPDX 表达式：`MulanPSL-2.0 OR Apache-2.0 OR MIT`。
+
+第三方代码保留原有许可条款，其中引入的 [uutils pwd](https://github.com/jmjoy/parsh/tree/master/crates/parsh-coreutils/vendor/pwd/) 使用 MIT 许可证。

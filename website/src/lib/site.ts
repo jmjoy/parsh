@@ -14,7 +14,7 @@ export const words = {
     theme: "Toggle color theme",
     skip: "Skip to content",
     footer: "A shell built around S-expressions.",
-    license: "MulanPSL 2.0",
+    license: "Licenses",
     source: "Source code",
   },
   "zh-cn": {
@@ -25,7 +25,7 @@ export const words = {
     theme: "切换明暗主题",
     skip: "跳至正文",
     footer: "一个围绕 S 表达式构建的 Shell。",
-    license: "木兰宽松许可证，第 2 版",
+    license: "开源协议",
     source: "源代码",
   },
 } satisfies Record<Locale, Record<string, string>>;

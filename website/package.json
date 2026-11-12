@@ -1,6 +1,7 @@
 {
   "name": "parsh-website",
   "private": true,
+  "license": "MulanPSL-2.0 OR Apache-2.0 OR MIT",
   "version": "0.1.0",
   "type": "module",
   "engines": {

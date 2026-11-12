@@ -40,4 +40,14 @@ One grammar and one set of rules to generate against and to check: that is what 
 
 parsh is an early implementation, version 0.1.0. Native parsh supports Linux foreground jobs, interactive programs, pipelines, and isolated background tasks. Interactive Tab completion covers commands, paths, and variables. Library imports and persistent configuration remain future work. The browser playground offers the language core, 29 coreutils commands, temporary files, and command composition.
 
-Licensed under the [Mulan Permissive Software License, Version 2](https://github.com/jmjoy/parsh/blob/master/LICENSE).
+## License
+
+Licensed under your choice of:
+
+- [Mulan Permissive Software License, Version 2](https://github.com/jmjoy/parsh/blob/master/LICENSE-MULAN) (`MulanPSL-2.0`)
+- [Apache License, Version 2.0](https://github.com/jmjoy/parsh/blob/master/LICENSE-APACHE) (`Apache-2.0`)
+- [MIT License](https://github.com/jmjoy/parsh/blob/master/LICENSE-MIT) (`MIT`)
+
+SPDX expression: `MulanPSL-2.0 OR Apache-2.0 OR MIT`.
+
+Third-party code retains its original license terms. The vendored [uutils pwd](https://github.com/jmjoy/parsh/tree/master/crates/parsh-coreutils/vendor/pwd/) is licensed under MIT.

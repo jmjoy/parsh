@@ -38,7 +38,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       <slot />
       <footer class="site-footer">
         <div><a class="footer-brand" href={url(locale)}>( parsh )</a><p>{t.footer}</p></div>
-        <div class="footer-links"><a href={url(locale, 'docs/')}>{t.docs}</a><a href="https://github.com/jmjoy/parsh">{t.source}</a><a href="https://github.com/jmjoy/parsh/blob/master/LICENSE">{t.license}</a></div>
+        <div class="footer-links"><a href={url(locale, 'docs/')}>{t.docs}</a><a href="https://github.com/jmjoy/parsh">{t.source}</a><a href="https://github.com/jmjoy/parsh#license">{t.license}</a></div>
       </footer>
     </div>
   </body>

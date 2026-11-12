@@ -73,5 +73,12 @@ scripts organized by topic.
 
 ## License
 
-Licensed under the Mulan Permissive Software License, Version 2.
-See [LICENSE](LICENSE) for details.
+Licensed under your choice of:
+
+- [Mulan Permissive Software License, Version 2](LICENSE-MULAN) (`MulanPSL-2.0`)
+- [Apache License, Version 2.0](LICENSE-APACHE) (`Apache-2.0`)
+- [MIT License](LICENSE-MIT) (`MIT`)
+
+SPDX expression: `MulanPSL-2.0 OR Apache-2.0 OR MIT`.
+
+Third-party code retains its original license terms. The vendored [uutils pwd](crates/parsh-coreutils/vendor/pwd/) is licensed under MIT.
