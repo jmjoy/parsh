@@ -445,7 +445,7 @@ impl Shell {
                 values[0],
                 Value::Function(_) | Value::Command(_)
             ))),
-            "capture-call" => {
+            "capture/result" => {
                 let callee = values.remove(0);
                 self.capture_call(expr, callee, &values, env, io, false)
             }

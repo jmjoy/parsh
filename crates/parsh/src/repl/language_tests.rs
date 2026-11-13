@@ -648,7 +648,7 @@ fn callable_names_and_explicit_command_references_are_first_class() {
         (apply + #1 [#2 #3])
         (apply "str/join" [[a b] ","])
         (apply "map/get" [{name parsh} name])
-        (let r (capture-call + #1 #2))
+        (let r (capture/result + #1 #2))
         (list (CallResult.value $r) (CallResult.termination $r)
               (bytes? (CallResult.stdout $r)) (stdout-text $r))
         "#
@@ -769,6 +769,6 @@ fn result_interpolation_and_background_capability_are_explicit() {
 
 #[test]
 fn higher_order_capture_calls_have_a_bounded_stack() {
-    let source = format!("({} + #1)", "capture-call ".repeat(256));
+    let source = format!("({} + #1)", "capture/result ".repeat(256));
     fails(&source, "capture nesting exceeds 32 levels");
 }

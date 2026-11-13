@@ -26,7 +26,7 @@ interactive:1:6: undefined variable $missing
 | `128 + signal` | 原生信号终止对应的兼容状态码 |
 
 外部程序也可以自行选择这些退出码。完整结果可以区分正常退出与信号终止：
-对 `$?`、`capture-call` 或 `wait` 返回的结果使用 `exit-code` 和 `signal` 查询。
+对 `$?`、`capture/result` 或 `wait` 返回的结果使用 `exit-code` 和 `signal` 查询。
 `$?` 是 `CallResult`，不是数值状态码。
 
 `exit` 接受 0 到 255 的退出码，默认为 0。即使在嵌套表达式或函数内也会退出会话，
@@ -47,7 +47,7 @@ interactive:1:6: undefined variable $missing
 
 ## 捕获错误
 
-`try/catch/finally` 处理运行错误。`capture-call` 和 `wait` 把命令失败保留为可查询结果，
+`try/catch/finally` 处理运行错误。`capture/result` 和 `wait` 把命令失败保留为可查询结果，
 `check` 在结果失败时抛异常。捕获的 `Error` 暴露 `kind`、`message`、`code`、`offset`、`payload` 和 `result`：
 
 | kind | 常见原因 |

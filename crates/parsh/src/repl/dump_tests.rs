@@ -49,7 +49,7 @@ fn dump_can_be_captured() {
     let events = execute(
         &mut Repl::new(),
         r#"
-        (let result (capture-call dump (map key value)))
+        (let result (capture/result dump (map key value)))
         (dump (stdout-text $result))
         "#,
     );

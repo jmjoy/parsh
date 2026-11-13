@@ -98,11 +98,13 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "command?",
     "callable?",
     "bytes?",
-    "capture-call",
+    "capture/result",
     "capture/stdout",
     "capture/stderr",
     "capture/stdout-trim",
     "capture/stderr-trim",
+    "out",
+    "err",
     "spawn",
     "wait",
     "job-status",
@@ -272,7 +274,7 @@ fn arity(name: &str) -> (usize, usize) {
         "list" | "str" | "map" | "+" | "*" | "list/concat" => (0, usize::MAX),
         "-" | "/" | "min" | "max" | "list/append" => (1, usize::MAX),
         "apply" => (2, usize::MAX),
-        "capture-call"
+        "capture/result"
         | "capture/stdout"
         | "capture/stderr"
         | "capture/stdout-trim"
@@ -316,6 +318,11 @@ impl Shell {
         mode: Mode,
         io: &Io,
     ) -> EvalResult<Value> {
+        let name = match name {
+            "out" => "capture/stdout-trim",
+            "err" => "capture/stderr-trim",
+            _ => name,
+        };
         let (min, max) = arity(name);
         Self::arity_count(expr, args.len(), min, max)?;
         match name {
@@ -336,7 +343,7 @@ impl Shell {
             | "command?"
             | "callable?"
             | "bytes?"
-            | "capture-call"
+            | "capture/result"
             | "capture/stdout"
             | "capture/stderr"
             | "capture/stdout-trim"

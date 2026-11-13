@@ -56,11 +56,11 @@ description: "在浏览器中运行 parsh、coreutils 和命令管道。"
 | 外部命令 | 上述 coreutils 子集 | 会话可用的可执行程序 |
 | 文件 | 临时虚拟文件系统 | 本地文件系统 |
 | 管道 | 逐阶段缓冲 | 多阶段并发流式执行 |
-| 命令引用、`apply`、`capture-call`、`$?`、异常 | 支持 | 支持 |
+| 命令引用、`apply`、`capture/result`、`$?`、异常 | 支持 | 支持 |
 | 信号与后台任务 | 不支持 | 支持 |
 | `http/request`、`http/get`、`http/post` | 不支持 | 支持 |
 
-`capture-call` 保留原始字节；`capture/stdout` 和 `capture/stderr` 返回保留所有换行的 UTF-8 文本；`capture/stdout-trim` 和 `capture/stderr-trim` 裁剪首尾空白。
+`capture/result` 保留原始字节；`capture/stdout` 和 `capture/stderr` 返回保留所有换行的 UTF-8 文本；`capture/stdout-trim` 和 `capture/stderr-trim` 裁剪首尾空白。
 REPL 上次返回值 `$_` 与上次执行结果 `$?` 的更新规则不同，详见[变量与作用域](/parsh/zh-cn/docs/variables/)。
 
 [示例指南](/parsh/zh-cn/docs/examples/)标注了可在浏览器中执行的脚本；运行独立脚本前重置会话，避免重复的顶层绑定。

@@ -474,11 +474,13 @@ fn hash_literals_complete_without_becoming_quoted_paths() {
 #[test]
 fn invocation_helpers_and_special_result_complete_without_evaluation() {
     for source in [
-        "(capture-call ec",
+        "(capture/result ec",
         "(capture/stdout ec",
         "(capture/stderr ec",
         "(capture/stdout-trim ec",
         "(capture/stderr-trim ec",
+        "(out ec",
+        "(err ec",
         "(spawn ec",
         "(command ec",
         "(apply ec",

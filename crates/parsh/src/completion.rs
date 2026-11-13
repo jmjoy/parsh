@@ -120,11 +120,13 @@ impl Context {
                     frame.head.as_deref(),
                     Some(
                         "command"
-                            | "capture-call"
+                            | "capture/result"
                             | "capture/stdout"
                             | "capture/stderr"
                             | "capture/stdout-trim"
                             | "capture/stderr-trim"
+                            | "out"
+                            | "err"
                             | "spawn"
                             | "apply"
                     )

@@ -35,13 +35,14 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 需要文本时使用 `(capture/stdout pwd)` 或 `(capture/stderr callee args...)`。
 它们只捕获指定流，严格解码 UTF-8 并保留全部换行；另一流沿用当前输出目标。
 空捕获返回空文本，未捕获的流返回 nil。命令失败会抛错，错误附带捕获结果。
-需要裁剪首尾空白时，使用 `capture/stdout-trim` 或 `capture/stderr-trim`，分别等价于
+需要裁剪首尾空白时，使用 `out`（`capture/stdout-trim`）或 `err`（`capture/stderr-trim`）。
+短名是普通内置别名，也支持 `function` 和 `apply`。两者分别等价于
 `str/trim` 包裹对应的捕获方法。它们去掉首尾 Unicode 空白（空格、制表符和换行），
 保留中间内容；空输出和全空白输出返回空文本。`$?` 中的原始 bytes 不会被裁剪。
 目标流已重定向而无法捕获时，裁剪版本与原组合一样报 `expected text`。
 
 ```parsh
-(let here (capture/stdout-trim pwd))
+(let here (out pwd))
 (dump $here)
 ```
 
@@ -53,7 +54,9 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 | `(capture/stderr callee args...)` | 捕获 stderr，返回保留换行的 UTF-8 文本 |
 | `(capture/stdout-trim callee args...)` | 捕获 stdout，返回去掉首尾空白的 UTF-8 文本 |
 | `(capture/stderr-trim callee args...)` | 捕获 stderr，返回去掉首尾空白的 UTF-8 文本 |
-| `(capture-call callee args...)` | 实参直接排列，返回同步调用的完整 `CallResult` |
+| `(out callee args...)` | `capture/stdout-trim` 的短别名 |
+| `(err callee args...)` | `capture/stderr-trim` 的短别名 |
+| `(capture/result callee args...)` | 实参直接排列，返回同步调用的完整 `CallResult` |
 | `(spawn callee args...)` | 实参直接排列，返回原生 `Job` |
 
 传给捕获方法和 `spawn` 的列表仍是一个语言参数；调用外部命令时，才按通常规则展开一层 argv。
@@ -61,12 +64,12 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 
 ## 完整执行结果
 
-`capture-call` 的首参是被调用对象，后面直接铺平实参；它捕获 stdout/stderr 并返回 `CallResult`：
+`capture/result` 的首参是被调用对象，后面直接铺平实参；它捕获 stdout/stderr 并返回 `CallResult`：
 
 ```parsh
-(let result (capture-call printf "hello\n"))
+(let result (capture/result printf "hello\n"))
 (dump (list (stdout-text $result) (exit-code $result) (signal $result)))
-(let sum (capture-call + #2 #3))
+(let sum (capture/result + #2 #3))
 (dump (CallResult.value $sum))
 ```
 
@@ -102,12 +105,12 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 因此显式退出码 143 与 SIGTERM 终止不同。
 原生 Linux 的 core dump 信息保存在 `Signaled.core_dumped`。
 
-`capture-call` 将非零退出和信号终止作为数据返回，启动、实参和语言错误仍抛异常。
+`capture/result` 将非零退出和信号终止作为数据返回，启动、实参和语言错误仍抛异常。
 函数内部命令失败仍停止执行剩余函数体。`check` 在结果失败时抛出异常，成功时返回同一个结构体：
 
 ```parsh
 (try
-  (check (capture-call cat missing.txt))
+  (check (capture/result cat missing.txt))
   (catch err (echo "read failed: $(Error.message $err)")))
 ```
 
@@ -115,13 +118,13 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 未捕获的前台命令仍实时输出。管道阶段仍限外部命令；捕获或后台执行整个管道时使用函数包装：
 
 ```parsh
-(dump (capture-call (fn () (| (printf "b\na\n") (sort)))))
+(dump (capture/result (fn () (| (printf "b\na\n") (sort)))))
 ```
 
 原始捕获也接受二进制输出，不会自动解码：
 
 ```parsh
-(let binary (capture-call printf "\\377\\000\\101"))
+(let binary (capture/result printf "\\377\\000\\101"))
 (dump (bytes/hex-encode (CallResult.stdout $binary)))
 ```
 

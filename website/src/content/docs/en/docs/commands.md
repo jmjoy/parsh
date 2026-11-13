@@ -22,7 +22,7 @@ Use `type` to inspect command lookup without executing the command:
 (defn greet (name) (echo hello $name))
 (type greet)
 (type -a echo)
-(let kind (capture/stdout-trim type -t greet))
+(let kind (out type -t greet))
 (dump (if (type -t optional-tool) (optional-tool)))
 ```
 
@@ -41,7 +41,7 @@ commands are reported by the host's available command names; `-p` and `-P`
 return those names.
 
 ```parsh
-(echo (capture/stdout-trim pwd))
+(echo (out pwd))
 (| (find . -name "*.rs") (sort))
 (|> files.txt (| (find . -name "*.rs") (sort)))
 (|>> log.txt (echo another entry))
@@ -81,7 +81,7 @@ For example, write stdout to a fresh log and append stderr to another:
 Ordinary commands write to their current destinations and return `CallResult` in
 all positions, including assignments, arguments, and interpolation. Their stdout
 and stderr fields are `#nil` by default. Use `capture/stdout` or `capture/stderr`
-for text, or `capture-call` for both raw byte streams. Text capture preserves all
+for text, or `capture/result` for both raw byte streams. Text capture preserves all
 newlines. Explicit file redirection takes precedence over capture; pipelines and
 files preserve binary bytes.
 

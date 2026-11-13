@@ -61,7 +61,7 @@ injection layer.
 
 Commands always return `CallResult` and write stdout/stderr to their current
 destinations without implicit buffering. Capture explicitly with `capture/stdout`,
-`capture/stderr`, or `capture-call`. Ordinary failures stop the current batch;
+`capture/stderr`, or `capture/result`. Ordinary failures stop the current batch;
 conditions can inspect results, and exceptions provide recovery. Results retain
 exit, signal, and pipeline-stage information.
 

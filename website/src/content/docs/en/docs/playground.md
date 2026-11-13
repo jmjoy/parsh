@@ -57,11 +57,11 @@ that cannot implicitly become text, including maps and structs.
 | External commands | Listed coreutils subset | Executable programs available to the session |
 | Files | Temporary virtual filesystem | Local filesystem |
 | Pipelines | Buffered stages | Concurrent streaming stages |
-| Command references, `apply`, `capture-call`, `$?`, exceptions | Supported | Supported |
+| Command references, `apply`, `capture/result`, `$?`, exceptions | Supported | Supported |
 | Signals and background tasks | Unavailable | Supported |
 | `http/request`, `http/get`, `http/post` | Unavailable | Supported |
 
-`capture-call` preserves raw bytes; `capture/stdout` and `capture/stderr` return
+`capture/result` preserves raw bytes; `capture/stdout` and `capture/stderr` return
 UTF-8 text with all newlines preserved. Their `capture/stdout-trim` and
 `capture/stderr-trim` variants remove surrounding whitespace. The previous REPL value `$_`
 and previous execution result `$?` have different update rules; see

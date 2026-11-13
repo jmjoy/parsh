@@ -2087,7 +2087,7 @@ mod host_tests {
         let events = execute(
             &mut repl,
             r#"
-            (try (capture-call partial)
+            (try (capture/result partial)
               (catch e (dump (list (Error.kind $e) (stdout-text (Error.result $e))
                              (nil? (CallResult.termination (Error.result $e)))))))
         "#,
@@ -2227,22 +2227,36 @@ mod host_tests {
 
     #[test]
     fn trimmed_capture_helpers_preserve_raw_results_and_support_function_calls() {
-        for (stream, other, expected, raw) in [
-            ("stdout", "stderr", "out", r#""out\n\n""#),
-            ("stderr", "stdout", "err", r#""err\n""#),
+        for (name, stream, other, expected, raw) in [
+            (
+                "capture/stdout-trim",
+                "stdout",
+                "stderr",
+                "out",
+                r#""out\n\n""#,
+            ),
+            (
+                "capture/stderr-trim",
+                "stderr",
+                "stdout",
+                "err",
+                r#""err\n""#,
+            ),
+            ("out", "stdout", "stderr", "out", r#""out\n\n""#),
+            ("err", "stderr", "stdout", "err", r#""err\n""#),
         ] {
             let mut repl = Repl::with_host(TestHost).unwrap();
             let result = evaluate(
                 &mut repl,
                 &format!(
                     r#"
-                (let trimmed (capture/{stream}-trim both))
+                (let trimmed ({name} both))
                 (let saved $?)
                 (list $trimmed ({stream}-text $saved)
                     (nil? (CallResult.{other} $saved))
                     (eq $trimmed (str/trim (capture/{stream} both)))
-                    ((function capture/{stream}-trim) (command both))
-                    (apply "capture/{stream}-trim" [(fn () (both))]))
+                    ((function {name}) (command both))
+                    (apply "{name}" [(fn () (both))]))
             "#
                 ),
             );
@@ -2258,10 +2272,7 @@ mod host_tests {
                     "(\"{expected}\" {raw} #true #true \"{expected}\" \"{expected}\")"
                 )]
             );
-            for source in [
-                format!("(capture/{stream}-trim false)"),
-                format!("(capture/{stream}-trim)"),
-            ] {
+            for source in [format!("({name} false)"), format!("({name})")] {
                 assert!(
                     execute(&mut repl, &source)
                         .iter()

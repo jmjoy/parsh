@@ -27,7 +27,7 @@ even if the last stage succeeds, including upstream SIGPIPE. Every stage is reap
 
 External programs can also choose these exit codes. Complete results distinguish
 normal exits from signals: use `exit-code` and `signal` on `$?` or a result returned
-by `capture-call` or `wait`. `$?` is a `CallResult`, not a numeric status.
+by `capture/result` or `wait`. `$?` is a `CallResult`, not a numeric status.
 
 `exit` accepts a code from 0 to 255, defaulting to 0. It exits the session from
 nested expressions or functions after unwinding `finally` clauses; `catch` does
@@ -52,7 +52,7 @@ session exits. Commands absent from the browser produce a capability diagnostic.
 
 ## Catching errors
 
-`try/catch/finally` handles runtime errors. `capture-call` and `wait` return
+`try/catch/finally` handles runtime errors. `capture/result` and `wait` return
 inspectable results for command failure; `check` throws if the result failed.
 The caught `Error` exposes `kind`, `message`, `code`, `offset`, `payload`, and `result`:
 

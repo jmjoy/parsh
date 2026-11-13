@@ -726,19 +726,26 @@ fn narrow_candidate_lists_wrap_safely_and_restore_the_current_input() {
 }
 
 #[test]
-fn trimmed_capture_helpers_and_their_callees_complete_without_running() {
-    for stream in ["stdout", "stderr"] {
+fn capture_helpers_and_their_callees_complete_without_running() {
+    for (prefix, name) in [
+        ("capture/re", "capture/result"),
+        ("capture/stdout-tr", "capture/stdout-trim"),
+        ("capture/stderr-tr", "capture/stderr-trim"),
+        ("ou", "out"),
+        ("er", "err"),
+    ] {
         let host = TestHost::default();
         let mut repl = Repl::with_host(host.clone()).unwrap();
-        type_text(&mut repl, &format!("capture/{stream}-tr"));
+        type_text(&mut repl, prefix);
         repl.input(Key::Tab);
-        assert_eq!(repl.session.input.body, format!("capture/{stream}-trim "));
+        assert_eq!(repl.session.input.body, format!("{name} "));
         type_text(&mut repl, "host-alph");
         repl.input(Key::Tab);
-        assert_eq!(
-            repl.session.input.body,
-            format!("capture/{stream}-trim host-alpha ")
-        );
+        assert_eq!(repl.session.input.body, format!("{name} host-alpha "));
+        repl.input(Key::ClearInput);
+        type_text(&mut repl, &format!("function {prefix}"));
+        repl.input(Key::Tab);
+        assert_eq!(repl.session.input.body, format!("function {name} "));
         assert_eq!(host.runs.get(), 0);
     }
 }

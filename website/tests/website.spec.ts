@@ -1113,15 +1113,15 @@ test("numeric operations and indices require typed values at text boundaries", a
 test("complete execution results, special variable, bytes, and exceptions share WASM semantics", async ({ page }) => {
   await playground(page);
   await execute(page, String.raw`
-    (let result (capture-call echo hello world))
+    (let result (capture/result echo hello world))
     (let saved $?)
     (dump (list (stdout-text $result) (exit-code $result) (signal $result)
           (bytes? (CallResult.stdout $result)) (eq $result $saved)))
-    (let failed (capture-call cat missing-result-file))
+    (let failed (capture/result cat missing-result-file))
     (dump (list (exit-code $failed) (str/contains (stderr-text $failed) missing-result-file)))
     (let sorter (command sort))
-    (dump (stdout-text (capture-call (fn () (| (printf "b\na\n") ($sorter))))))
-    (let binary (capture-call printf "\\377"))
+    (dump (stdout-text (capture/result (fn () (| (printf "b\na\n") ($sorter))))))
+    (let binary (capture/result printf "\\377"))
     (dump (list (typeof (CallResult.stdout $binary)) (exit-code $binary)))
     (let trace "")
     (dump (try (check $failed)
@@ -1140,7 +1140,7 @@ test("complete execution results, special variable, bytes, and exceptions share 
   await expect(terminal(page)).toContainText('"invalid-utf8"');
   await expect(terminal(page)).toContainText('"payload"');
   await expect(terminal(page)).toContainText('"code=0"');
-  await execute(page, "(dump (try (capture-call seq 1 2000000) (catch err (list (Error.kind $err) (bytes? (CallResult.stdout (Error.result $err)))))))");
+  await execute(page, "(dump (try (capture/result seq 1 2000000) (catch err (list (Error.kind $err) (bytes? (CallResult.stdout (Error.result $err)))))))");
   await expect(terminal(page)).toContainText('("output-limit" #true)');
   await execute(page, "(dump (spawn echo unavailable-background))");
   await expect(terminal(page)).toContainText('requires native background-task support');

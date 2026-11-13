@@ -46,7 +46,8 @@ newline; the other stream keeps its current destination. Empty capture returns
 empty text, while an uncaptured stream returns nil. Command failures throw with
 the captured result attached.
 
-Use `capture/stdout-trim` or `capture/stderr-trim` to remove surrounding whitespace.
+Use `out` (`capture/stdout-trim`) or `err` (`capture/stderr-trim`) to remove surrounding whitespace.
+The short names are ordinary builtin aliases and also work through `function` and `apply`.
 Each is equivalent to wrapping the corresponding capture helper in `str/trim`:
 it removes leading and trailing Unicode whitespace, including spaces, tabs, and
 newlines, and preserves everything in between. Empty or whitespace-only output
@@ -55,7 +56,7 @@ stream is redirected and cannot be captured, the trimmed helper reports
 `expected text`, just like the explicit composition.
 
 ```parsh
-(let here (capture/stdout-trim pwd))
+(let here (out pwd))
 (dump $here)
 ```
 
@@ -67,7 +68,9 @@ stream is redirected and cannot be captured, the trimmed helper reports
 | `(capture/stderr callee args...)` | Captures stderr as UTF-8 text, preserving newlines |
 | `(capture/stdout-trim callee args...)` | Captures stdout as UTF-8 text with surrounding whitespace removed |
 | `(capture/stderr-trim callee args...)` | Captures stderr as UTF-8 text with surrounding whitespace removed |
-| `(capture-call callee args...)` | Flat arguments; returns a complete synchronous `CallResult` |
+| `(out callee args...)` | Short alias for `capture/stdout-trim` |
+| `(err callee args...)` | Short alias for `capture/stderr-trim` |
+| `(capture/result callee args...)` | Flat arguments; returns a complete synchronous `CallResult` |
 | `(spawn callee args...)` | Flat arguments; returns a native `Job` |
 
 Lists passed to capture helpers and `spawn` remain one language argument; external
@@ -77,13 +80,13 @@ Wrap multiple expressions or a pipeline in `(fn () ...)` instead.
 
 ## Complete results
 
-`capture-call` takes the callee followed directly by its arguments and returns a
+`capture/result` takes the callee followed directly by its arguments and returns a
 `CallResult`. It captures stdout and stderr independently:
 
 ```parsh
-(let result (capture-call printf "hello\n"))
+(let result (capture/result printf "hello\n"))
 (dump (list (stdout-text $result) (exit-code $result) (signal $result)))
-(let sum (capture-call + #2 #3))
+(let sum (capture/result + #2 #3))
 (dump (CallResult.value $sum))
 ```
 
@@ -122,14 +125,14 @@ empty stream. Invalid UTF-8 raises an error carrying the original result.
 `signal` returns nil for normal exit or absent termination information. A program exiting with code 143 differs from one killed by SIGTERM. Core-dump information is retained
 in `Signaled.core_dumped` on native Linux.
 
-Nonzero exits and terminating signals are returned as data by `capture-call`.
+Nonzero exits and terminating signals are returned as data by `capture/result`.
 Startup, argument, and language errors still throw. A failing command inside a
 function stops that body; capture does not run the remaining expressions. Use
 `check` to throw on a failed result; successful checking returns the same structure:
 
 ```parsh
 (try
-  (check (capture-call cat missing.txt))
+  (check (capture/result cat missing.txt))
   (catch err (echo "read failed: $(Error.message $err)")))
 ```
 
@@ -139,13 +142,13 @@ result. Uncaptured foreground commands keep streaming. Pipelines still accept on
 external stages; wrap a pipeline in a function to capture or spawn it:
 
 ```parsh
-(dump (capture-call (fn () (| (printf "b\na\n") (sort)))))
+(dump (capture/result (fn () (| (printf "b\na\n") (sort)))))
 ```
 
 Raw capture also accepts binary output without decoding it:
 
 ```parsh
-(let binary (capture-call printf "\\377\\000\\101"))
+(let binary (capture/result printf "\\377\\000\\101"))
 (dump (bytes/hex-encode (CallResult.stdout $binary)))
 ```
 
