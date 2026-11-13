@@ -1024,6 +1024,23 @@ fn structs_and_macros_run_in_scripts() {
 }
 
 #[test]
+fn dot_reads_captured_bytes_and_nested_runtime_fields_in_scripts() {
+    let output = run(r#"
+        (let result (capture/result sh -c 'printf "\377"; printf error >&2; exit 7'))
+        (let saved $?)
+        (let stream stdout)
+        (dump (list (eq (. $result stdout) (CallResult.stdout $result))
+                    (bytes/hex-encode (. $result $stream))
+                    (bytes/to-text (. $result "stderr"))
+                    (. (. $result termination) code)
+                    (nil? (. $result value)) (eq $? $saved)))
+    "#);
+    success(&output);
+    assert_eq!(stdout(&output), "(#true \"ff\" \"error\" #7 #true #true)\n");
+    assert!(stderr(&output).is_empty());
+}
+
+#[test]
 fn struct_and_macro_failures_stop_scripts_with_language_status() {
     let output = run("(defstruct Point x) (Point 1 2)");
     assert_eq!(output.status.code(), Some(2));

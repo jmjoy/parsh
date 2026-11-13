@@ -5,9 +5,14 @@
 (defstruct Point x y)
 (let corner (Point #3 #4))
 (dump $corner)
-(printf "x=%s y=%s\n" (Point.x $corner) (Point.y $corner))
+(printf "x=%s y=%s\n" (. $corner x) (. $corner y))
 (if (Point? $corner)
     (echo "corner is a point"))
+
+(; Field names are ordinary text values; typed accessors remain available. )
+(let field x)
+(printf "dynamic x=%s; accessor x=%s\n" (. $corner $field) (Point.x $corner))
+(printf "apply y=%s\n" (apply (function .) [$corner y]))
 
 (; Values print in field order and compare by name and fields. )
 (if (eq (Point #1 #2) (Point #1 #2))
@@ -17,12 +22,12 @@
 (let original (Point #1 #2))
 (let copy $original)
 (set original (Point #9 #9))
-(printf "copy still holds x=%s\n" (Point.x $copy))
+(printf "copy still holds x=%s\n" (. $copy x))
 
 (; Structs nest like any other value. )
 (defstruct Segment start end)
 (let segment (Segment (Point #0 #0) (Point #3 #4)))
-(printf "end.x=%s\n" (Point.x (Segment.end $segment)))
+(printf "end.x=%s\n" (. (. $segment end) x))
 
 (; type reports struct members without running anything. )
-(type Point Point.x Point?)
+(type . Point Point.x Point?)

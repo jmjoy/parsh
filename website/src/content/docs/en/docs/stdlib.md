@@ -29,6 +29,27 @@ not import syntax or a module object. A standalone `/` remains the division
 builtin. Builtin namespaces are available directly, without imports. User module
 declarations and file imports are not yet supported.
 
+## Struct fields
+
+`(. value field)` reads a field from any user-defined or runtime struct, including
+`CallResult`. It requires exactly two arguments: a struct and a text field name.
+The field keeps its original type, including bytes, nil, or another struct.
+A missing field or an invalid argument type raises an error.
+
+```parsh
+(defstruct Point x y)
+(let point (Point #3 #4))
+(let field x)
+(dump (. $point $field))
+(dump (apply "." [$point y]))
+(dump (apply (function .) [$point x]))
+```
+
+The results are `#3`, `#4`, and `#3`. `.` evaluates arguments once from left to
+right and does not itself replace `$?`. The `Point.x` accessor also remains
+available. See [structs and macros](/parsh/en/docs/structs-and-macros/) for nested
+field access and record definitions.
+
 ## Scalar conversions
 
 Each conversion takes exactly one argument, checks arity before evaluation, and

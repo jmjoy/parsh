@@ -70,7 +70,7 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 (let result (capture/result printf "hello\n"))
 (dump (list (stdout-text $result) (exit-code $result) (signal $result)))
 (let sum (capture/result + #2 #3))
-(dump (CallResult.value $sum))
+(dump (. $sum value))
 ```
 
 | 字段 | 含义 |
@@ -83,6 +83,10 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 
 这些运行时结构体提供 `CallResult.stdout`、`CallResult?`、`Exited.code` 等访问器和谓词。
 其名称与构造器由运行时保留，应读取运行时返回的记录，不能直接构造。
+
+通用内置函数 `.` 可以读取相同字段：`(. $result stdout)` 等价于
+`(CallResult.stdout $result)`，并保留捕获的 bytes 类型。字段名也可以来自文本变量，
+例如 `(. $result $field)`。字段读取本身不会覆盖 `$?`。
 
 | 结构体 | 字段 |
 | --- | --- |
@@ -125,7 +129,7 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 
 ```parsh
 (let binary (capture/result printf "\\377\\000\\101"))
-(dump (bytes/hex-encode (CallResult.stdout $binary)))
+(dump (bytes/hex-encode (. $binary stdout)))
 ```
 
 结果为 `"ff0041"`。切片、拼接和显式文本转换见 [bytes 函数](/parsh/zh-cn/docs/stdlib/#bytes)。

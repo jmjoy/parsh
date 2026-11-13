@@ -20,9 +20,26 @@ three kinds of command:
 ```parsh
 (defstruct Point x y)
 (let point (Point #3 #4))
-(echo (Point.x $point) (Point.y $point))
+(echo (. $point x) (. $point y))
 (dump (if (Point? $point) (echo a point)))
 ```
+
+`(. value field)` reads a field from any struct without naming its type.
+The field name is ordinary text, so bare words, strings, variables, and expressions
+all work. The existing `(Point.x $point)` accessor remains available:
+
+```parsh
+(let field x)
+(dump (. $point "x"))
+(dump (. $point $field))
+(dump (. $point (str x)))
+(dump (apply (function .) [$point y]))
+```
+
+`.` takes exactly two arguments and returns the field's original value and type.
+It checks arity before evaluation, then evaluates and validates each argument once,
+from left to right. A non-struct value, a non-text field name, or a missing field
+raises an error. Read nested structs by composing calls: `(. (. $segment start) x)`.
 
 A struct can sit in lists and maps and be passed to functions. It displays in
 field order, for example `(Point #3 #4)`, or `(Point "3" "4")` when the fields are
@@ -34,7 +51,7 @@ Read scalar fields for interpolation, use `dump` for display, or encode as JSON:
 
 ```parsh
 (dump $point)
-(dump (str "x=$(Point.x $point)"))
+(dump (str "x=$(. $point x)"))
 (dump (json/encode $point))
 ```
 
@@ -45,7 +62,7 @@ so redefining a struct keeps existing values readable:
 (defstruct Point x y)
 (let old (Point #1 #2))
 (defstruct Point x)
-(dump (Point.y $old))
+(dump (. $old y))
 ```
 
 `type` reports struct members without calling them:
@@ -123,7 +140,7 @@ the caller's function or loop.
 - There is no hygiene: templates insert forms verbatim into the caller scope.
 - Macros and struct members cannot be used as pipeline stages.
 - A nested quasiquote is copied literally rather than nested one level deeper.
-- Structs have no field setters and no dynamic field names.
+- Structs have no field setters; use `.` to read a dynamically selected field.
 
 Scalar literals retain their types through quote, quasiquote, and unquote. Form source uses `#` for typed scalars and normalizes numeric spelling: `#001` prints as `#1`. Literal nodes compare by type and value, ignoring source offsets.
 

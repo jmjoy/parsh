@@ -87,7 +87,7 @@ Wrap multiple expressions or a pipeline in `(fn () ...)` instead.
 (let result (capture/result printf "hello\n"))
 (dump (list (stdout-text $result) (exit-code $result) (signal $result)))
 (let sum (capture/result + #2 #3))
-(dump (CallResult.value $sum))
+(dump (. $sum value))
 ```
 
 | Field | Meaning |
@@ -101,6 +101,10 @@ Wrap multiple expressions or a pipeline in `(fn () ...)` instead.
 Runtime records provide ordinary field accessors and predicates, such as
 `CallResult.stdout`, `CallResult?`, and `Exited.code`. Their constructors and names
 are reserved; inspect records returned by the runtime rather than constructing them.
+
+The generic `.` builtin reads the same fields: `(. $result stdout)` is equivalent
+to `(CallResult.stdout $result)` and preserves the captured bytes. It also accepts
+dynamic text field names, such as `(. $result $field)`. Field reads do not replace `$?`.
 
 | Record | Fields |
 | --- | --- |
@@ -149,7 +153,7 @@ Raw capture also accepts binary output without decoding it:
 
 ```parsh
 (let binary (capture/result printf "\\377\\000\\101"))
-(dump (bytes/hex-encode (CallResult.stdout $binary)))
+(dump (bytes/hex-encode (. $binary stdout)))
 ```
 
 The result is `"ff0041"`. Use the [bytes functions](/parsh/en/docs/stdlib/#bytes)

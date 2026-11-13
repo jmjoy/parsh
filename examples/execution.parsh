@@ -10,9 +10,9 @@
 (let result (capture/result $printer "hello\n\n"))
 (let saved $?)
 (dump (list (stdout-text $result) (exit-code $result) (signal $result)))
-(echo "saved result=$(eq $result $saved); bytes=$(bytes? (CallResult.stdout $result))")
+(echo "saved result=$(eq $result $saved); bytes=$(bytes? (. $result stdout))")
 (let sum (capture/result + #2 #3))
-(echo "language return value=$(CallResult.value $sum)")
+(echo "language return value=$(. $sum value)")
 
 (; Wrap a pipeline in a function; command references are valid stage heads. )
 (let sorter (command sort))
@@ -22,7 +22,7 @@
 (; Capture returns nonzero exits as data, including each pipeline stage. )
 (let failed (capture/result (fn () (| (false) (true)))))
 (echo "pipeline exit=$(exit-code $failed)")
-(dump (CallResult.stages $failed))
+(dump (. $failed stages))
 (try
   (check $failed)
   (catch err

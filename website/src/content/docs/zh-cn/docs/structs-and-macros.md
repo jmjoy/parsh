@@ -19,9 +19,25 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 ```parsh
 (defstruct Point x y)
 (let point (Point #3 #4))
-(echo (Point.x $point) (Point.y $point))
+(echo (. $point x) (. $point y))
 (dump (if (Point? $point) (echo a point)))
 ```
+
+`(. value field)` 可以读取任意结构体的字段，无需指定类型名。
+字段名是普通文本参数，支持裸词、字符串、变量和表达式；原有的 `(Point.x $point)` 访问器仍可使用：
+
+```parsh
+(let field x)
+(dump (. $point "x"))
+(dump (. $point $field))
+(dump (. $point (str x)))
+(dump (apply (function .) [$point y]))
+```
+
+`.` 恰好接受两个参数，返回字段的原始值并保留类型。
+它先检查参数数量，再从左到右依次求值和验证，每个参数只求值一次。
+值不是结构体、字段名不是文本或字段不存在时都会报错。
+嵌套结构体通过组合调用读取，例如 `(. (. $segment start) x)`。
 
 结构体可以放进列表和映射，也可以传给函数。
 它按字段顺序显示，例如 `(Point #3 #4)`；字段是文本时保留引号，显示为 `(Point "3" "4")`。
@@ -32,7 +48,7 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 
 ```parsh
 (dump $point)
-(dump (str "x=$(Point.x $point)"))
+(dump (str "x=$(. $point x)"))
 (dump (json/encode $point))
 ```
 
@@ -42,7 +58,7 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 (defstruct Point x y)
 (let old (Point #1 #2))
 (defstruct Point x)
-(dump (Point.y $old))
+(dump (. $old y))
 ```
 
 `type` 可以查看这些成员，不会调用它们：
@@ -111,7 +127,7 @@ unquote 接受被引用的表单或标量值；splicing 接受被引用的列表
 - 没有卫生性（hygiene）：模板会把表单原样插入调用方作用域。
 - 宏和结构体成员不能作为管道阶段。
 - 嵌套的 quasiquote 会原样拷贝，不会按层级展开。
-- 结构体没有字段修改器，也不支持动态字段名。
+- 结构体没有字段修改器；可以使用 `.` 动态选择要读取的字段。
 
 标量字面值通过 quote、quasiquote 和 unquote 时保留类型。表单源码中的标量带 `#`，数值拼写会规范化，例如 `#001` 显示为 `#1`；字面值节点按类型和值比较，忽略源码位置。
 

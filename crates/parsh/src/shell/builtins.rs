@@ -4,6 +4,7 @@ use super::{Env, Error, EvalResult, Mode, Number, Shell, Value, bytes, http, jso
 use crate::{reader::Expr, streams::Io};
 
 pub(super) const VALUE_BUILTINS: &[&str] = &[
+    ".",
     "get",
     "dump",
     "list",
@@ -301,8 +302,8 @@ fn arity(name: &str) -> (usize, usize) {
         "http/get" => (1, 2),
         "http/post" => (2, 3),
         "json/encode" | "json/decode" | "http/body-text" => (1, 1),
-        "eq" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "map/del" | "map/has" | "quot" | "rem"
-        | "str/split" | "str/join" | "str/contains" => (2, 2),
+        "." | "eq" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "map/del" | "map/has" | "quot"
+        | "rem" | "str/split" | "str/join" | "str/contains" => (2, 2),
         "list/first" => (1, 2),
         _ => (1, 1),
     }
@@ -358,6 +359,15 @@ impl Shell {
             | "exit-code"
             | "signal"
             | "throw" => self.execution_builtin(expr, name, args, env, mode, io),
+            "." => {
+                let Value::Struct { name, fields } = args.value(self, 0, env, io)? else {
+                    return Err(Error::new(args.at(expr, 0), ". expects a struct").into());
+                };
+                let field = args.text(self, expr, 1, env, io)?;
+                Ok(fields.get(&field).cloned().ok_or_else(|| {
+                    Error::new(args.at(expr, 1), format!("{name} has no field {field}"))
+                })?)
+            }
             "get" => {
                 let Value::Text(name) = args.value(self, 0, env, io)? else {
                     return Err(

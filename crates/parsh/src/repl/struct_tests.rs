@@ -53,6 +53,158 @@ fn structs_construct_access_and_print_in_field_order() {
 }
 
 #[test]
+fn dot_reads_fields_by_evaluated_text_names_without_a_type_name() {
+    assert_values(
+        r#"
+        (defstruct Point x y)
+        (defstruct Other x)
+        (let point (Point #3 #4))
+        (let field y)
+        (list (. $point x) (. $point "y") (. $point $field)
+              (. $point (str x)) (. (Other #5) x)
+              (eq (. $point x) (Point.x $point)))
+        "#,
+        &["(#3 #4 #4 #3 #5 #true)"],
+    );
+}
+
+#[test]
+fn dot_preserves_field_types_and_composes_for_nested_structs() {
+    assert_values(
+        r#"
+        (defstruct Point x y)
+        (defstruct Segment start end)
+        (let segment (Segment (Point #0 #1) (Point #3 #4)))
+        (list (. (. $segment start) x)
+              (eq (. $segment end) (Segment.end $segment)))
+        (defstruct Box value)
+        (let items [#7 #true #nil (bytes/from-text hello) [nested]
+                    {key #1} $segment (function +) (command echo) (quote (a b))])
+        (eq (list/map (fn (value) (. (Box $value) value)) $items) $items)
+        "#,
+        &["(#0 #true)", "#true"],
+    );
+}
+
+#[test]
+fn dot_is_an_ordinary_function_and_does_not_replace_the_last_result() {
+    assert_values(
+        r#"
+        (defstruct Point x y)
+        (let point (Point #3 #4))
+        (let getter (function .))
+        (let name .)
+        (defn answer () #42)
+        (answer)
+        (let saved $?)
+        (list ($getter $point x) ((function .) $point y)
+              (apply $getter [$point x]) (apply "." $point [y])
+              ($name $point x) (. $? value) (eq $? $saved))
+        "#,
+        &["#42", "(#3 #4 #3 #4 #3 #42 #true)"],
+    );
+}
+
+#[test]
+fn dot_reads_runtime_records_and_preserves_bytes_and_nil() {
+    assert_values(
+        r#"
+        (let result (capture/result + #2 #3))
+        (list (. $result value) (bytes? (. $result stdout))
+              (bytes? (. $result stderr)) (. $result termination) (. $result error)
+              (eq (. $result stdout) (CallResult.stdout $result)))
+        "#,
+        &["(#5 #true #true #nil #nil #true)"],
+    );
+}
+
+#[test]
+fn dot_checks_arguments_and_reports_errors_at_the_operand() {
+    for (source, message, location) in [
+        ("(.)", "expected 2 arguments, got 0", "interactive:1:1:"),
+        (
+            "(. $undefined)",
+            "expected 2 arguments, got 1",
+            "interactive:1:1:",
+        ),
+        (
+            "(. $undefined x extra)",
+            "expected 2 arguments, got 3",
+            "interactive:1:1:",
+        ),
+        ("(. #1 x)", ". expects a struct", "interactive:1:4:"),
+        ("(. {x #1} x)", ". expects a struct", "interactive:1:4:"),
+        ("(. (Point #1) #1)", "expected text", "interactive:1:15:"),
+        (
+            "(. (Point #1) missing)",
+            "Point has no field missing",
+            "interactive:1:15:",
+        ),
+        (
+            "(. (Point #1) \"\")",
+            "Point has no field ",
+            "interactive:1:15:",
+        ),
+    ] {
+        let mut repl = Repl::new();
+        evaluate(&mut repl, "(defstruct Point x)");
+        let events = evaluate(&mut repl, source);
+        let errors = diagnostics(&events);
+        assert_eq!(errors.len(), 1, "{source}: {events:?}");
+        assert!(errors[0].contains(message), "{source}: {errors:?}");
+        assert!(errors[0].starts_with(location), "{source}: {errors:?}");
+    }
+    assert_diagnostic("(defn . () #nil)", "function name is reserved");
+    assert_diagnostic("(defmacro . () (quote x))", "macro name is reserved");
+}
+
+#[test]
+fn dot_evaluates_operands_once_in_order_and_stops_after_invalid_arguments() {
+    let mut repl = Repl::new();
+    evaluate(&mut repl, "(defstruct Point x) (let trace (str))");
+    for callee in [".", "(function .)"] {
+        let events = evaluate(
+            &mut repl,
+            &format!(
+                "({callee} (do (set trace (str $trace v)) (Point #7))
+                           (do (set trace (str $trace f)) x))"
+            ),
+        );
+        assert!(diagnostics(&events).is_empty(), "{events:?}");
+        assert_eq!(values(&events), ["#7"]);
+        assert_eq!(values(&evaluate(&mut repl, "(get trace)")), [r#""vf""#]);
+        evaluate(&mut repl, "(set trace (str))");
+
+        for (arguments, message, expected_trace) in [
+            ("(set trace wrong)", "expected 2 arguments, got 1", r#""""#),
+            (
+                "(set trace wrong) x extra",
+                "expected 2 arguments, got 3",
+                r#""""#,
+            ),
+            (
+                "(do (set trace v) #nil) (set trace wrong)",
+                ". expects a struct",
+                r#""v""#,
+            ),
+            (
+                "(do (set trace v) (Point #7)) (do (set trace (str $trace f)) #nil)",
+                "expected text",
+                r#""vf""#,
+            ),
+        ] {
+            let events = evaluate(&mut repl, &format!("({callee} {arguments})"));
+            assert!(diagnostics(&events)[0].contains(message), "{events:?}");
+            assert_eq!(
+                values(&evaluate(&mut repl, "(get trace)")),
+                [expected_trace]
+            );
+            evaluate(&mut repl, "(set trace (str))");
+        }
+    }
+}
+
+#[test]
 fn structs_compare_by_name_and_fields_and_copy_with_bindings() {
     assert_values(
         r#"
@@ -98,8 +250,9 @@ fn redefining_a_struct_keeps_old_values_readable() {
         (defstruct Point x)
         (Point 1)
         (Point.y $old)
+        (. $old y)
         "#,
-        &[r#"(Point "1")"#, r#""2""#],
+        &[r#"(Point "1")"#, r#""2""#, r#""2""#],
     );
 }
 
@@ -173,6 +326,8 @@ fn type_describes_struct_members_and_macros() {
         (type Point.x)
         (type Point?)
         (type unless)
+        (type .)
+        (type -t .)
         (type -t Point Point.x Point? unless)
         (type -f Point)
         "#,
@@ -183,6 +338,8 @@ fn type_describes_struct_members_and_macros() {
          Point.x is a struct accessor\n\
          Point? is a struct predicate\n\
          unless is a macro\n\
+         . is a shell builtin\n\
+         builtin\n\
          struct\nstruct\nstruct\nmacro\n\
          type: Point: not found\n"
     );
@@ -206,4 +363,5 @@ fn completion_offers_struct_members_and_macros() {
     assert_eq!(complete("Point."), ["Point.x", "Point.y"]);
     assert_eq!(complete("Point?"), ["Point?"]);
     assert_eq!(complete("unl"), ["unless"]);
+    assert!(complete(".").iter().any(|name| name == "."));
 }

@@ -716,6 +716,43 @@ test("structs and macros evaluate in the playground", async ({ page }) => {
   await expect(terminal(page)).toContainText("Point.x is a struct accessor");
 });
 
+test("dot reads struct fields with dynamic names, functions, and runtime results", async ({ page }) => {
+  await playground(page);
+  await execute(page, String.raw`
+    (defstruct Point x y)
+    (defstruct Segment start end)
+    (let point (Point #3 #4))
+    (let segment (Segment $point (Point #5 #6)))
+    (let field x)
+    (let getter (function .))
+    (dump (list (. $point x) (. $point "y") (. $point $field)
+                (. (. $segment end) x) ($getter $point y)
+                (apply "." [$point x]) (apply $getter [$point y])
+                (eq (. $point x) (Point.x $point))))
+    (let result (capture/result printf hello))
+    (let saved $?)
+    (dump (list (bytes/to-text (. $result stdout))
+                (eq (. $result stdout) (CallResult.stdout $result))
+                (. (. $result termination) code) (. $result value)
+                (eq $? $saved)))
+    (type .)
+  `);
+  await expect(terminal(page)).toContainText("(#3 #4 #3 #5 #4 #3 #4 #true)");
+  await expect(terminal(page)).toContainText('("hello" #true #0 #nil #true)');
+  await expect(terminal(page)).toContainText(". is a shell builtin");
+  for (const [source, message] of [
+    ["(. #1 x)", ". expects a struct"],
+    ["(. $point #1)", "expected text"],
+    ["(. $point missing)", "Point has no field missing"],
+    ["(. $point)", "expected 2 arguments, got 1"],
+  ] as const) {
+    await execute(page, source);
+    await expect(terminal(page)).toContainText(message);
+  }
+  await execute(page, '(dump (str "dot-recovered:" (. $point x)))');
+  await expect(terminal(page)).toContainText('"dot-recovered:3"');
+});
+
 
 test("missing pages provide working links to both locale homepages", async ({ page }) => {
   const response = await page.goto("/parsh/missing-page/");
