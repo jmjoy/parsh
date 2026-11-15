@@ -64,11 +64,14 @@ The caught `Error` exposes `kind`, `message`, `code`, `offset`, `payload`, and `
 | `spawn-failed` | An external program could not be started |
 | `output-limit` | Captured output exceeded 8 MiB |
 | `json`, `bytes`, `http` | Failure in the corresponding data or request operation |
+| `read`, `load` | Explicit source parsing or file-loading failure |
 | `unsupported` | A capability is unavailable in this runtime |
 | `user` | A non-Error value was passed to `throw` |
 | `cancelled` | A native task was cancelled |
 
-Reader errors cannot be caught by `try`. See [execution results and tasks](/parsh/en/docs/execution/)
+Reader errors in the surrounding script cannot be caught by `try`. Errors from
+explicit `read` and `load` calls can be caught; see [Lisp helpers and code](/parsh/en/docs/lisp/).
+See [execution results and tasks](/parsh/en/docs/execution/)
 for recovery, typed payloads, cleanup, and termination information.
 
 ## Limits

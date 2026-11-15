@@ -16,6 +16,11 @@ pub enum Kind {
     Bool(bool),
     Nil,
     Variable(String),
+    /// An uninterned identifier created by gensym, never reconstructed by reading text.
+    Generated {
+        name: String,
+        variable: bool,
+    },
     /// Double-quoted text fragments and embedded variable or call expressions.
     Interpolated(Vec<Expr>),
     List(Vec<Expr>),
@@ -45,6 +50,11 @@ impl Expr {
             Kind::Bool(value) => format!("#{value}"),
             Kind::Nil => "#nil".into(),
             Kind::Variable(name) => format!("${name}"),
+            Kind::Generated { name, variable } => format!(
+                "#<{}:{}>",
+                if *variable { "gensym-var" } else { "gensym" },
+                name.trim_start_matches('\0')
+            ),
             Kind::Interpolated(parts) => {
                 let mut rendered = String::from("\"");
                 for part in parts {

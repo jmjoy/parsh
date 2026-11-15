@@ -27,7 +27,9 @@ Names such as `str/join` are ordinary names. The slash is just a character in a
 name or text value; it is a naming convention for grouping related functions,
 not import syntax or a module object. A standalone `/` remains the division
 builtin. Builtin namespaces are available directly, without imports. User module
-declarations and file imports are not yet supported.
+declarations are not yet supported. Use `load` to execute shared source files.
+[Function composition, nested updates, macros, and source loading](/parsh/en/docs/lisp/)
+extend the operations documented here.
 
 ## Struct fields
 

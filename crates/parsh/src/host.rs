@@ -76,6 +76,13 @@ pub trait ExecutionHost {
         emit: OutputSink,
     ) -> Result<CommandOutput, HostError>;
     fn open(&mut self, cwd: &str, path: &str, mode: FileMode) -> Result<u32, HostError>;
+    /// Read source bytes for load; existing hosts can opt into this capability.
+    fn read_file(&mut self, _cwd: &str, _path: &str) -> Result<Vec<u8>, HostError> {
+        Err(HostError {
+            code: 2,
+            message: "host does not support loading source files".into(),
+        })
+    }
     /// Write builtin output to an open redirection handle.
     fn write(&mut self, _handle: u32, _bytes: &[u8]) -> Result<(), HostError> {
         Err(HostError {

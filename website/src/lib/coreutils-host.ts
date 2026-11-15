@@ -67,6 +67,13 @@ export class CoreutilsHost {
           value = this.open(cwd, path, mode); break;
         }
         case "close": this.handles.delete(args as number); value = true; break;
+        case "read-file": {
+          const [cwd, path] = args as [string, string];
+          const file = this.lookup(this.resolve(cwd, path));
+          if (!(file instanceof File)) throw new HostFailure(`${path}: not a file`);
+          if (file.data.length > OUTPUT_LIMIT) throw new HostFailure("source file exceeds 8 MiB");
+          value = Array.from(file.data); break;
+        }
         case "write": {
           const [handle, bytes] = args as [number, number[]];
           this.write(handle, new Uint8Array(bytes));

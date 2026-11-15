@@ -106,7 +106,8 @@ grammar and no quoting layers, so the script reads the way it runs. See
 
 The language says what it does not do yet. Pipeline stages accept external
 commands only; macros have no hygiene; nested quasiquotes are
-copied literally; library imports remain future work. Native background tasks use isolated interpreter threads. Exit
+copied literally. `load` executes source files in the caller scope; isolated user modules
+remain future work. Native background tasks use isolated interpreter threads. Exit
 codes and diagnostic positions are stable enough to depend on: language errors
 use `2`, a missing program `127`, permission denied `126`. See
 [errors and exit codes](/parsh/en/docs/diagnostics/).

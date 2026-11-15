@@ -75,6 +75,10 @@ description: "命名记录、被引用的表单，以及用户自定义命令。
 
 ## 宏
 
+会话预置 `when`、`unless`、`cond`、`->` 和 `->>` 普通宏，允许重新定义。
+下方定义用于演示自定义宏的机制；Form 操作、`gensym` 和 `macroexpand-1` 见
+[Lisp 工具与代码](/parsh/zh-cn/docs/lisp/)。
+
 `(defmacro Name (parameters...) body...)` 定义一种命令，它的参数不会被求值：
 每个参数绑定到对应实参的被引用表单，宏体执行后返回一个表单，再由 Shell 在调用方的作用域里求值。
 

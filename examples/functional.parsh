@@ -1,0 +1,31 @@
+#!/usr/bin/env parsh
+(; Run with: cargo run -- examples/functional.parsh )
+
+(; Adapters return ordinary closures and keep values typed. )
+(let add_ten (partial (function +) #10))
+(let double_sum (compose (fn (n) (* $n #2)) (function +)))
+(dump (list/map $add_ten [#1 #2 #3]))
+(dump ($double_sum #2 #3))
+(dump ((constantly {enabled #true}) ignored))
+(dump (identity [#nil #true]))
+(dump (list/filter (complement even?) [#1 #2 #3 #4]))
+(dump (list (even? #2) (odd? #-3) (zero? #-0.0) (positive? #2) (negative? #-1)))
+
+(; Each sort key is computed once; grouping requires text keys. )
+(let users [{name Ada age #36 team compiler}
+            {name Grace age #30 team compiler}
+            {name Linus age #35 team kernel}])
+(dump (list/sort-by (fn (user) (map/get $user age)) $users))
+(dump (list/group-by (fn (user) (map/get $user team)) $users))
+(dump (list/flat-map (fn (n) (list $n (* $n #10))) [#1 #2]))
+(dump (list/take-while (fn (n) (< $n #3)) [#1 #2 #3 #1]))
+(dump (list/drop-while (fn (n) (< $n #3)) [#1 #2 #3 #1]))
+(dump (list/partition #2 [a b c d e]))
+
+(; Nested updates preserve the original and create missing maps. )
+(let original {http {retries #2} version #1})
+(let updated (map/update-in $original [http retries] (function +) #1))
+(dump (list $original $updated))
+(dump (map/get-in $updated [http retries]))
+(dump (map/set-in $updated [http enabled] #true))
+(dump (map/update $updated version (function +) #1))

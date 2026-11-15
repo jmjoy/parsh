@@ -1136,13 +1136,13 @@ mod syntax_tests {
             (let flag #true)
             (let nothing #nil)
             (let items (list a b))
-            (defn read () (get name))
-            (defn caller (name) (read))
+            (defn read-binding () (get name))
+            (defn caller (name) (read-binding))
             (list (caller inner) (get (str na me)) (get number) (get flag)
                 (get nothing) (get items) (get GREETING))
             (str "$number|$flag|$nothing")
             (set name changed)
-            (read)
+            (read-binding)
         "#,
         );
         assert!(diagnostics(&events).is_empty(), "{events:?}");
@@ -1961,7 +1961,7 @@ mod host_tests {
                     })?;
                     String::new()
                 }
-                "partial" => {
+                "partial-output" => {
                     emit(OutputChunk {
                         stream: Stream::Stdout,
                         bytes: b"prefix".to_vec(),
@@ -2087,7 +2087,7 @@ mod host_tests {
         let events = execute(
             &mut repl,
             r#"
-            (try (capture/result partial)
+            (try (capture/result partial-output)
               (catch e (dump (list (Error.kind $e) (stdout-text (Error.result $e))
                              (nil? (CallResult.termination (Error.result $e)))))))
         "#,
@@ -2338,6 +2338,12 @@ mod json_tests;
 
 #[cfg(test)]
 mod data_tests;
+
+#[cfg(test)]
+mod functional_tests;
+
+#[cfg(test)]
+mod forms_tests;
 
 #[cfg(test)]
 mod dump_tests;

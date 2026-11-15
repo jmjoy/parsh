@@ -62,7 +62,9 @@ interactive:1:6: undefined variable $missing
 | `user` | `throw` 的参数不是已有 Error |
 | `cancelled` | 原生后台任务被取消 |
 
-reader 错误不能被 `try` 捕获。恢复、类型化 payload、清理与终止信息见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。
+外层脚本的 reader 错误不能被 `try` 捕获；显式 `read` 和 `load` 调用的错误可以捕获，
+对应 kind 为 `read` 或 `load`，详见 [Lisp 工具与代码](/parsh/zh-cn/docs/lisp/)。
+恢复、类型化 payload、清理与终止信息见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。
 
 ## 限制
 

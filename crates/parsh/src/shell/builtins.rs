@@ -31,6 +31,39 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "bool",
     "eq",
     "not",
+    "identity",
+    "constantly",
+    "partial",
+    "compose",
+    "complement",
+    "even?",
+    "odd?",
+    "zero?",
+    "positive?",
+    "negative?",
+    "list/flat-map",
+    "list/sort-by",
+    "list/group-by",
+    "list/take-while",
+    "list/drop-while",
+    "list/partition",
+    "map/update",
+    "map/get-in",
+    "map/set-in",
+    "map/update-in",
+    "form/kind",
+    "form/value",
+    "form/children",
+    "form/list",
+    "form/word",
+    "form/variable",
+    "form/from-value",
+    "form/source",
+    "gensym",
+    "macroexpand-1",
+    "read",
+    "eval",
+    "load",
     "+",
     "-",
     "*",
@@ -211,7 +244,7 @@ impl Arguments<'_> {
         }
     }
 
-    fn number(
+    pub(super) fn number(
         self,
         shell: &mut Shell,
         expr: &Expr,
@@ -239,7 +272,7 @@ impl Arguments<'_> {
         }
     }
 
-    fn integer(
+    pub(super) fn integer(
         self,
         shell: &mut Shell,
         expr: &Expr,
@@ -286,7 +319,16 @@ impl Value {
 
 fn arity(name: &str) -> (usize, usize) {
     match name {
-        "list" | "str" | "map" | "+" | "*" | "list/concat" | "list/zip" => (0, usize::MAX),
+        "list" | "str" | "map" | "+" | "*" | "list/concat" | "list/zip" | "compose" => {
+            (0, usize::MAX)
+        }
+        "partial" => (1, usize::MAX),
+        "map/update" | "map/update-in" => (3, usize::MAX),
+        "map/get-in" => (2, 3),
+        "map/set-in" => (3, 3),
+        "list/flat-map" | "list/sort-by" | "list/group-by" | "list/take-while"
+        | "list/drop-while" | "list/partition" => (2, 2),
+        "gensym" => (0, 1),
         "-" | "/" | "min" | "max" | "list/append" => (1, usize::MAX),
         "apply" => (2, usize::MAX),
         "capture/result"
@@ -342,6 +384,12 @@ impl Shell {
         };
         let (min, max) = arity(name);
         Self::arity_count(expr, args.len(), min, max)?;
+        if super::functional::NAMES.contains(&name) {
+            return self.functional_builtin(expr, name, args, env, mode, io);
+        }
+        if super::forms::NAMES.contains(&name) {
+            return self.forms_builtin(expr, name, args, env, mode, io);
+        }
         match name {
             "json/encode" | "json/decode" => json::call(self, expr, name, args, env, mode, io),
             "bytes/len"

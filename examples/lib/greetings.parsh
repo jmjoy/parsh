@@ -1,0 +1,4 @@
+(; Nested loads resolve relative to this file. )
+(load numbers.parsh)
+(let library_name example-library)
+(defn greet-library (name) (str "hello, " $name))

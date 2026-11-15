@@ -90,7 +90,15 @@ fn success(output: &Output) {
 #[test]
 fn collection_and_capture_examples_run_from_the_repository_root() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for script in ["stdlib", "for", "functions", "files"] {
+    for script in [
+        "stdlib",
+        "for",
+        "functions",
+        "files",
+        "functional",
+        "metaprogramming",
+        "loading",
+    ] {
         let path = format!("examples/{script}.parsh");
         let output = invoke_in(&[&path], "", Some(&root));
         assert!(output.status.success(), "{path}: {}", stderr(&output));
@@ -103,6 +111,190 @@ fn collection_and_capture_examples_run_from_the_repository_root() {
             assert!(stdout(&output).contains("temporary directory removed"));
         }
     }
+}
+
+#[test]
+fn load_shares_the_caller_scope_and_resolves_nested_files_from_their_parent() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("lib")).unwrap();
+    fs::write(
+        directory.path().join("lib/nested.parsh"),
+        "(let loaded #7) (defn loaded-add (n) (+ $loaded $n))",
+    )
+    .unwrap();
+    fs::write(
+        directory.path().join("lib/entry.parsh"),
+        "(load nested.parsh) (let extra #3) (+ $loaded $extra)",
+    )
+    .unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (load lib/entry.parsh)
+        (dump (list $loaded $extra (loaded-add #1)))
+        (defn local (n) (eval (read '(+ $n #1)')))
+        (dump (local #20))
+    "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(stdout(&output), "(#7 #3 #8)\n#21\n");
+}
+
+#[test]
+fn load_errors_report_source_locations_recover_and_do_not_execute_invalid_source() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(
+        directory.path().join("bad.parsh"),
+        "(defn should-not-exist () #1)\n(",
+    )
+    .unwrap();
+    fs::write(directory.path().join("runtime.parsh"), "#1\n(+ bad #1)").unwrap();
+    fs::write(
+        directory.path().join("good.parsh"),
+        "(defn loaded-ok () #9) #9",
+    )
+    .unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (try (load bad.parsh) (catch e
+          (dump (list (Error.kind $e) (str/contains (Error.message $e) 'bad.parsh:2:1')))))
+        (dump (if (type -t should-not-exist) #true #false))
+        (try (load runtime.parsh) (catch e
+          (dump (str/contains (Error.message $e) 'runtime.parsh:2:4'))))
+        (load good.parsh)
+        (dump (loaded-ok))
+    "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(stdout(&output), "(\"read\" #true)\n#false\n#true\n#9\n");
+}
+
+#[test]
+fn load_rejects_cycles_invalid_utf8_and_oversized_files() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("a.parsh"), "(load b.parsh)").unwrap();
+    fs::write(directory.path().join("b.parsh"), "(load a.parsh)").unwrap();
+    fs::write(directory.path().join("binary.parsh"), [255]).unwrap();
+    fs::write(
+        directory.path().join("large.parsh"),
+        vec![b' '; 8 * 1024 * 1024 + 1],
+    )
+    .unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (try (load a.parsh) (catch e (dump (str/contains (Error.message $e) 'cyclic load'))))
+        (try (load binary.parsh) (catch e (dump (str/contains (Error.message $e) UTF-8))))
+        (try (load large.parsh) (catch e (dump (str/contains (Error.message $e) 'exceeds 8 MiB'))))
+        (try (load missing.parsh) (catch e (dump (Error.kind $e))))
+    "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(stdout(&output), "#true\n#true\n#true\n\"load\"\n");
+}
+
+#[test]
+fn load_uses_normal_mode_before_the_last_expression_and_preserves_control_flow() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(
+        directory.path().join("fail.parsh"),
+        "(false) (echo unreachable)",
+    )
+    .unwrap();
+    fs::write(directory.path().join("condition.parsh"), "(false)").unwrap();
+    fs::write(directory.path().join("return.parsh"), "(return #7)").unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (try (if (load fail.parsh) (echo bad)) (catch e (dump (Error.kind $e))))
+        (dump (if (load condition.parsh) yes no))
+        (defn outer () (load return.parsh) #99)
+        (dump (outer))
+    "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(stdout(&output), "\"command-failed\"\n\"no\"\n#7\n");
+}
+
+#[test]
+fn functional_adapters_and_generated_identifiers_survive_background_snapshots() {
+    let output = run(r#"
+        (let f (compose (partial + #1) (partial * #2)))
+        (let constant (constantly {data [#nil #true]}))
+        (dump (. (wait (spawn $f #3)) value))
+        (dump (. (wait (spawn $constant ignored)) value))
+        (let symbol (gensym worker))
+        (eval (form/list [(quote let) $symbol (quote #7)]))
+        (dump (. (wait (spawn (fn () (eval (form/variable $symbol))))) value))
+    "#);
+    success(&output);
+    assert_eq!(stdout(&output), "#7\n(map \"data\" (#nil #true))\n#7\n");
+}
+
+#[test]
+fn background_load_inherits_the_active_source_directory() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("lib")).unwrap();
+    fs::write(directory.path().join("lib/nested.parsh"), "#8").unwrap();
+    fs::write(
+        directory.path().join("lib/entry.parsh"),
+        "(wait (spawn (fn () (load nested.parsh))))",
+    )
+    .unwrap();
+    let output = invoke_in(
+        &["-c", "(dump (. (load lib/entry.parsh) value))"],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(stdout(&output), "#8\n");
+}
+
+#[test]
+fn load_preserves_native_symlink_resolution_and_supports_function_and_apply() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir_all(directory.path().join("real/lib")).unwrap();
+    std::os::unix::fs::symlink("real/lib", directory.path().join("link")).unwrap();
+    fs::write(directory.path().join("real/sibling.parsh"), "#7").unwrap();
+    fs::write(directory.path().join("sibling.parsh"), "#99").unwrap();
+    fs::write(
+        directory.path().join("repeat.parsh"),
+        "(set calls (+ $calls #1))",
+    )
+    .unwrap();
+    let output = invoke_in(
+        &[
+            "-c",
+            r#"
+        (dump (load link/../sibling.parsh))
+        (let calls #0)
+        ((function load) repeat.parsh)
+        (apply load [repeat.parsh])
+        (dump $calls)
+    "#,
+        ],
+        "",
+        Some(directory.path()),
+    );
+    success(&output);
+    assert_eq!(stdout(&output), "#7\n#2\n");
 }
 
 #[test]

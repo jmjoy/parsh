@@ -82,6 +82,10 @@ accessors, and predicate are reserved for that struct.
 
 ## Macros
 
+Sessions provide `when`, `unless`, `cond`, `->`, and `->>` as ordinary macros.
+They can be redefined; the definitions below illustrate custom macro mechanics.
+See [Lisp helpers and code](/parsh/en/docs/lisp/) for forms, `gensym`, and `macroexpand-1`.
+
 `(defmacro Name (parameters...) body...)` defines a command whose arguments are
 not evaluated. Each parameter is bound to the quoted form of the corresponding
 argument, the body runs, and the form it returns is evaluated in the caller's

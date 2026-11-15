@@ -149,6 +149,9 @@ impl ExecutionHost for BrowserHost {
     fn close(&mut self, handle: u32) {
         let _: Result<bool, _> = self.call("close", &handle);
     }
+    fn read_file(&mut self, cwd: &str, path: &str) -> Result<Vec<u8>, HostError> {
+        self.call("read-file", &(cwd, path))
+    }
     fn write(&mut self, handle: u32, bytes: &[u8]) -> Result<(), HostError> {
         self.call::<bool>("write", &(handle, bytes)).map(|_| ())
     }

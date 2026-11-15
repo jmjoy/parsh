@@ -69,6 +69,11 @@ export default defineConfig({
               translations: { "zh-CN": "基础库" },
             },
             {
+              slug: "docs/lisp",
+              label: "Lisp helpers & code",
+              translations: { "zh-CN": "Lisp 工具与代码" },
+            },
+            {
               slug: "docs/control-flow",
               label: "Functions & control flow",
               translations: { "zh-CN": "函数与控制流" },

@@ -182,7 +182,16 @@ fn map_commands_complete_value_arguments_without_evaluating() {
         repl.input(Key::ClearInput);
         type_text(&mut repl, prefix);
         repl.input(Key::Tab);
-        assert_eq!(repl.session.input.body, format!("{command} "));
+        let ambiguous = matches!(command, "map/get" | "map/set");
+        let completed = if ambiguous {
+            command.to_owned()
+        } else {
+            format!("{command} ")
+        };
+        assert_eq!(repl.session.input.body, completed);
+        if ambiguous {
+            type_text(&mut repl, " ");
+        }
         if command != "map" {
             type_text(&mut repl, "$con");
             repl.input(Key::Tab);
@@ -225,22 +234,28 @@ fn module_prefixes_list_members_in_commands_and_function_references() {
                     "concat",
                     "contains",
                     "del",
+                    "drop-while",
                     "enumerate",
                     "filter",
                     "find",
                     "first",
+                    "flat-map",
                     "fold",
                     "get",
+                    "group-by",
                     "index-of",
                     "insert",
                     "len",
                     "map",
+                    "partition",
                     "range",
                     "rest",
                     "reverse",
                     "set",
                     "slice",
                     "sort",
+                    "sort-by",
+                    "take-while",
                     "unique",
                     "zip",
                 ],
@@ -252,11 +267,15 @@ fn module_prefixes_list_members_in_commands_and_function_references() {
                     "entries",
                     "from-entries",
                     "get",
+                    "get-in",
                     "has",
                     "keys",
                     "len",
                     "merge",
                     "set",
+                    "set-in",
+                    "update",
+                    "update-in",
                     "vals",
                 ],
             ),
@@ -275,6 +294,19 @@ fn module_prefixes_list_members_in_commands_and_function_references() {
                 ],
             ),
             ("json", vec!["decode", "encode"]),
+            (
+                "form",
+                vec![
+                    "children",
+                    "from-value",
+                    "kind",
+                    "list",
+                    "source",
+                    "value",
+                    "variable",
+                    "word",
+                ],
+            ),
             ("http", vec!["body-text", "get", "post", "request"]),
         ] {
             let expected: Vec<_> = members
@@ -310,7 +342,7 @@ fn new_functions_and_parameter_declarations_complete_without_execution() {
         ("list/app", "list/append "),
         ("str/trim (str/spl", "str/trim (str/split "),
         ("function custom-f", "function custom-fn "),
-        ("function map/ge", "function map/get "),
+        ("function map/ge", "function map/get"),
         ("function defma", "function defma"),
         ("fn (x &op", "fn (x &optional "),
         ("defmacro m (x &re", "defmacro m (x &rest "),
@@ -333,16 +365,21 @@ fn new_functions_and_parameter_declarations_complete_without_execution() {
     assert_eq!(
         listings(&events)[0],
         &[
+            "macroexpand-1",
             "map",
             "map/del",
             "map/entries",
             "map/from-entries",
             "map/get",
+            "map/get-in",
             "map/has",
             "map/keys",
             "map/len",
             "map/merge",
             "map/set",
+            "map/set-in",
+            "map/update",
+            "map/update-in",
             "map/vals",
             "map?",
             "max",
@@ -352,7 +389,7 @@ fn new_functions_and_parameter_declarations_complete_without_execution() {
 
 #[test]
 fn numeric_builtins_complete_without_an_execution_host() {
-    for operator in ["+", "-", "*", "/", "=", "!=", "<=", ">="] {
+    for operator in ["+", "*", "/", "=", "!=", "<=", ">="] {
         let mut repl = Repl::new();
         type_text(&mut repl, operator);
         repl.input(Key::Tab);
@@ -363,7 +400,7 @@ fn numeric_builtins_complete_without_an_execution_host() {
 #[test]
 fn loop_builtins_complete_in_commands_and_nested_expressions_without_running() {
     for (source, expected) in [
-        ("wh", "while "),
+        ("whi", "while "),
         ("br", "break "),
         ("cont", "continue "),
         ("while #true (br", "while #true (break "),

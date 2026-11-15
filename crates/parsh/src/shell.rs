@@ -34,6 +34,8 @@ use std::{
 mod builtins;
 mod bytes;
 mod execution;
+mod forms;
+mod functional;
 mod functions;
 mod http;
 mod json;
@@ -114,6 +116,16 @@ fn expr_eq(left: &Expr, right: &Expr) -> bool {
         (Kind::Number(left), Kind::Number(right)) => left == right,
         (Kind::Bool(left), Kind::Bool(right)) => left == right,
         (Kind::Nil, Kind::Nil) => true,
+        (
+            Kind::Generated {
+                name: left,
+                variable: lv,
+            },
+            Kind::Generated {
+                name: right,
+                variable: rv,
+            },
+        ) => left == right && lv == rv,
         _ => false,
     }
 }
@@ -379,6 +391,7 @@ pub struct Shell {
     finally_depth: usize,
     cleanup_depth: usize,
     capture_depth: usize,
+    load_paths: Vec<String>,
     last_result: Value,
     #[cfg(feature = "native")]
     tasks: Arc<tasks::Registry>,
@@ -441,7 +454,7 @@ fn builtin(name: &str) -> bool {
 fn requires_host(name: &str) -> bool {
     matches!(
         name,
-        "glob" | "cd" | "|" | "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>"
+        "glob" | "cd" | "load" | "|" | "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>"
     )
 }
 
@@ -497,6 +510,7 @@ impl Shell {
             finally_depth: 0,
             cleanup_depth: 0,
             capture_depth: 0,
+            load_paths: Vec::new(),
             last_result: Value::Nil,
             #[cfg(feature = "native")]
             tasks: Arc::new(tasks::Registry::new()),
@@ -508,6 +522,7 @@ impl Shell {
             task_cache: HashMap::new(),
         };
         shell.install_execution_types();
+        shell.install_core_macros();
         shell
     }
 
@@ -900,6 +915,16 @@ impl Shell {
             Kind::Bool(value) => return Ok(Value::Bool(*value)),
             Kind::Nil => return Ok(Value::Nil),
             Kind::Variable(name) => return Ok(self.variable(expr, name, env)?),
+            Kind::Generated {
+                name,
+                variable: true,
+            } => {
+                return Scope::get(env, name)
+                    .ok_or_else(|| Error::new(expr, "undefined generated variable").into());
+            }
+            Kind::Generated {
+                variable: false, ..
+            } => return Ok(Value::Form(Box::new(expr.clone()))),
             Kind::Interpolated(parts) => {
                 let mut text = String::new();
                 for part in parts {
@@ -2216,7 +2241,13 @@ impl Shell {
     }
 
     fn binding(expr: &Expr) -> Result<&str, Error> {
-        if let Kind::Word(name) = &expr.kind {
+        if let Kind::Generated {
+            name,
+            variable: false,
+        } = &expr.kind
+        {
+            Ok(name)
+        } else if let Kind::Word(name) = &expr.kind {
             Self::valid_name(expr, name)?;
             Ok(name)
         } else {

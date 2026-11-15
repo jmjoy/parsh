@@ -33,12 +33,14 @@ Scripts print explicitly with `echo`, `printf`, and `dump`; file mode does not a
 | [while.parsh](https://github.com/jmjoy/parsh/blob/master/examples/while.parsh) | Conditional iteration, outer bindings, and loop return values | Native and browser |
 | [structs.parsh](https://github.com/jmjoy/parsh/blob/master/examples/structs.parsh) | Constructors, accessors, predicates, nesting, and value equality | Native and browser |
 | [macros.parsh](https://github.com/jmjoy/parsh/blob/master/examples/macros.parsh) | Quoted forms, quasiquote, splicing, optional/rest parameters, and caller scope | Native and browser |
+| [metaprogramming.parsh](https://github.com/jmjoy/parsh/blob/master/examples/metaprogramming.parsh) | Standard macros, threading, forms, read/eval, and gensym | Native and browser |
 
 ## Collections and data
 
 | Script | Demonstrates | Environment |
 | --- | --- | --- |
 | [stdlib.parsh](https://github.com/jmjoy/parsh/blob/master/examples/stdlib.parsh) | Immutable list edits, ranges, sorting, search, pairing, Unicode text, and numeric helpers | Native and browser |
+| [functional.parsh](https://github.com/jmjoy/parsh/blob/master/examples/functional.parsh) | Function composition, keyed transforms, predicates, and nested updates | Native and browser |
 | [maps.parsh](https://github.com/jmjoy/parsh/blob/master/examples/maps.parsh) | Immutable updates, eager defaults, ordered keys, merge, and entries | Native and browser |
 | [json.parsh](https://github.com/jmjoy/parsh/blob/master/examples/json.parsh) | Struct encoding, typed decoding, byte input, and JSON errors | Native and browser |
 | [bytes.parsh](https://github.com/jmjoy/parsh/blob/master/examples/bytes.parsh) | Binary values, UTF-8, slicing, concatenation, Base64, and hex | Native and browser |
@@ -49,6 +51,7 @@ Scripts print explicitly with `echo`, `printf`, and `dump`; file mode does not a
 | --- | --- | --- |
 | [pipelines.parsh](https://github.com/jmjoy/parsh/blob/master/examples/pipelines.parsh) | Pipelines, captured text, and numeric conversion at command boundaries | Native and browser |
 | [files.parsh](https://github.com/jmjoy/parsh/blob/master/examples/files.parsh) | Temporary directories, glob, redirection, and finally cleanup | Native only |
+| [loading.parsh](https://github.com/jmjoy/parsh/blob/master/examples/loading.parsh) | Shared script definitions and nested relative loads | Native only |
 | [execution.parsh](https://github.com/jmjoy/parsh/blob/master/examples/execution.parsh) | Command references, complete results, $?, raw capture, check, and exceptions | Native and browser |
 | [tasks.parsh](https://github.com/jmjoy/parsh/blob/master/examples/tasks.parsh) | Background execution, isolated state, wait, job-status, and cancellation | Native only |
 | [http.parsh](https://github.com/jmjoy/parsh/blob/master/examples/http.parsh) | Native HTTP responses, headers, byte bodies, and JSON decoding | Native only |

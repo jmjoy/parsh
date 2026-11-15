@@ -33,12 +33,14 @@ cargo run -- examples/execution.parsh
 | [while.parsh](https://github.com/jmjoy/parsh/blob/master/examples/while.parsh) | 条件循环、外层绑定和循环返回值 | 原生与浏览器 |
 | [structs.parsh](https://github.com/jmjoy/parsh/blob/master/examples/structs.parsh) | 构造器、访问器、谓词、嵌套和值相等 | 原生与浏览器 |
 | [macros.parsh](https://github.com/jmjoy/parsh/blob/master/examples/macros.parsh) | 引用表单、准引用、摊平、可选与变长参数和调用方作用域 | 原生与浏览器 |
+| [metaprogramming.parsh](https://github.com/jmjoy/parsh/blob/master/examples/metaprogramming.parsh) | 预置宏、穿线、Form、read/eval 和 gensym | 原生与浏览器 |
 
 ## 集合与数据
 
 | 脚本 | 演示内容 | 运行环境 |
 | --- | --- | --- |
 | [stdlib.parsh](https://github.com/jmjoy/parsh/blob/master/examples/stdlib.parsh) | 不可变列表更新、序列、排序、查询、配对、Unicode 文本和数值辅助函数 | 原生与浏览器 |
+| [functional.parsh](https://github.com/jmjoy/parsh/blob/master/examples/functional.parsh) | 函数组合、按键变换、谓词和嵌套更新 | 原生与浏览器 |
 | [maps.parsh](https://github.com/jmjoy/parsh/blob/master/examples/maps.parsh) | 不可变更新、默认值严格求值、有序键、合并和 entries 转换 | 原生与浏览器 |
 | [json.parsh](https://github.com/jmjoy/parsh/blob/master/examples/json.parsh) | 结构体编码、有类型的解码、字节输入和 JSON 错误 | 原生与浏览器 |
 | [bytes.parsh](https://github.com/jmjoy/parsh/blob/master/examples/bytes.parsh) | 二进制值、UTF-8、切片、拼接、Base64 和 Hex | 原生与浏览器 |
@@ -49,6 +51,7 @@ cargo run -- examples/execution.parsh
 | --- | --- | --- |
 | [pipelines.parsh](https://github.com/jmjoy/parsh/blob/master/examples/pipelines.parsh) | 管道、文本捕获和命令边界上的数值转换 | 原生与浏览器 |
 | [files.parsh](https://github.com/jmjoy/parsh/blob/master/examples/files.parsh) | 临时目录、glob、重定向和 finally 清理 | 仅原生 |
+| [loading.parsh](https://github.com/jmjoy/parsh/blob/master/examples/loading.parsh) | 共享脚本定义与嵌套相对路径加载 | 仅原生 |
 | [execution.parsh](https://github.com/jmjoy/parsh/blob/master/examples/execution.parsh) | 命令引用、完整结果、$?、原始捕获、check 和异常 | 原生与浏览器 |
 | [tasks.parsh](https://github.com/jmjoy/parsh/blob/master/examples/tasks.parsh) | 后台执行、状态隔离、wait、job-status 和取消 | 仅原生 |
 | [http.parsh](https://github.com/jmjoy/parsh/blob/master/examples/http.parsh) | 原生 HTTP 响应、headers、字节 body 和 JSON 解码 | 仅原生 |

@@ -213,6 +213,7 @@ pub(super) struct TaskSnapshot {
     environment: HashMap<OsString, OsString>,
     cwd: PathBuf,
     last_result: FrozenValue,
+    load_paths: Vec<String>,
 }
 impl TaskSnapshot {
     pub fn new(shell: &Shell, callee: &Value, values: &[Value]) -> Self {
@@ -242,6 +243,7 @@ impl TaskSnapshot {
             environment: shell.environment.clone(),
             cwd: shell.cwd.clone(),
             last_result,
+            load_paths: shell.load_paths.clone(),
         }
     }
     pub fn restore(self, shell: &mut Shell) -> (Value, Vec<Value>) {
@@ -261,6 +263,7 @@ impl TaskSnapshot {
         shell.environment = self.environment;
         shell.cwd = self.cwd;
         shell.last_result = nodes.value(&self.last_result);
+        shell.load_paths = self.load_paths;
         shell.syntax_only = false;
         let Value::List(mut bundle) = nodes.value(&self.graph.value) else {
             unreachable!()

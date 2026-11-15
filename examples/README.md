@@ -27,12 +27,15 @@ Scripts do not automatically print expression return values; these examples use
 | [while.parsh](while.parsh) | Conditional iteration, outer bindings, and loop return values | Native and browser |
 | [structs.parsh](structs.parsh) | Constructors, accessors, predicates, nesting, and value equality | Native and browser |
 | [macros.parsh](macros.parsh) | Quoted forms, quasiquote, splicing, optional/rest parameters, and caller scope | Native and browser |
+| [metaprogramming.parsh](metaprogramming.parsh) | Standard macros, threading, forms, read/eval, and gensym | Native and browser |
 | [stdlib.parsh](stdlib.parsh) | Immutable list edits, ranges, sorting, search, pairing, Unicode text, and numeric helpers | Native and browser |
+| [functional.parsh](functional.parsh) | Function composition, keyed transforms, predicates, and nested updates | Native and browser |
 | [maps.parsh](maps.parsh) | Immutable updates, eager defaults, ordered keys, merge, and entries | Native and browser |
 | [json.parsh](json.parsh) | Struct encoding, typed decoding, byte input, and JSON errors | Native and browser |
 | [bytes.parsh](bytes.parsh) | Binary values, UTF-8, slicing, concatenation, Base64, and hex | Native and browser |
 | [pipelines.parsh](pipelines.parsh) | Pipelines, captured text, and numeric conversion at command boundaries | Native and browser |
 | [files.parsh](files.parsh) | Temporary directories, glob, redirection, and finally cleanup | Native only |
+| [loading.parsh](loading.parsh) | Shared script definitions and nested relative loads | Native only |
 | [execution.parsh](execution.parsh) | Command references, complete results, $?, raw capture, check, and exceptions | Native and browser |
 | [tasks.parsh](tasks.parsh) | Background execution, isolated state, wait, job-status, and cancellation | Native only |
 | [http.parsh](http.parsh) | Native HTTP responses, headers, byte bodies, and JSON decoding | Native only |

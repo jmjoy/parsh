@@ -1,0 +1,8 @@
+#!/usr/bin/env parsh
+(; Run from the repository root: cargo run -- examples/loading.parsh
+   Native only: the library files are in the repository filesystem. )
+
+(load examples/lib/greetings.parsh)
+(dump (greet-library parsh))
+(dump (increment #4))
+(dump $library_name)
