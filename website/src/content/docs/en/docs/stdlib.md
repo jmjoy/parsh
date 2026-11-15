@@ -31,22 +31,24 @@ declarations and file imports are not yet supported.
 
 ## Struct fields
 
-`(. value field)` reads a field from any user-defined or runtime struct, including
-`CallResult`. It requires exactly two arguments: a struct and a text field name.
-The field keeps its original type, including bytes, nil, or another struct.
-A missing field or an invalid argument type raises an error.
+`(. value field...)` reads one or more fields from any user-defined or runtime
+struct, including `CallResult`. It requires a struct and at least one text field
+name. Multiple fields chain from left to right. Each field keeps its original type,
+including bytes, nil, or another struct; a missing field or invalid intermediate
+value raises an error.
 
 ```parsh
 (defstruct Point x y)
 (let point (Point #3 #4))
 (let field x)
 (dump (. $point $field))
+(dump (. $point x))
 (dump (apply "." [$point y]))
 (dump (apply (function .) [$point x]))
 ```
 
-The results are `#3`, `#4`, and `#3`. `.` evaluates arguments once from left to
-right and does not itself replace `$?`. The `Point.x` accessor also remains
+The results are `#3`, `#3`, `#4`, and `#3`. `(. $point x y)` is equivalent to
+`(. (. $point x) y)`. `.` evaluates arguments once from left to right and does not itself replace `$?`. The `Point.x` accessor also remains
 available. See [structs and macros](/parsh/en/docs/structs-and-macros/) for nested
 field access and record definitions.
 

@@ -27,20 +27,21 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 
 ## 结构体字段
 
-`(. value field)` 可以读取用户定义或运行时结构体的字段，包括 `CallResult`。
-它恰好接受两个参数：结构体值和文本字段名。返回值保留字段的原始类型，包括 bytes、nil 和嵌套结构体。
-字段不存在或参数类型不正确时会报错。
+`(. value field...)` 可以读取用户定义或运行时结构体的一个或多个字段，包括 `CallResult`。
+它接受结构体值和至少一个文本字段名，多个字段会从左到右链式读取。返回值保留字段的原始类型，包括 bytes、nil 和嵌套结构体；
+字段不存在或中间值类型不正确时会报错。
 
 ```parsh
 (defstruct Point x y)
 (let point (Point #3 #4))
 (let field x)
 (dump (. $point $field))
+(dump (. $point x))
 (dump (apply "." [$point y]))
 (dump (apply (function .) [$point x]))
 ```
 
-结果依次为 `#3`、`#4` 和 `#3`。`.` 从左到右对参数求值，每个参数只求值一次，
+结果依次为 `#3`、`#3`、`#4` 和 `#3`。`(. $point x y)` 等价于 `(. (. $point x) y)`。`.` 从左到右对参数求值，每个参数只求值一次，
 字段读取本身不会覆盖 `$?`。原有 `Point.x` 访问器仍可使用。
 嵌套字段读取和结构体定义详见[结构与宏](/parsh/zh-cn/docs/structs-and-macros/)。
 

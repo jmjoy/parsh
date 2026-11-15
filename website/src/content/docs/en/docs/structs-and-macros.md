@@ -24,9 +24,10 @@ three kinds of command:
 (dump (if (Point? $point) (echo a point)))
 ```
 
-`(. value field)` reads a field from any struct without naming its type.
-The field name is ordinary text, so bare words, strings, variables, and expressions
-all work. The existing `(Point.x $point)` accessor remains available:
+`(. value field...)` reads one or more fields from any struct without naming its type.
+Each field name is ordinary text, so bare words, strings, variables, and expressions
+all work. Multiple fields are chained from left to right, and the existing
+`(Point.x $point)` accessor remains available:
 
 ```parsh
 (let field x)
@@ -36,10 +37,12 @@ all work. The existing `(Point.x $point)` accessor remains available:
 (dump (apply (function .) [$point y]))
 ```
 
-`.` takes exactly two arguments and returns the field's original value and type.
-It checks arity before evaluation, then evaluates and validates each argument once,
-from left to right. A non-struct value, a non-text field name, or a missing field
-raises an error. Read nested structs by composing calls: `(. (. $segment start) x)`.
+`.` takes at least two arguments and returns the final field's original value and type.
+`(. $point x y)` is equivalent to `(. (. $point x) y)`. It checks arity before
+evaluation, then evaluates the root and each reached field argument once from left to right,
+stopping at the first error.
+A non-struct intermediate value, a non-text field name, or a missing field raises
+an error. Read nested structs directly with `(. $segment end x)`.
 
 A struct can sit in lists and maps and be passed to functions. It displays in
 field order, for example `(Point #3 #4)`, or `(Point "3" "4")` when the fields are

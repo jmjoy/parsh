@@ -1032,7 +1032,7 @@ fn dot_reads_captured_bytes_and_nested_runtime_fields_in_scripts() {
         (dump (list (eq (. $result stdout) (CallResult.stdout $result))
                     (bytes/hex-encode (. $result $stream))
                     (bytes/to-text (. $result "stderr"))
-                    (. (. $result termination) code)
+                    (. $result termination code)
                     (nil? (. $result value)) (eq $? $saved)))
     "#);
     success(&output);

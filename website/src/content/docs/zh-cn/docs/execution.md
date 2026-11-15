@@ -85,7 +85,8 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 其名称与构造器由运行时保留，应读取运行时返回的记录，不能直接构造。
 
 通用内置函数 `.` 可以读取相同字段：`(. $result stdout)` 等价于
-`(CallResult.stdout $result)`，并保留捕获的 bytes 类型。字段名也可以来自文本变量，
+`(CallResult.stdout $result)`，并保留捕获的 bytes 类型。多个字段会从左到右链式读取，
+例如 `(. $result termination code)` 可以读取嵌套的退出码。字段名也可以来自文本变量，
 例如 `(. $result $field)`。字段读取本身不会覆盖 `$?`。
 
 | 结构体 | 字段 |

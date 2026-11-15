@@ -726,14 +726,14 @@ test("dot reads struct fields with dynamic names, functions, and runtime results
     (let field x)
     (let getter (function .))
     (dump (list (. $point x) (. $point "y") (. $point $field)
-                (. (. $segment end) x) ($getter $point y)
+                (. $segment end x) ($getter $point y)
                 (apply "." [$point x]) (apply $getter [$point y])
                 (eq (. $point x) (Point.x $point))))
     (let result (capture/result printf hello))
     (let saved $?)
     (dump (list (bytes/to-text (. $result stdout))
                 (eq (. $result stdout) (CallResult.stdout $result))
-                (. (. $result termination) code) (. $result value)
+                (. $result termination code) (. $result value)
                 (eq $? $saved)))
     (type .)
   `);
@@ -744,7 +744,7 @@ test("dot reads struct fields with dynamic names, functions, and runtime results
     ["(. #1 x)", ". expects a struct"],
     ["(. $point #1)", "expected text"],
     ["(. $point missing)", "Point has no field missing"],
-    ["(. $point)", "expected 2 arguments, got 1"],
+    ["(. $point)", "expected at least 2 arguments, got 1"],
   ] as const) {
     await execute(page, source);
     await expect(terminal(page)).toContainText(message);

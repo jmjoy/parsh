@@ -27,7 +27,7 @@
 (; Structs nest like any other value. )
 (defstruct Segment start end)
 (let segment (Segment (Point #0 #0) (Point #3 #4)))
-(printf "end.x=%s\n" (. (. $segment end) x))
+(printf "end.x=%s\n" (. $segment end x))
 
 (; type reports struct members without running anything. )
 (type . Point Point.x Point?)

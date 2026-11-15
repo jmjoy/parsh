@@ -75,14 +75,19 @@ fn dot_preserves_field_types_and_composes_for_nested_structs() {
         (defstruct Point x y)
         (defstruct Segment start end)
         (let segment (Segment (Point #0 #1) (Point #3 #4)))
-        (list (. (. $segment start) x)
+        (let first start)
+        (let second x)
+        (list (. $segment start x)
+              (. $segment end x)
+              (. $segment $first $second)
+              (. $segment start)
               (eq (. $segment end) (Segment.end $segment)))
         (defstruct Box value)
         (let items [#7 #true #nil (bytes/from-text hello) [nested]
                     {key #1} $segment (function +) (command echo) (quote (a b))])
         (eq (list/map (fn (value) (. (Box $value) value)) $items) $items)
         "#,
-        &["(#0 #true)", "#true"],
+        &["(#0 #3 #0 (Point #0 #1) #true)", "#true"],
     );
 }
 
@@ -98,7 +103,7 @@ fn dot_is_an_ordinary_function_and_does_not_replace_the_last_result() {
         (answer)
         (let saved $?)
         (list ($getter $point x) ((function .) $point y)
-              (apply $getter [$point x]) (apply "." $point [y])
+              (apply $getter [$point x]) (apply "." [$point y])
               ($name $point x) (. $? value) (eq $? $saved))
         "#,
         &["#42", "(#3 #4 #3 #4 #3 #42 #true)"],
@@ -119,18 +124,43 @@ fn dot_reads_runtime_records_and_preserves_bytes_and_nil() {
 }
 
 #[test]
+fn dot_chains_through_nested_structs_and_reports_intermediate_errors() {
+    assert_values(
+        r#"
+        (defstruct Point x)
+        (defstruct Box point)
+        (let box (Box (Point #7)))
+        (list (. $box point x) (eq (. $box point) (Point #7)))
+        "#,
+        &["(#7 #true)"],
+    );
+    assert_diagnostic(
+        "(defstruct Point x) (defstruct Box point) (let box (Box (Point #1))) (. $box point missing)",
+        "Point has no field missing",
+    );
+    assert_diagnostic(
+        "(defstruct Box point) (. (Box #1) point x)",
+        ". expects a struct",
+    );
+}
+
+#[test]
 fn dot_checks_arguments_and_reports_errors_at_the_operand() {
     for (source, message, location) in [
-        ("(.)", "expected 2 arguments, got 0", "interactive:1:1:"),
+        (
+            "(.)",
+            "expected at least 2 arguments, got 0",
+            "interactive:1:1:",
+        ),
         (
             "(. $undefined)",
-            "expected 2 arguments, got 1",
+            "expected at least 2 arguments, got 1",
             "interactive:1:1:",
         ),
         (
             "(. $undefined x extra)",
-            "expected 2 arguments, got 3",
-            "interactive:1:1:",
+            "undefined variable $undefined",
+            "interactive:1:4:",
         ),
         ("(. #1 x)", ". expects a struct", "interactive:1:4:"),
         ("(. {x #1} x)", ". expects a struct", "interactive:1:4:"),
@@ -161,8 +191,12 @@ fn dot_checks_arguments_and_reports_errors_at_the_operand() {
 #[test]
 fn dot_evaluates_operands_once_in_order_and_stops_after_invalid_arguments() {
     let mut repl = Repl::new();
-    evaluate(&mut repl, "(defstruct Point x) (let trace (str))");
+    evaluate(
+        &mut repl,
+        "(defstruct Point x) (defstruct Box point) (let trace (str))",
+    );
     for callee in [".", "(function .)"] {
+        evaluate(&mut repl, "(set trace (str))");
         let events = evaluate(
             &mut repl,
             &format!(
@@ -176,10 +210,9 @@ fn dot_evaluates_operands_once_in_order_and_stops_after_invalid_arguments() {
         evaluate(&mut repl, "(set trace (str))");
 
         for (arguments, message, expected_trace) in [
-            ("(set trace wrong)", "expected 2 arguments, got 1", r#""""#),
             (
-                "(set trace wrong) x extra",
-                "expected 2 arguments, got 3",
+                "(set trace wrong)",
+                "expected at least 2 arguments, got 1",
                 r#""""#,
             ),
             (
@@ -201,6 +234,19 @@ fn dot_evaluates_operands_once_in_order_and_stops_after_invalid_arguments() {
             );
             evaluate(&mut repl, "(set trace (str))");
         }
+
+        let events = evaluate(
+            &mut repl,
+            &format!(
+                "({callee}
+                    (do (set trace (str $trace v)) (Box (Point #7)))
+                    (do (set trace (str $trace p)) point)
+                    (do (set trace (str $trace f)) x))"
+            ),
+        );
+        assert!(diagnostics(&events).is_empty(), "{events:?}");
+        assert_eq!(values(&events), ["#7"]);
+        assert_eq!(values(&evaluate(&mut repl, "(get trace)")), [r#""vpf""#]);
     }
 }
 

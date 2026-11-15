@@ -302,8 +302,9 @@ fn arity(name: &str) -> (usize, usize) {
         "http/get" => (1, 2),
         "http/post" => (2, 3),
         "json/encode" | "json/decode" | "http/body-text" => (1, 1),
-        "." | "eq" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "map/del" | "map/has" | "quot"
-        | "rem" | "str/split" | "str/join" | "str/contains" => (2, 2),
+        "." => (2, usize::MAX),
+        "eq" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "map/del" | "map/has" | "quot" | "rem"
+        | "str/split" | "str/join" | "str/contains" => (2, 2),
         "list/first" => (1, 2),
         _ => (1, 1),
     }
@@ -360,13 +361,19 @@ impl Shell {
             | "signal"
             | "throw" => self.execution_builtin(expr, name, args, env, mode, io),
             "." => {
-                let Value::Struct { name, fields } = args.value(self, 0, env, io)? else {
-                    return Err(Error::new(args.at(expr, 0), ". expects a struct").into());
-                };
-                let field = args.text(self, expr, 1, env, io)?;
-                Ok(fields.get(&field).cloned().ok_or_else(|| {
-                    Error::new(args.at(expr, 1), format!("{name} has no field {field}"))
-                })?)
+                let mut value = args.value(self, 0, env, io)?;
+                for index in 1..args.len() {
+                    let Value::Struct { name, fields } = value else {
+                        return Err(
+                            Error::new(args.at(expr, index - 1), ". expects a struct").into()
+                        );
+                    };
+                    let field = args.text(self, expr, index, env, io)?;
+                    value = fields.get(&field).cloned().ok_or_else(|| {
+                        Error::new(args.at(expr, index), format!("{name} has no field {field}"))
+                    })?;
+                }
+                Ok(value)
             }
             "get" => {
                 let Value::Text(name) = args.value(self, 0, env, io)? else {

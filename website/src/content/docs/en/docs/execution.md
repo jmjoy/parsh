@@ -103,8 +103,10 @@ Runtime records provide ordinary field accessors and predicates, such as
 are reserved; inspect records returned by the runtime rather than constructing them.
 
 The generic `.` builtin reads the same fields: `(. $result stdout)` is equivalent
-to `(CallResult.stdout $result)` and preserves the captured bytes. It also accepts
-dynamic text field names, such as `(. $result $field)`. Field reads do not replace `$?`.
+to `(CallResult.stdout $result)` and preserves the captured bytes. Multiple fields
+chain from left to right, so `(. $result termination code)` reads a nested exit code.
+It also accepts dynamic text field names, such as `(. $result $field)`. Field reads
+do not replace `$?`.
 
 | Record | Fields |
 | --- | --- |
