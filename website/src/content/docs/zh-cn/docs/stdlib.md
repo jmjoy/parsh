@@ -121,6 +121,12 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 | `(list/append xs value...)` | 追加各个元素后的新列表，列表元素保留嵌套 |
 | `(list/concat xs...)` | 将列表依次拼接；零参数返回空列表 |
 | `(list/slice xs start [end])` | 不包含 end 的切片，省略 end 表示到末尾 |
+| `(list/range end)` / `(list/range start end [step])` | 不包含 end 的整数列表；start 默认为零，step 默认为一 |
+| `(list/set xs index value)` | 替换索引处元素后的新列表 |
+| `(list/insert xs index value)` | 在索引处元素之前插入 value 后的新列表 |
+| `(list/del xs index)` | 删除索引处元素后的新列表 |
+| `(list/enumerate xs)` | 从零开始的 `[index value]` 列表 |
+| `(list/zip xs...)` | 将各列表对应元素配对为列表，长度取最短输入；零参数返回空列表 |
 
 ```parsh
 (let original [a b])
@@ -135,6 +141,25 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 索引和切片边界只接受 int；文本和整值 float 都会报错，需要时显式使用 `int`。单项读取越界时报错，除非提供默认值。
 切片边界越界时截断，开始位置大于结束位置时返回空列表。
 
+`set`、`insert` 和 `del` 使用相同的整数和负索引规则，越界时报错。
+`insert` 还允许索引等于列表长度，表示追加元素；`#-1` 表示插入到最后一项之前。
+空列表可以在索引零处插入。插入或替换的值始终作为一个元素保留，包括列表值。
+
+`range` 只接受 int，支持负步长。步长为零时报错；步长方向无法到达终点时返回空列表。
+每次调用立即生成最多 1,000,000 项，超过上限时在分配前报错。
+`zip` 的每个输入都必须是列表，即使另一个输入为空；元素保留原始类型和嵌套结构。
+
+```parsh
+(dump (list/range #1 #6 #2))
+(dump (list/range #5 #0 #-2))
+(dump (list/insert [a b] #-1 [c d]))
+(dump (list/enumerate [a b]))
+(dump (list/zip [a b] [#1 #2 #3]))
+```
+
+结果依次为 `(#1 #3 #5)`、`(#5 #3 #1)`、`("a" ("c" "d") "b")`、
+`((#0 "a") (#1 "b"))` 和 `(("a" #1) ("b" #2))`。
+
 ## 字符串
 
 | 调用 | 返回值 |
@@ -148,6 +173,8 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 | `(str/trim text)` | 去掉两端 Unicode 空白 |
 | `(str/replace text from to)` | 将所有不重叠的字面匹配替换为 to |
 | `(str/contains text part)` | 是否包含字面子串，返回布尔值 |
+| `(str/starts-with text prefix)` / `(str/ends-with text suffix)` | 是否匹配字面前缀或后缀，返回布尔值 |
+| `(str/lower text)` / `(str/upper text)` | Unicode 小写或大写文本 |
 
 ```parsh
 (dump (list (str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3)))
@@ -160,6 +187,10 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 所有文本参数都要求文本；`str/join` 只接受文本元素，需要转换时显式使用 `str`。
 分割保留中间和末尾的空字段；空分隔符沿用 Rust `split("")` 的规则，包含两端空字段。
 替换使用 Rust `replace` 的规则，空模式会在字符之间及两端插入替换文本。
+
+前后缀判断区分大小写，空前缀或后缀匹配任意文本，包括空文本。
+大小写转换使用不依赖区域设置的 Unicode 规则，字符数量可能改变，
+例如 `(str/upper Straße)` 返回 `"STRASSE"`。这些操作同样只接受文本。
 
 ## 数据变换
 
@@ -175,15 +206,26 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 | --- | --- |
 | `(list/map f xs)` | 依次调用 `f`，收集各项返回值 |
 | `(list/filter predicate xs)` | 保留谓词返回真的原始元素 |
+| `(list/find predicate xs)` | 谓词首次返回真时的原始元素；未命中返回 nil |
 | `(list/fold f initial xs)` | 从左到右，将累加值和每个元素传给 `f` |
 | `(list/any predicate xs)` | 首个真值处短路；空列表为假 |
 | `(list/all predicate xs)` | 首个假值处短路；空列表为真 |
 | `(list/reverse xs)` | 顺序反转后的新列表 |
 | `(list/contains xs value)` | 按 `eq` 的类型和值相等规则判断成员关系 |
+| `(list/index-of xs value)` | 首个按 `eq` 匹配的元素索引，从零开始；未命中返回 nil |
+| `(list/sort xs)` | 稳定升序排列后的新列表；仅接受文本或数值元素 |
+| `(list/unique xs)` | 按 `eq` 全局去重后的新列表，保留首次出现顺序 |
 
 回调可以是函数值、外部命令引用或 `apply` 支持的文本名称。
-`filter`、`any`、`all` 的回调必须返回布尔值，`CallResult`不能用作谓词结果。
+`filter`、`find`、`any`、`all` 的回调必须返回布尔值，`CallResult`不能用作谓词结果。
 空列表上的 `fold` 返回 `initial`。
+`find` 在首次匹配时停止调用谓词，空列表返回 nil。
+
+`sort` 接受文本列表或数值列表。整数与浮点数可以混合，比较时保留大整数精度；
+数值相等的元素保留原有顺序和类型。文本按 Unicode 标量顺序排列，不依赖区域设置。
+文本与数值混合、其他元素类型都会报错，空列表合法。
+`unique` 和 `index-of` 接受任意值，使用与 `eq` 相同的结构化相等规则，
+因此 `#1`、`#1.0` 和文本 `1` 仍然是三个不同的值。
 
 映射支持浅合并和有序 entries 转换：
 

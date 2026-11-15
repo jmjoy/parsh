@@ -38,7 +38,7 @@ Scripts print explicitly with `echo`, `printf`, and `dump`; file mode does not a
 
 | Script | Demonstrates | Environment |
 | --- | --- | --- |
-| [stdlib.parsh](https://github.com/jmjoy/parsh/blob/master/examples/stdlib.parsh) | Immutable lists, Unicode text, higher-order transforms, and numeric helpers | Native and browser |
+| [stdlib.parsh](https://github.com/jmjoy/parsh/blob/master/examples/stdlib.parsh) | Immutable list edits, ranges, sorting, search, pairing, Unicode text, and numeric helpers | Native and browser |
 | [maps.parsh](https://github.com/jmjoy/parsh/blob/master/examples/maps.parsh) | Immutable updates, eager defaults, ordered keys, merge, and entries | Native and browser |
 | [json.parsh](https://github.com/jmjoy/parsh/blob/master/examples/json.parsh) | Struct encoding, typed decoding, byte input, and JSON errors | Native and browser |
 | [bytes.parsh](https://github.com/jmjoy/parsh/blob/master/examples/bytes.parsh) | Binary values, UTF-8, slicing, concatenation, Base64, and hex | Native and browser |

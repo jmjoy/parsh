@@ -27,7 +27,7 @@ Scripts do not automatically print expression return values; these examples use
 | [while.parsh](while.parsh) | Conditional iteration, outer bindings, and loop return values | Native and browser |
 | [structs.parsh](structs.parsh) | Constructors, accessors, predicates, nesting, and value equality | Native and browser |
 | [macros.parsh](macros.parsh) | Quoted forms, quasiquote, splicing, optional/rest parameters, and caller scope | Native and browser |
-| [stdlib.parsh](stdlib.parsh) | Immutable lists, Unicode text, higher-order transforms, and numeric helpers | Native and browser |
+| [stdlib.parsh](stdlib.parsh) | Immutable list edits, ranges, sorting, search, pairing, Unicode text, and numeric helpers | Native and browser |
 | [maps.parsh](maps.parsh) | Immutable updates, eager defaults, ordered keys, merge, and entries | Native and browser |
 | [json.parsh](json.parsh) | Struct encoding, typed decoding, byte input, and JSON errors | Native and browser |
 | [bytes.parsh](bytes.parsh) | Binary values, UTF-8, slicing, concatenation, Base64, and hex | Native and browser |

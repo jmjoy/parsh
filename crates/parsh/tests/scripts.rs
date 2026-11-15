@@ -88,6 +88,24 @@ fn success(output: &Output) {
 }
 
 #[test]
+fn collection_and_capture_examples_run_from_the_repository_root() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for script in ["stdlib", "for", "functions", "files"] {
+        let path = format!("examples/{script}.parsh");
+        let output = invoke_in(&[&path], "", Some(&root));
+        assert!(output.status.success(), "{path}: {}", stderr(&output));
+        assert!(output.stderr.is_empty(), "{path}: {}", stderr(&output));
+        if script == "functions" {
+            assert!(stdout(&output).contains("captured function output: <hello, parsh>"));
+            assert!(stdout(&output).contains("counter: 11 16 17"));
+        }
+        if script == "files" {
+            assert!(stdout(&output).contains("temporary directory removed"));
+        }
+    }
+}
+
+#[test]
 fn module_names_preserve_external_path_lookup_and_explicit_command_calls() {
     let directory = tempfile::tempdir().unwrap();
     fs::create_dir(directory.path().join("str")).unwrap();

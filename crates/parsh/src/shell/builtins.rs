@@ -48,8 +48,18 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "list/append",
     "list/concat",
     "list/slice",
+    "list/range",
+    "list/set",
+    "list/insert",
+    "list/del",
+    "list/sort",
+    "list/unique",
+    "list/index-of",
+    "list/enumerate",
+    "list/zip",
     "list/map",
     "list/filter",
+    "list/find",
     "list/fold",
     "list/any",
     "list/all",
@@ -73,6 +83,10 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "str/trim",
     "str/replace",
     "str/contains",
+    "str/starts-with",
+    "str/ends-with",
+    "str/lower",
+    "str/upper",
     "typeof",
     "text?",
     "number?",
@@ -272,7 +286,7 @@ impl Value {
 
 fn arity(name: &str) -> (usize, usize) {
     match name {
-        "list" | "str" | "map" | "+" | "*" | "list/concat" => (0, usize::MAX),
+        "list" | "str" | "map" | "+" | "*" | "list/concat" | "list/zip" => (0, usize::MAX),
         "-" | "/" | "min" | "max" | "list/append" => (1, usize::MAX),
         "apply" => (2, usize::MAX),
         "capture/result"
@@ -282,7 +296,8 @@ fn arity(name: &str) -> (usize, usize) {
         | "capture/stderr-trim"
         | "spawn" => (1, usize::MAX),
         "map/get" | "list/get" | "str/get" | "list/slice" | "str/slice" => (2, 3),
-        "map/set" | "str/replace" => (3, 3),
+        "map/set" | "list/set" | "list/insert" | "str/replace" => (3, 3),
+        "list/range" => (1, 3),
         "map/merge" | "bytes/concat" => (0, usize::MAX),
         "map/entries"
         | "map/from-entries"
@@ -294,8 +309,8 @@ fn arity(name: &str) -> (usize, usize) {
         | "bytes/base64-decode"
         | "bytes/hex-encode"
         | "bytes/hex-decode" => (1, 1),
-        "list/contains" => (2, 2),
-        "list/map" | "list/filter" | "list/any" | "list/all" => (2, 2),
+        "list/contains" | "list/index-of" | "list/del" => (2, 2),
+        "list/map" | "list/filter" | "list/find" | "list/any" | "list/all" => (2, 2),
         "list/fold" => (3, 3),
         "bytes/slice" => (2, 3),
         "http/request" => (2, 4),
@@ -304,7 +319,7 @@ fn arity(name: &str) -> (usize, usize) {
         "json/encode" | "json/decode" | "http/body-text" => (1, 1),
         "." => (2, usize::MAX),
         "eq" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "map/del" | "map/has" | "quot" | "rem"
-        | "str/split" | "str/join" | "str/contains" => (2, 2),
+        | "str/split" | "str/join" | "str/contains" | "str/starts-with" | "str/ends-with" => (2, 2),
         "list/first" => (1, 2),
         _ => (1, 1),
     }
@@ -507,8 +522,10 @@ impl Shell {
                 values.extend(tail);
                 self.call_value(expr, callee, Arguments::Values(&values), env, mode, io)
             }
-            "list/map" | "list/filter" | "list/fold" | "list/any" | "list/all" | "list/reverse"
-            | "list/contains" => self.list_transform(expr, name, args, env, mode, io),
+            "list/map" | "list/filter" | "list/find" | "list/fold" | "list/any" | "list/all"
+            | "list/reverse" | "list/contains" => {
+                self.list_transform(expr, name, args, env, mode, io)
+            }
             _ => {
                 // New value operations evaluate explicit arguments in order before
                 // inspecting their types or choosing a fallback result.
@@ -661,6 +678,31 @@ impl Shell {
         env: &Env,
         io: &Io,
     ) -> EvalResult<Value> {
+        if name == "list/range" {
+            return self.list_range(expr, args, env, io);
+        }
+        if name == "list/zip" {
+            let mut lists = Vec::with_capacity(args.len());
+            for i in 0..args.len() {
+                let Value::List(items) = args.value(self, i, env, io)? else {
+                    return Err(Error::new(args.at(expr, i), "expected a list").into());
+                };
+                lists.push(items.into_iter());
+            }
+            let len = lists.iter().map(ExactSizeIterator::len).min().unwrap_or(0);
+            return Ok(Value::List(
+                (0..len)
+                    .map(|_| {
+                        Value::List(
+                            lists
+                                .iter_mut()
+                                .map(|items| items.next().unwrap())
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            ));
+        }
         if name == "list/concat" {
             let mut result = Vec::new();
             for i in 0..args.len() {
@@ -707,8 +749,116 @@ impl Shell {
                 let (start, end) = self.slice_bounds(expr, args, items.len(), env, io)?;
                 Ok(Value::List(items.drain(start..end).collect()))
             }
+            "list/set" | "list/insert" | "list/del" => {
+                let index = self.index(expr, args, 1, items.len(), env, io)?;
+                let limit = items.len() as i128;
+                if index < 0 || index > limit || (index == limit && name != "list/insert") {
+                    return Err(Error::new(args.at(expr, 1), "list index out of range").into());
+                }
+                let index = index as usize;
+                match name {
+                    "list/set" => items[index] = args.value(self, 2, env, io)?,
+                    "list/insert" => items.insert(index, args.value(self, 2, env, io)?),
+                    "list/del" => {
+                        items.remove(index);
+                    }
+                    _ => unreachable!(),
+                }
+                Ok(Value::List(items))
+            }
+            "list/sort" => {
+                let texts = matches!(items.first(), Some(Value::Text(_)));
+                for item in &items {
+                    let valid = match item {
+                        Value::Text(_) => texts,
+                        Value::Number(Number::Int(_)) => !texts,
+                        Value::Number(Number::Float(value)) => !texts && value.is_finite(),
+                        _ => false,
+                    };
+                    if !valid {
+                        return Err(Error::new(
+                            args.at(expr, 0),
+                            "list/sort expects only text or only finite numbers",
+                        )
+                        .into());
+                    }
+                }
+                items.sort_by(|left, right| match (left, right) {
+                    (Value::Text(left), Value::Text(right)) => left.cmp(right),
+                    (Value::Number(left), Value::Number(right)) => {
+                        left.compare(*right).expect("finite numbers are comparable")
+                    }
+                    _ => unreachable!("sort operands were validated"),
+                });
+                Ok(Value::List(items))
+            }
+            "list/unique" => {
+                let mut unique = Vec::new();
+                for item in items {
+                    if !unique.contains(&item) {
+                        unique.push(item);
+                    }
+                }
+                Ok(Value::List(unique))
+            }
+            "list/index-of" => {
+                let needle = args.value(self, 1, env, io)?;
+                Ok(items
+                    .iter()
+                    .position(|item| item == &needle)
+                    .map_or(Value::Nil, |index| Value::Number(Number::Int(index as i64))))
+            }
+            "list/enumerate" => Ok(Value::List(
+                items
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, item)| {
+                        Value::List(vec![Value::Number(Number::Int(index as i64)), item])
+                    })
+                    .collect(),
+            )),
             _ => unreachable!("unknown list builtin"),
         }
+    }
+
+    fn list_range(
+        &mut self,
+        expr: &Expr,
+        args: Arguments<'_>,
+        env: &Env,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        let first = i128::from(args.integer(self, expr, 0, env, io)?);
+        let (start, end) = if args.len() == 1 {
+            (0, first)
+        } else {
+            (first, i128::from(args.integer(self, expr, 1, env, io)?))
+        };
+        let step = if args.len() == 3 {
+            i128::from(args.integer(self, expr, 2, env, io)?)
+        } else {
+            1
+        };
+        if step == 0 {
+            return Err(Error::new(args.at(expr, 2), "list/range step must not be zero").into());
+        }
+        let count = if step > 0 && start < end {
+            (end - start - 1) / step + 1
+        } else if step < 0 && start > end {
+            (start - end - 1) / -step + 1
+        } else {
+            0
+        };
+        // Ranges are eager lists; reject excessive allocations before generating values.
+        const MAX_RANGE_ITEMS: i128 = 1_000_000;
+        if count > MAX_RANGE_ITEMS {
+            return Err(Error::new(expr, "list/range exceeds 1000000 items").into());
+        }
+        Ok(Value::List(
+            (0..count)
+                .map(|index| Value::Number(Number::Int((start + index * step) as i64)))
+                .collect(),
+        ))
     }
 
     fn list_transform(
@@ -735,14 +885,18 @@ impl Shell {
                 let needle = args.value(self, 1, env, io)?;
                 Ok(Value::Bool(values.iter().any(|value| value == &needle)))
             }
-            "list/map" | "list/filter" | "list/any" | "list/all" => {
+            "list/map" | "list/filter" | "list/find" | "list/any" | "list/all" => {
                 let callback = args.value(self, 0, env, io)?;
                 let Value::List(values) = args.value(self, 1, env, io)? else {
                     return Err(
                         Error::new(args.at(expr, 1), "list transform expects a list").into(),
                     );
                 };
-                let mut mapped = Vec::with_capacity(values.len());
+                let mut mapped = if matches!(name, "list/map" | "list/filter") {
+                    Vec::with_capacity(values.len())
+                } else {
+                    Vec::new()
+                };
                 for value in values {
                     let callback_args = [value.clone()];
                     let result = self.call_value(
@@ -755,7 +909,7 @@ impl Shell {
                     )?;
                     match name {
                         "list/map" => mapped.push(result),
-                        "list/filter" | "list/any" | "list/all" => {
+                        "list/filter" | "list/find" | "list/any" | "list/all" => {
                             let Value::Bool(keep) = result else {
                                 return Err(Error::new(
                                     args.at(expr, 0),
@@ -765,6 +919,8 @@ impl Shell {
                             };
                             if name == "list/filter" && keep {
                                 mapped.push(value);
+                            } else if name == "list/find" && keep {
+                                return Ok(value);
                             } else if name == "list/any" && keep {
                                 return Ok(Value::Bool(true));
                             } else if name == "list/all" && !keep {
@@ -776,6 +932,7 @@ impl Shell {
                 }
                 Ok(match name {
                     "list/map" | "list/filter" => Value::List(mapped),
+                    "list/find" => Value::Nil,
                     "list/any" => Value::Bool(false),
                     "list/all" => Value::Bool(true),
                     _ => unreachable!(),
@@ -866,6 +1023,8 @@ impl Shell {
                 text.lines().map(|line| Value::Text(line.into())).collect(),
             )),
             "str/trim" => Ok(Value::Text(text.trim().into())),
+            "str/lower" => Ok(Value::Text(text.to_lowercase())),
+            "str/upper" => Ok(Value::Text(text.to_uppercase())),
             "str/replace" => {
                 let from = args.text(self, expr, 1, env, io)?;
                 let to = args.text(self, expr, 2, env, io)?;
@@ -873,6 +1032,12 @@ impl Shell {
             }
             "str/contains" => Ok(Value::Bool(
                 text.contains(&args.text(self, expr, 1, env, io)?),
+            )),
+            "str/starts-with" => Ok(Value::Bool(
+                text.starts_with(&args.text(self, expr, 1, env, io)?),
+            )),
+            "str/ends-with" => Ok(Value::Bool(
+                text.ends_with(&args.text(self, expr, 1, env, io)?),
             )),
             _ => unreachable!("unknown string builtin"),
         }

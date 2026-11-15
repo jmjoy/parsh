@@ -12,6 +12,6 @@
 
 (; An inner break ends its own loop; the outer loop keeps running. )
 (for row (list A B)
-  (for column (list #1 #2 #3)
+  (for column (list/range #1 #4)
     (if (= $column #3) (break))
     (echo "$row$column")))

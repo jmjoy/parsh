@@ -22,11 +22,11 @@
 (for name (names)
   (echo (greet $name)))
 
-(; Calling a function as a value captures stdout across its whole body. )
+(; Explicit capture collects stdout across the whole function body. )
 (defn banner (name)
   (printf "hello, ")
   (printf "%s\n" $name))
-(printf "captured function output: <%s>\n" (banner parsh))
+(printf "captured function output: <%s>\n" (capture/stdout-trim banner parsh))
 
 (; Closures retain captured bindings; optional defaults run only when omitted. )
 (defn accumulator (initial)

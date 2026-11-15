@@ -133,6 +133,12 @@ zero, integer overflow, rounding outside i64, and non-finite values are language
 | `(list/append xs value...)` | A new list with each value appended, preserving nested lists |
 | `(list/concat xs...)` | Concatenated lists; no arguments returns an empty list |
 | `(list/slice xs start [end])` | Slice excluding end; omitted end means the list's end |
+| `(list/range end)` / `(list/range start end [step])` | Integer list excluding end; start defaults to zero and step to one |
+| `(list/set xs index value)` | A new list with the indexed item replaced |
+| `(list/insert xs index value)` | A new list with value inserted before index |
+| `(list/del xs index)` | A new list with the indexed item removed |
+| `(list/enumerate xs)` | List of `[index value]` pairs, starting at zero |
+| `(list/zip xs...)` | List of corresponding item lists, stopping at the shortest input; no arguments returns an empty list |
 
 ```parsh
 (let original [a b])
@@ -148,6 +154,29 @@ item. Indices and slice bounds require int values. Text and integral floats are 
 the list require a default or raise an error. Slice bounds are clamped, and
 reversed ranges return an empty list.
 
+`set`, `insert`, and `del` use the same integer and negative-index rules. They
+raise an error for an out-of-range index. `insert` also accepts the list's length
+to append an item; `#-1` inserts before the last item. Inserting at zero works on
+an empty list. Each inserted or replaced value remains a single item, even if it
+is a list.
+
+`range` accepts only ints and supports negative steps. A zero step is an error;
+a step pointing away from the end produces an empty list. It eagerly generates
+at most 1,000,000 items per call and rejects larger ranges before allocation.
+`zip` requires every input to be a list, even if another input is empty, and
+preserves each item's original type and nesting.
+
+```parsh
+(dump (list/range #1 #6 #2))
+(dump (list/range #5 #0 #-2))
+(dump (list/insert [a b] #-1 [c d]))
+(dump (list/enumerate [a b]))
+(dump (list/zip [a b] [#1 #2 #3]))
+```
+
+Results are `(#1 #3 #5)`, `(#5 #3 #1)`, `("a" ("c" "d") "b")`,
+`((#0 "a") (#1 "b"))`, and `(("a" #1) ("b" #2))`.
+
 ## Text
 
 | Call | Result |
@@ -161,6 +190,8 @@ reversed ranges return an empty list.
 | `(str/trim text)` | Text with leading and trailing Unicode whitespace removed |
 | `(str/replace text from to)` | All non-overlapping literal matches replaced with to |
 | `(str/contains text part)` | Boolean indicating a literal substring match |
+| `(str/starts-with text prefix)` / `(str/ends-with text suffix)` | Boolean indicating a literal prefix or suffix match |
+| `(str/lower text)` / `(str/upper text)` | Unicode lowercase or uppercase text |
 
 ```parsh
 (dump (list (str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3)))
@@ -176,6 +207,11 @@ empty fields. An empty separator follows Rust `split("")`, including empty end
 fields. Replacement follows Rust `replace`; an empty pattern inserts text
 between characters and at both ends.
 
+Prefix and suffix checks are case-sensitive; an empty prefix or suffix matches
+any text, including empty text. Case conversion uses Unicode rules without a
+locale and may change the number of characters, as in `(str/upper Straße)`
+returning `"STRASSE"`. These operations also require text inputs.
+
 ## Data transforms
 
 Higher-order list functions take the function first and return new values:
@@ -190,15 +226,28 @@ Higher-order list functions take the function first and return new values:
 | --- | --- |
 | `(list/map f xs)` | Call `f` on each item and collect its return values |
 | `(list/filter predicate xs)` | Keep items for which the predicate returns true |
+| `(list/find predicate xs)` | First original item for which the predicate returns true; nil if none |
 | `(list/fold f initial xs)` | Call `f` with the accumulator and each item, from left to right |
 | `(list/any predicate xs)` | Short-circuit at the first true result; false for an empty list |
 | `(list/all predicate xs)` | Short-circuit at the first false result; true for an empty list |
 | `(list/reverse xs)` | A new list in reverse order |
 | `(list/contains xs value)` | Boolean membership using `eq` type-and-value equality |
+| `(list/index-of xs value)` | Zero-based index of the first `eq` match; nil if none |
+| `(list/sort xs)` | A new list in stable ascending order; text or numeric items only |
+| `(list/unique xs)` | A new list with global duplicates removed using `eq`, keeping the first occurrence |
 
 Callbacks accept function values, external references, or text names supported by
-`apply`. `filter`, `any`, and `all` require boolean callback results; `CallResult` structures
+`apply`. `filter`, `find`, `any`, and `all` require boolean callback results; `CallResult` structures
 are not accepted as predicate results. `fold` returns `initial` for an empty list.
+`find` stops calling the predicate at the first match and returns nil for an
+empty list.
+
+`sort` accepts a list of text or a list of numbers. Ints and floats may be mixed,
+and comparisons retain large-integer precision. Numerically equal items retain
+their input order and types. Text sorting uses Unicode scalar order without a
+locale. Mixed text and numbers, and other item types, are errors. Empty lists are
+valid. `unique` and `index-of` accept any value type and use the same structural
+equality as `eq`, so `#1`, `#1.0`, and text `1` remain distinct.
 
 Maps support shallow merging and ordered entry conversion:
 

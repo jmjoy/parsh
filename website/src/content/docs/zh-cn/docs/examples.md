@@ -38,7 +38,7 @@ cargo run -- examples/execution.parsh
 
 | 脚本 | 演示内容 | 运行环境 |
 | --- | --- | --- |
-| [stdlib.parsh](https://github.com/jmjoy/parsh/blob/master/examples/stdlib.parsh) | 不可变列表、Unicode 文本、高阶变换和数值辅助函数 | 原生与浏览器 |
+| [stdlib.parsh](https://github.com/jmjoy/parsh/blob/master/examples/stdlib.parsh) | 不可变列表更新、序列、排序、查询、配对、Unicode 文本和数值辅助函数 | 原生与浏览器 |
 | [maps.parsh](https://github.com/jmjoy/parsh/blob/master/examples/maps.parsh) | 不可变更新、默认值严格求值、有序键、合并和 entries 转换 | 原生与浏览器 |
 | [json.parsh](https://github.com/jmjoy/parsh/blob/master/examples/json.parsh) | 结构体编码、有类型的解码、字节输入和 JSON 错误 | 原生与浏览器 |
 | [bytes.parsh](https://github.com/jmjoy/parsh/blob/master/examples/bytes.parsh) | 二进制值、UTF-8、切片、拼接、Base64 和 Hex | 原生与浏览器 |

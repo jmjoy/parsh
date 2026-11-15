@@ -27,7 +27,7 @@ cargo run -- examples/tasks.parsh
 | [while.parsh](while.parsh) | 条件循环、外层绑定和循环返回值 | 原生与浏览器 |
 | [structs.parsh](structs.parsh) | 构造器、访问器、谓词、嵌套和值相等 | 原生与浏览器 |
 | [macros.parsh](macros.parsh) | 引用表单、准引用、摊平、可选与变长参数和调用方作用域 | 原生与浏览器 |
-| [stdlib.parsh](stdlib.parsh) | 不可变列表、Unicode 文本、高阶变换和数值辅助函数 | 原生与浏览器 |
+| [stdlib.parsh](stdlib.parsh) | 不可变列表更新、序列、排序、查询、配对、Unicode 文本和数值辅助函数 | 原生与浏览器 |
 | [maps.parsh](maps.parsh) | 不可变更新、默认值严格求值、有序键、合并和 entries 转换 | 原生与浏览器 |
 | [json.parsh](json.parsh) | 结构体编码、有类型的解码、字节输入和 JSON 错误 | 原生与浏览器 |
 | [bytes.parsh](bytes.parsh) | 二进制值、UTF-8、切片、拼接、Base64 和 Hex | 原生与浏览器 |
