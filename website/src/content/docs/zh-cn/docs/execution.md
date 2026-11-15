@@ -33,38 +33,54 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 用户函数按函数体返回；以命令结束时直接返回该 `CallResult`。
 
 需要文本时使用 `(capture/stdout pwd)` 或 `(capture/stderr callee args...)`。
-它们只捕获指定流，严格解码 UTF-8 并保留全部换行；另一流沿用当前输出目标。
-空捕获返回空文本，未捕获的流返回 nil。命令失败会抛错，错误附带捕获结果。
-需要裁剪首尾空白时，使用 `out`（`capture/stdout-trim`）或 `err`（`capture/stderr-trim`）。
-短名是普通内置别名，也支持 `function` 和 `apply`。两者分别等价于
-`str/trim` 包裹对应的捕获方法。它们去掉首尾 Unicode 空白（空格、制表符和换行），
-保留中间内容；空输出和全空白输出返回空文本。`$?` 中的原始 bytes 不会被裁剪。
-目标流已重定向而无法捕获时，裁剪版本与原组合一样报 `expected text`。
+它们只捕获指定流，严格解码 UTF-8，默认裁剪首尾 Unicode 空白；另一流沿用当前输出目标。
+空输出或全空白输出返回空文本，未捕获或已显式重定向的流返回 nil。
+命令失败会抛错，错误附带捕获结果。
+
+三个 `capture/` 函数都接受可选的**前置选项映射**，放在被调用对象之前。
+`out`、`err` 保留为 `capture/stdout`、`capture/stderr` 的短别名，接受相同选项。
+它们都是普通内置，支持 `function` 和 `apply`。
+
+| 选项 | 默认值 | 行为 |
+| --- | --- | --- |
+| `trim` | `#true` | 裁剪文本首尾 Unicode 空白；`#false` 保留原文 |
+| `bytes` | `#false` | `#true` 返回原始 bytes，跳过 UTF-8 解码，并忽略 trim |
+
+选项值必须为布尔值，未知键会报错。`capture/result` 的两个流字段使用相同选项，
+包括非零退出的结果。放在被调用对象后面的映射仍是普通实参。
 
 ```parsh
-(let here (out pwd))
-(dump $here)
+(dump (capture/stdout printf " hello\n"))
+(dump (capture/stdout {trim #false} printf " hello\n"))
+(dump (bytes/hex-encode (capture/stdout {bytes #true} printf " hello\n")))
+(dump (apply capture/stdout [{trim #false} printf " hello\n"]))
 ```
+
+结果依次为 `"hello"`、`" hello\n"`、`"2068656c6c6f0a"` 和 `" hello\n"`。
+`{bytes #true trim #true}` 仍会保留每个原始字节。
 
 | 调用 | 参数与返回值 |
 | --- | --- |
 | `(command name)` | 非空文本程序名，返回 `<command name>` |
 | `(apply callee fixed... args)` | 仅把最后一个列表展开为调用参数 |
-| `(capture/stdout callee args...)` | 捕获 stdout，返回保留换行的 UTF-8 文本 |
-| `(capture/stderr callee args...)` | 捕获 stderr，返回保留换行的 UTF-8 文本 |
-| `(capture/stdout-trim callee args...)` | 捕获 stdout，返回去掉首尾空白的 UTF-8 文本 |
-| `(capture/stderr-trim callee args...)` | 捕获 stderr，返回去掉首尾空白的 UTF-8 文本 |
-| `(out callee args...)` | `capture/stdout-trim` 的短别名 |
-| `(err callee args...)` | `capture/stderr-trim` 的短别名 |
-| `(capture/result callee args...)` | 实参直接排列，返回同步调用的完整 `CallResult` |
+| `(capture/stdout [options] callee args...)` | 捕获 stdout；默认裁剪文本，也可选择原始 bytes |
+| `(capture/stderr [options] callee args...)` | 捕获 stderr；默认裁剪文本，也可选择原始 bytes |
+| `(out [options] callee args...)` | `capture/stdout` 的别名 |
+| `(err [options] callee args...)` | `capture/stderr` 的别名 |
+| `(capture/result [options] callee args...)` | 完整同步 `CallResult`，流字段使用相同选项 |
 | `(spawn callee args...)` | 实参直接排列，返回原生 `Job` |
 
 传给捕获方法和 `spawn` 的列表仍是一个语言参数；调用外部命令时，才按通常规则展开一层 argv。
-这些调用的首参都不是待执行的命令表达式；多个表达式或管道应放入 `(fn () ...)`。
+被调用对象应为函数值、命令引用或文本名称；多个表达式或管道放入 `(fn () ...)`。
+所有实参在捕获开始前从左到右各求值一次。
+
+`capture/stdout-trim`、`capture/stderr-trim` 已合并到对应函数的默认行为，不再是内置名称。
+原来需要保留空白的调用添加 `{trim #false}`；原来依赖 `capture/result` 原始 bytes 字段的调用
+添加 `{bytes #true}`。
 
 ## 完整执行结果
 
-`capture/result` 的首参是被调用对象，后面直接铺平实参；它捕获 stdout/stderr 并返回 `CallResult`：
+`capture/result` 接受可选前置选项映射、被调用对象和直接铺平的实参，分别捕获 stdout/stderr，返回 `CallResult`：
 
 ```parsh
 (let result (capture/result printf "hello\n"))
@@ -77,7 +93,7 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 | --- | --- |
 | `value` | 语言返回值；外部命令为 nil |
 | `termination` | `(Exited code)`、`(Signaled signal core_dumped)` 或 nil |
-| `stdout`、`stderr` | 捕获的 `bytes`；显式重定向或未捕获时为 nil |
+| `stdout`、`stderr` | 默认裁剪后的文本；`{bytes #true}` 时为原始 bytes；显式重定向或未捕获时为 nil |
 | `error` | `result` 字段为 nil 的 `Error` 摘要，或 nil |
 | `stages` | 管道阶段的 `StageResult`，包含 argv、终止信息和错误 |
 
@@ -85,7 +101,7 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 其名称与构造器由运行时保留，应读取运行时返回的记录，不能直接构造。
 
 通用内置函数 `.` 可以读取相同字段：`(. $result stdout)` 等价于
-`(CallResult.stdout $result)`，并保留捕获的 bytes 类型。多个字段会从左到右链式读取，
+`(CallResult.stdout $result)`，并保留文本、bytes 或 nil 类型。多个字段会从左到右链式读取，
 例如 `(. $result termination code)` 可以读取嵌套的退出码。字段名也可以来自文本变量，
 例如 `(. $result $field)`。字段读取本身不会覆盖 `$?`。
 
@@ -104,8 +120,10 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 `bytes?` 判断原始字节，`typeof` 返回 `bytes`，`eq` 按内容比较。
 bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境变量。
 
-`stdout-text`、`stderr-text` 严格解码 UTF-8 并保留换行；未捕获或已重定向的流返回 nil，
-捕获的空流返回空文本。无效 UTF-8 会抛出携带原始结果的错误。
+`stdout-text`、`stderr-text` 原样返回已有文本，或严格将 bytes 解码为 UTF-8，不额外裁剪。
+未捕获或已重定向的流返回 nil，空捕获返回空文本。无效 UTF-8 会抛出携带原始结果的错误。
+捕获解码失败时，`$?` 和错误附带的结果保留原始 bytes；如果命令或传输本身已失败，
+部分输出无法解码时仍保留原错误分类。
 信号终止或没有终止信息时 `exit-code` 为 nil，正常退出或没有终止信息时 `signal` 为 nil，
 因此显式退出码 143 与 SIGTERM 终止不同。
 原生 Linux 的 core dump 信息保存在 `Signaled.core_dumped`。
@@ -126,10 +144,10 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 (dump (capture/result (fn () (| (printf "b\na\n") (sort)))))
 ```
 
-原始捕获也接受二进制输出，不会自动解码：
+显式选择 bytes 可以捕获二进制输出，不解码，也不裁剪：
 
 ```parsh
-(let binary (capture/result printf "\\377\\000\\101"))
+(let binary (capture/result {bytes #true} printf "\\377\\000\\101"))
 (dump (bytes/hex-encode (. $binary stdout)))
 ```
 
@@ -141,7 +159,7 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 需要数值退出码时显式使用访问函数：
 
 ```parsh
-(let here (capture/stdout-trim pwd))
+(let here (capture/stdout pwd))
 (let saved $?)
 (dump (list $here (exit-code $saved) (signal $saved)))
 (echo "exit=$(exit-code $?)")
@@ -151,7 +169,7 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 纯数据内置、字段访问、变量读取和任务状态查询不覆盖结果。绑定、控制流与 `apply` 不额外覆盖被包裹调用的结果。
 捕获方法、`wait`、`check` 发布其处理的那份结果。
 
-普通调用不会缓存终端输出，两个流字段为 nil；显式捕获才在结果中保存 bytes。在下一条命令前绑定 `$?` 可以保存快照。
+普通调用不会缓存终端输出，两个流字段为 nil；显式捕获才在结果中保存所选择的文本或 bytes。在下一条命令前绑定 `$?` 可以保存快照。
 `?` 不能用于绑定、赋值、导出或形参。双引号识别 `$?`，但不隐式将结构体转成文本；插值时读取字段。
 单引号与 `\$` 保留字面美元符。
 
@@ -191,7 +209,7 @@ Job 不是稍后自动改变字段的结果结构体。`JobStatus` 快照包含 
 `result`（完成前为 nil）。`wait` 返回包含异步语言错误的完整结果；重复等待保留相同结果及返回闭包的身份。
 `cancel` 请求取消并返回 nil。Job 只能在原会话使用。
 
-每个任务拥有独立的 stdout/stderr 捕获，stdin 默认 EOF，显式重定向优先。
+每个任务拥有独立的原始 bytes stdout/stderr 捕获，stdin 默认 EOF，显式重定向优先。
 函数在线程内重建隔离解释器：复制词法作用域、递归闭包、cwd、定义和环境，后台修改不影响父 Shell。
 结果可以包含闭包。外部命令启动失败由 spawn 抛出，函数运行中的错误保存在结果里。
 后台 exit 只结束当前任务。

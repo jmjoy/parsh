@@ -114,7 +114,7 @@ fn dot_is_an_ordinary_function_and_does_not_replace_the_last_result() {
 fn dot_reads_runtime_records_and_preserves_bytes_and_nil() {
     assert_values(
         r#"
-        (let result (capture/result + #2 #3))
+        (let result (capture/result {bytes #true} + #2 #3))
         (list (. $result value) (bytes? (. $result stdout))
               (bytes? (. $result stderr)) (. $result termination) (. $result error)
               (eq (. $result stdout) (CallResult.stdout $result)))

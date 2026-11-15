@@ -149,8 +149,6 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "capture/result",
     "capture/stdout",
     "capture/stderr",
-    "capture/stdout-trim",
-    "capture/stderr-trim",
     "out",
     "err",
     "spawn",
@@ -331,12 +329,7 @@ fn arity(name: &str) -> (usize, usize) {
         "gensym" => (0, 1),
         "-" | "/" | "min" | "max" | "list/append" => (1, usize::MAX),
         "apply" => (2, usize::MAX),
-        "capture/result"
-        | "capture/stdout"
-        | "capture/stderr"
-        | "capture/stdout-trim"
-        | "capture/stderr-trim"
-        | "spawn" => (1, usize::MAX),
+        "capture/result" | "capture/stdout" | "capture/stderr" | "spawn" => (1, usize::MAX),
         "map/get" | "list/get" | "str/get" | "list/slice" | "str/slice" => (2, 3),
         "map/set" | "list/set" | "list/insert" | "str/replace" => (3, 3),
         "list/range" => (1, 3),
@@ -378,8 +371,8 @@ impl Shell {
         io: &Io,
     ) -> EvalResult<Value> {
         let name = match name {
-            "out" => "capture/stdout-trim",
-            "err" => "capture/stderr-trim",
+            "out" => "capture/stdout",
+            "err" => "capture/stderr",
             _ => name,
         };
         let (min, max) = arity(name);
@@ -404,25 +397,11 @@ impl Shell {
             "http/request" | "http/get" | "http/post" | "http/body-text" => {
                 http::call(self, expr, name, args, env, mode, io)
             }
-            "command"
-            | "command?"
-            | "callable?"
-            | "bytes?"
-            | "capture/result"
-            | "capture/stdout"
-            | "capture/stderr"
-            | "capture/stdout-trim"
-            | "capture/stderr-trim"
-            | "spawn"
-            | "wait"
-            | "job-status"
-            | "cancel"
-            | "check"
-            | "stdout-text"
-            | "stderr-text"
-            | "exit-code"
-            | "signal"
-            | "throw" => self.execution_builtin(expr, name, args, env, mode, io),
+            "command" | "command?" | "callable?" | "bytes?" | "capture/result"
+            | "capture/stdout" | "capture/stderr" | "spawn" | "wait" | "job-status" | "cancel"
+            | "check" | "stdout-text" | "stderr-text" | "exit-code" | "signal" | "throw" => {
+                self.execution_builtin(expr, name, args, env, mode, io)
+            }
             "." => {
                 let mut value = args.value(self, 0, env, io)?;
                 for index in 1..args.len() {

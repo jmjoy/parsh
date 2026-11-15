@@ -77,7 +77,8 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 
 普通命令无论出现在顶层、赋值、参数还是插值中，都向当前目标输出并返回 `CallResult`。
 结果的 stdout/stderr 默认是 `#nil`；需要文本时显式使用 `capture/stdout` 或 `capture/stderr`，
-需要两路原始字节时使用 `capture/result`。文本捕获保留所有换行，不会自动裁剪。
+需要两路输出和完整结果时使用 `capture/result`。捕获文本默认裁剪首尾空白；
+前置 `{trim #false}` 保留原文，`{bytes #true}` 返回不裁剪的原始 bytes。
 显式文件重定向优先于捕获，管道和文件保留二进制字节。
 
 完整结果、原始字节捕获、`$?`、异常和后台执行见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。

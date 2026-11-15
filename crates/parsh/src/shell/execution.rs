@@ -89,7 +89,88 @@ fn set_field(value: &mut Value, key: &str, replacement: Value) {
 #[derive(Clone, Copy)]
 enum Capture {
     Result { all_errors: bool },
-    Text(Stream),
+    Stream(Stream),
+}
+
+#[derive(Clone, Copy)]
+struct CaptureOptions {
+    bytes: bool,
+    trim: bool,
+}
+
+impl Default for CaptureOptions {
+    fn default() -> Self {
+        Self {
+            bytes: false,
+            trim: true,
+        }
+    }
+}
+
+impl CaptureOptions {
+    fn take(expr: &Expr, values: &mut Vec<Value>) -> Result<Self, Error> {
+        let mut options = Self::default();
+        if matches!(values.first(), Some(Value::Map(_))) {
+            let Value::Map(map) = values.remove(0) else {
+                unreachable!()
+            };
+            for (key, value) in map {
+                if !matches!(key.as_str(), "bytes" | "trim") {
+                    return Err(Error::new(expr, format!("unknown capture option: {key}")));
+                }
+                let Value::Bool(value) = value else {
+                    return Err(Error::new(
+                        expr,
+                        format!("capture option {key} must be a boolean"),
+                    ));
+                };
+                match key.as_str() {
+                    "bytes" => options.bytes = value,
+                    "trim" => options.trim = value,
+                    _ => unreachable!(),
+                }
+            }
+        }
+        if values.is_empty() {
+            return Err(Error::new(
+                expr,
+                "capture expects a callable after its options",
+            ));
+        }
+        Ok(options)
+    }
+
+    fn format(self, expr: &Expr, result: &Value, capture: Capture) -> Result<Value, Error> {
+        let mut formatted = result.clone();
+        let streams: &[&str] = match capture {
+            Capture::Result { .. } => &["stdout", "stderr"],
+            Capture::Stream(Stream::Stdout) => &["stdout"],
+            Capture::Stream(Stream::Stderr) => &["stderr"],
+        };
+        for key in streams {
+            let value = match field(result, key) {
+                Some(Value::Nil) => Value::Nil,
+                Some(Value::Bytes(bytes)) if self.bytes => Value::Bytes(bytes.clone()),
+                Some(Value::Bytes(bytes)) => {
+                    let text = std::str::from_utf8(bytes).map_err(|_| Error {
+                        result: Some(Box::new(result.clone())),
+                        ..Error::new(
+                            expr,
+                            format!("{key} is not UTF-8; use {{bytes #true}} to capture raw bytes"),
+                        )
+                    })?;
+                    Value::Text(if self.trim { text.trim() } else { text }.into())
+                }
+                Some(Value::Text(text)) if self.bytes => Value::Bytes(Arc::from(text.as_bytes())),
+                Some(Value::Text(text)) => {
+                    Value::Text(if self.trim { text.trim() } else { text }.into())
+                }
+                _ => return Err(Error::new(expr, "invalid captured output")),
+            };
+            set_field(&mut formatted, key, value);
+        }
+        Ok(formatted)
+    }
 }
 
 impl Error {
@@ -374,16 +455,16 @@ impl Shell {
             let file_output = matches!(nested.output, Output::File(_));
             #[cfg(not(feature = "native"))]
             let file_output = false;
-            if !file_output && !matches!(capture, Capture::Text(Stream::Stderr)) {
+            if !file_output && !matches!(capture, Capture::Stream(Stream::Stderr)) {
                 nested.output = Output::Capture(stdout);
             }
-            if !matches!(capture, Capture::Text(Stream::Stdout)) {
+            if !matches!(capture, Capture::Stream(Stream::Stdout)) {
                 nested.error_capture = Some(stderr);
             }
             nested.capture_budget = Some(match capture {
                 // A single-stream capture keeps the other stream's inherited buffer,
                 // so it must also retain that buffer's budget.
-                Capture::Text(_) => io.capture_budget.clone().unwrap_or_default(),
+                Capture::Stream(_) => io.capture_budget.clone().unwrap_or_default(),
                 Capture::Result { .. } => Arc::new(crate::streams::CaptureBudget::default()),
             });
             let positions = Self::capture_positions(&nested);
@@ -401,10 +482,7 @@ impl Shell {
             );
             self.publish_invocation(expr, &mut outcome, &nested, positions);
             match outcome {
-                Ok(_) => match capture {
-                    Capture::Result { .. } => Ok(self.last_result.clone()),
-                    Capture::Text(stream) => Self::captured_text(expr, &self.last_result, stream),
-                },
+                Ok(_) => Ok(self.last_result.clone()),
                 Err(Signal::Error(e))
                     if matches!(capture, Capture::Result { all_errors: true })
                         || (matches!(capture, Capture::Result { .. })
@@ -445,26 +523,61 @@ impl Shell {
                 values[0],
                 Value::Function(_) | Value::Command(_)
             ))),
-            "capture/result" => {
+            "capture/result" | "capture/stdout" | "capture/stderr" => {
+                let options = CaptureOptions::take(expr, &mut values)?;
                 let callee = values.remove(0);
-                self.capture_call(expr, callee, &values, env, io, false)
-            }
-            "capture/stdout" | "capture/stderr" | "capture/stdout-trim" | "capture/stderr-trim" => {
-                let callee = values.remove(0);
-                let stream = if matches!(name, "capture/stdout" | "capture/stdout-trim") {
-                    Stream::Stdout
-                } else {
-                    Stream::Stderr
+                let capture = match name {
+                    "capture/result" => Capture::Result { all_errors: false },
+                    "capture/stdout" => Capture::Stream(Stream::Stdout),
+                    _ => Capture::Stream(Stream::Stderr),
                 };
-                let value =
-                    self.capture_invocation(expr, callee, &values, env, io, Capture::Text(stream))?;
-                if name.ends_with("-trim") {
-                    let Value::Text(text) = value else {
-                        return Err(Error::new(expr, "expected text").into());
-                    };
-                    Ok(Value::Text(text.trim().into()))
-                } else {
-                    Ok(value)
+                let outcome = match capture {
+                    Capture::Result { .. } => {
+                        self.capture_call(expr, callee, &values, env, io, false)
+                    }
+                    Capture::Stream(_) => {
+                        self.capture_invocation(expr, callee, &values, env, io, capture)
+                    }
+                };
+                let raw = match outcome {
+                    Ok(result) => result,
+                    Err(Signal::Error(mut error)) => {
+                        if let Some(raw) = error.result.as_deref() {
+                            // Keep the original command/transport failure if partial output
+                            // cannot be decoded. Its raw bytes remain inspectable.
+                            let result = options
+                                .format(expr, raw, capture)
+                                .unwrap_or_else(|_| raw.clone());
+                            self.publish(result.clone());
+                            error.result = Some(Box::new(result));
+                        }
+                        return Err(Signal::Error(error));
+                    }
+                    Err(signal) => return Err(signal),
+                };
+                let result = match options.format(expr, &raw, capture) {
+                    Ok(result) => result,
+                    Err(mut error) => {
+                        let mut result = raw;
+                        set_field(&mut result, "error", error.as_value(false));
+                        self.publish(result.clone());
+                        error.result = Some(Box::new(result));
+                        return Err(error.into());
+                    }
+                };
+                self.publish(result.clone());
+                match capture {
+                    Capture::Result { .. } => Ok(result),
+                    Capture::Stream(stream) => Ok(field(
+                        &result,
+                        if stream == Stream::Stdout {
+                            "stdout"
+                        } else {
+                            "stderr"
+                        },
+                    )
+                    .cloned()
+                    .unwrap_or(Value::Nil)),
                 }
             }
             "spawn" | "wait" | "job-status" | "cancel" => {
@@ -555,6 +668,7 @@ impl Shell {
         };
         match field(result, key) {
             Some(Value::Nil) => Ok(Value::Nil),
+            Some(Value::Text(text)) => Ok(Value::Text(text.clone())),
             Some(Value::Bytes(bytes)) => Ok(Value::Text(
                 String::from_utf8(bytes.to_vec()).map_err(|_| Error {
                     result: Some(Box::new(result.clone())),

@@ -48,6 +48,7 @@ struct Frame {
     parameters: bool,
     optional_section: bool,
     optional_pair: bool,
+    capture_options: bool,
 }
 
 impl Frame {
@@ -123,14 +124,13 @@ impl Context {
                             | "capture/result"
                             | "capture/stdout"
                             | "capture/stderr"
-                            | "capture/stdout-trim"
-                            | "capture/stderr-trim"
                             | "out"
                             | "err"
                             | "spawn"
                             | "apply"
                     )
                 ))
+            || (frame.items == 2 && frame.capture_options)
         {
             Kind::Command
         } else if frame.head.as_deref() == Some("function") && frame.items == 1 {
@@ -249,6 +249,21 @@ impl Scanner<'_> {
                         && !frame.comment
                         && let Some(parent) = self.frames.last_mut()
                     {
+                        if parent.items == 1
+                            && frame.head.as_deref() == Some("map")
+                            && matches!(
+                                parent.head.as_deref(),
+                                Some(
+                                    "capture/result"
+                                        | "capture/stdout"
+                                        | "capture/stderr"
+                                        | "out"
+                                        | "err"
+                                )
+                            )
+                        {
+                            parent.capture_options = true;
+                        }
                         parent.items += 1;
                     }
                     self.offset += 1;

@@ -279,7 +279,7 @@ JSON 错误的 `Error.kind` 为 `json`。
 
 ## Bytes
 
-`bytes/` 函数操作命令捕获和 HTTP 返回的原始 bytes：
+`bytes/` 函数操作 `{bytes #true}` 命令捕获和 HTTP 返回的原始 bytes：
 
 | 调用 | 返回值 |
 | --- | --- |
@@ -318,7 +318,7 @@ JSON 错误的 `Error.kind` 为 `json`。
 (dump (stdout-text (capture/result dump {name parsh})))
 ```
 
-结果为 `"(map \"name\" \"parsh\")\n"`。普通 `(let value (dump ...))` 绑定的是 nil，
+结果为 `"(map \"name\" \"parsh\")"`。普通 `(let value (dump ...))` 绑定的是 nil，
 因为 `dump` 即使写入输出也仍返回 nil。
 
 ## HTTP
@@ -354,4 +354,4 @@ JSON 错误的 `Error.kind` 为 `json`。
 
 ## 调用、结果与任务
 
-`command`、`command?`、`callable?`、`bytes?`、`capture/stdout`、`capture/stderr`、`capture/stdout-trim`、`capture/stderr-trim`、`out`、`err`、`capture/result`、`stdout-text`、`stderr-text`、`exit-code`、`signal`、`check`、`throw` 在原生与浏览器环境共用实现；`spawn`、`wait`、`job-status`、`cancel` 要求原生任务支持。这些普通内置都可通过 `function` 和 `apply` 调用。签名及结构体见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。
+`command`、`command?`、`callable?`、`bytes?`、`capture/stdout`、`capture/stderr`、`out`、`err`、`capture/result`、`stdout-text`、`stderr-text`、`exit-code`、`signal`、`check`、`throw` 在原生与浏览器环境共用实现；`spawn`、`wait`、`job-status`、`cancel` 要求原生任务支持。这些普通内置都可通过 `function` 和 `apply` 调用。签名及结构体见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。

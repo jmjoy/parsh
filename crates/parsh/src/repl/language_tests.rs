@@ -665,7 +665,7 @@ fn callable_names_and_explicit_command_references_are_first_class() {
         (apply "map/get" [{name parsh} name])
         (let r (capture/result + #1 #2))
         (list (CallResult.value $r) (CallResult.termination $r)
-              (bytes? (CallResult.stdout $r)) (stdout-text $r))
+              (text? (CallResult.stdout $r)) (stdout-text $r))
         "#
         ),
         [

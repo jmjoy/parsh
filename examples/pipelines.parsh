@@ -10,7 +10,7 @@
 
 (; Explicitly capture pipeline stdout and keep it as one argument. )
 (let unique
-  (capture/stdout-trim (fn ()
+  (capture/stdout (fn ()
     (| (printf "%s\n" $fruits)
        (sort)
        (uniq)))))

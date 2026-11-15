@@ -308,7 +308,7 @@ large JSON integers can lose precision. JSON failures have `Error.kind` equal to
 
 ## Bytes
 
-`bytes/` functions operate on raw bytes returned by command capture and HTTP:
+`bytes/` functions operate on raw bytes returned by captures using `{bytes #true}` and by HTTP:
 
 | Call | Result |
 | --- | --- |
@@ -351,7 +351,7 @@ Use `capture/result` when the printed representation is needed as text:
 (dump (stdout-text (capture/result dump {name parsh})))
 ```
 
-The result is `"(map \"name\" \"parsh\")\n"`. Ordinary `(let value (dump ...))`
+The result is `"(map \"name\" \"parsh\")"`. Ordinary `(let value (dump ...))`
 binds nil because `dump` returns nil even when it writes output.
 
 ## HTTP
@@ -394,4 +394,4 @@ called or redefined.
 
 ## Calls, results, and tasks
 
-`command`, `command?`, `callable?`, `bytes?`, `capture/stdout`, `capture/stderr`, `capture/stdout-trim`, `capture/stderr-trim`, `out`, `err`, `capture/result`, `stdout-text`, `stderr-text`, `exit-code`, `signal`, `check`, and `throw` work in native and browser sessions. `spawn`, `wait`, `job-status`, and `cancel` require native task support. All are ordinary builtins available through `function` and `apply`. See [execution results and tasks](/parsh/en/docs/execution/) for signatures and result structures.
+`command`, `command?`, `callable?`, `bytes?`, `capture/stdout`, `capture/stderr`, `out`, `err`, `capture/result`, `stdout-text`, `stderr-text`, `exit-code`, `signal`, `check`, and `throw` work in native and browser sessions. `spawn`, `wait`, `job-status`, and `cancel` require native task support. All are ordinary builtins available through `function` and `apply`. See [execution results and tasks](/parsh/en/docs/execution/) for signatures and result structures.

@@ -800,8 +800,8 @@ fn narrow_candidate_lists_wrap_safely_and_restore_the_current_input() {
 fn capture_helpers_and_their_callees_complete_without_running() {
     for (prefix, name) in [
         ("capture/re", "capture/result"),
-        ("capture/stdout-tr", "capture/stdout-trim"),
-        ("capture/stderr-tr", "capture/stderr-trim"),
+        ("capture/stdou", "capture/stdout"),
+        ("capture/stder", "capture/stderr"),
         ("ou", "out"),
         ("er", "err"),
     ] {
@@ -817,6 +817,13 @@ fn capture_helpers_and_their_callees_complete_without_running() {
         type_text(&mut repl, &format!("function {prefix}"));
         repl.input(Key::Tab);
         assert_eq!(repl.session.input.body, format!("function {name} "));
+        repl.input(Key::ClearInput);
+        type_text(&mut repl, &format!("{name} {{bytes #true}} host-alph"));
+        repl.input(Key::Tab);
+        assert_eq!(
+            repl.session.input.body,
+            format!("{name} {{bytes #true}} host-alpha ")
+        );
         assert_eq!(host.runs.get(), 0);
     }
 }

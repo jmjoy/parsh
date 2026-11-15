@@ -41,47 +41,62 @@ builtins retain their types; user functions return their body value, including a
 command's `CallResult` when it is the final expression.
 
 Use `(capture/stdout pwd)` or `(capture/stderr callee args...)` for text. These
-capture only the selected stream, decode UTF-8 strictly, and preserve every
-newline; the other stream keeps its current destination. Empty capture returns
-empty text, while an uncaptured stream returns nil. Command failures throw with
-the captured result attached.
+capture only the selected stream, decode UTF-8 strictly, and remove leading and
+trailing Unicode whitespace by default. The other stream keeps its current
+destination. Empty or whitespace-only output returns empty text; an uncaptured
+or explicitly redirected stream returns nil. Command failures throw with the
+captured result attached.
 
-Use `out` (`capture/stdout-trim`) or `err` (`capture/stderr-trim`) to remove surrounding whitespace.
-The short names are ordinary builtin aliases and also work through `function` and `apply`.
-Each is equivalent to wrapping the corresponding capture helper in `str/trim`:
-it removes leading and trailing Unicode whitespace, including spaces, tabs, and
-newlines, and preserves everything in between. Empty or whitespace-only output
-returns empty text. The raw bytes in `$?` are never trimmed. When the selected
-stream is redirected and cannot be captured, the trimmed helper reports
-`expected text`, just like the explicit composition.
+All three `capture/` functions accept an optional **leading options map**, before
+the callee. `out` and `err` remain aliases for `capture/stdout` and `capture/stderr`
+and accept the same options. These are ordinary builtins supporting `function`
+and `apply`.
+
+| Option | Default | Behavior |
+| --- | --- | --- |
+| `trim` | `#true` | Remove surrounding Unicode whitespace from captured text; `#false` preserves it |
+| `bytes` | `#false` | Return raw bytes; `#true` skips UTF-8 decoding and ignores trim |
+
+Option values must be booleans; unknown keys are errors. The options affect both
+stream fields in `capture/result`, including its nonzero-exit results. A map
+passed after the callee remains an ordinary argument.
 
 ```parsh
-(let here (out pwd))
-(dump $here)
+(dump (capture/stdout printf " hello\n"))
+(dump (capture/stdout {trim #false} printf " hello\n"))
+(dump (bytes/hex-encode (capture/stdout {bytes #true} printf " hello\n")))
+(dump (apply capture/stdout [{trim #false} printf " hello\n"]))
 ```
+
+Results are `"hello"`, `" hello\n"`, `"2068656c6c6f0a"`, and `" hello\n"`.
+`{bytes #true trim #true}` still returns every original byte.
 
 | Call | Arguments and result |
 | --- | --- |
 | `(command name)` | One nonempty text program name; returns `<command name>` |
 | `(apply callee fixed... args)` | Expands only the final list into call arguments |
-| `(capture/stdout callee args...)` | Captures stdout as UTF-8 text, preserving newlines |
-| `(capture/stderr callee args...)` | Captures stderr as UTF-8 text, preserving newlines |
-| `(capture/stdout-trim callee args...)` | Captures stdout as UTF-8 text with surrounding whitespace removed |
-| `(capture/stderr-trim callee args...)` | Captures stderr as UTF-8 text with surrounding whitespace removed |
-| `(out callee args...)` | Short alias for `capture/stdout-trim` |
-| `(err callee args...)` | Short alias for `capture/stderr-trim` |
-| `(capture/result callee args...)` | Flat arguments; returns a complete synchronous `CallResult` |
+| `(capture/stdout [options] callee args...)` | Captured stdout; trimmed text by default, or raw bytes |
+| `(capture/stderr [options] callee args...)` | Captured stderr; trimmed text by default, or raw bytes |
+| `(out [options] callee args...)` | Alias for `capture/stdout` |
+| `(err [options] callee args...)` | Alias for `capture/stderr` |
+| `(capture/result [options] callee args...)` | Complete synchronous `CallResult`; captured fields use the same options |
 | `(spawn callee args...)` | Flat arguments; returns a native `Job` |
 
 Lists passed to capture helpers and `spawn` remain one language argument; external
-command calls then apply the usual one-level list expansion to argv. None of
-these operations takes an unevaluated command expression as its first argument.
-Wrap multiple expressions or a pipeline in `(fn () ...)` instead.
+command calls then apply the usual one-level list expansion to argv. The callee
+is a function value, command reference, or text name, rather than an unevaluated
+command expression. Wrap multiple expressions or a pipeline in `(fn () ...)`.
+Arguments evaluate once from left to right before capture starts.
+
+`capture/stdout-trim` and `capture/stderr-trim` have been merged into the default
+behavior of `capture/stdout` and `capture/stderr` and are no longer builtin names.
+Use `{trim #false}` where older code relied on preserving whitespace, and
+`{bytes #true}` where it relied on raw `capture/result` fields.
 
 ## Complete results
 
-`capture/result` takes the callee followed directly by its arguments and returns a
-`CallResult`. It captures stdout and stderr independently:
+`capture/result` takes an optional leading options map, the callee, and its
+arguments. It returns a `CallResult`, capturing stdout and stderr independently:
 
 ```parsh
 (let result (capture/result printf "hello\n"))
@@ -94,7 +109,7 @@ Wrap multiple expressions or a pipeline in `(fn () ...)` instead.
 | --- | --- |
 | `value` | Language return value; nil for an external command |
 | `termination` | `(Exited code)`, `(Signaled signal core_dumped)`, or nil |
-| `stdout`, `stderr` | Captured `bytes`, or nil when explicitly redirected or not captured |
+| `stdout`, `stderr` | Trimmed text by default; raw bytes with `{bytes #true}`; nil when redirected or not captured |
 | `error` | `Error` summary with a nil `result` field, or nil |
 | `stages` | `StageResult` records containing argv, termination, and error for pipeline stages |
 
@@ -103,7 +118,7 @@ Runtime records provide ordinary field accessors and predicates, such as
 are reserved; inspect records returned by the runtime rather than constructing them.
 
 The generic `.` builtin reads the same fields: `(. $result stdout)` is equivalent
-to `(CallResult.stdout $result)` and preserves the captured bytes. Multiple fields
+to `(CallResult.stdout $result)` and preserves its text, bytes, or nil type. Multiple fields
 chain from left to right, so `(. $result termination code)` reads a nested exit code.
 It also accepts dynamic text field names, such as `(. $result $field)`. Field reads
 do not replace `$?`.
@@ -124,9 +139,12 @@ do not replace `$?`.
 `eq` compares their contents. Bytes display as `<bytes N>` and cannot implicitly
 become text, external arguments, or environment values.
 
-`stdout-text` and `stderr-text` strictly decode UTF-8 and preserve newlines. They
-return nil for an uncaptured or redirected stream, and empty text for a captured
-empty stream. Invalid UTF-8 raises an error carrying the original result.
+`stdout-text` and `stderr-text` return stored text unchanged or strictly decode
+stored bytes as UTF-8, without additional trimming. They return nil for an
+uncaptured or redirected stream, and empty text for an empty capture. Invalid
+UTF-8 raises an error carrying the original raw result. Capture decoding failures
+also publish their raw bytes in `$?` and attach them to the error. A command or
+transport failure retains its original kind if partial output cannot be decoded.
 `exit-code` returns nil for signal termination or absent termination information;
 `signal` returns nil for normal exit or absent termination information. A program exiting with code 143 differs from one killed by SIGTERM. Core-dump information is retained
 in `Signaled.core_dumped` on native Linux.
@@ -151,10 +169,10 @@ external stages; wrap a pipeline in a function to capture or spawn it:
 (dump (capture/result (fn () (| (printf "b\na\n") (sort)))))
 ```
 
-Raw capture also accepts binary output without decoding it:
+Select bytes explicitly to capture binary output without decoding or trimming:
 
 ```parsh
-(let binary (capture/result printf "\\377\\000\\101"))
+(let binary (capture/result {bytes #true} printf "\\377\\000\\101"))
 (dump (bytes/hex-encode (. $binary stdout)))
 ```
 
@@ -167,7 +185,7 @@ for slicing, concatenation, and explicit text conversion.
 same value. It is a complete structure, so obtain the numeric exit code explicitly:
 
 ```parsh
-(let here (capture/stdout-trim pwd))
+(let here (capture/stdout pwd))
 (let saved $?)
 (dump (list $here (exit-code $saved) (signal $saved)))
 (echo "exit=$(exit-code $?)")
@@ -179,7 +197,7 @@ builtins, field access, variable reads, and task-status queries do not replace t
 result. Binding, control-flow, and `apply` wrappers preserve their target's result.
 Capture helpers, `wait`, and `check` publish the result they handle.
 
-Normal calls leave both stream fields nil. Only explicit capture retains bytes;
+Normal calls leave both stream fields nil. Explicit capture retains the selected text or bytes;
 terminal output is never silently buffered. Save `$?` in a binding to keep a snapshot
 before another command. Neither assignment, export, nor parameters can use `?`.
 Quoted interpolation recognizes `$?` but does not implicitly stringify its structure;
@@ -226,7 +244,7 @@ complete). `wait` returns the complete result, including asynchronous language e
 repeat waits retain the same result and returned closure identities. `cancel` requests
 cancellation and returns nil. Jobs belong to their original session.
 
-Each task owns stdout/stderr capture and defaults stdin to EOF. Explicit redirection
+Each task owns raw bytes for stdout/stderr capture and defaults stdin to EOF. Explicit redirection
 wins. Functions run in isolated interpreter threads: lexical scopes, recursive
 closures, cwd, definitions, and environment are copied; task changes do not alter
 parent state. Task results can contain closures. An external startup failure throws

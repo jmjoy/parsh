@@ -1153,12 +1153,12 @@ test("complete execution results, special variable, bytes, and exceptions share 
     (let result (capture/result echo hello world))
     (let saved $?)
     (dump (list (stdout-text $result) (exit-code $result) (signal $result)
-          (bytes? (CallResult.stdout $result)) (eq $result $saved)))
+          (text? (CallResult.stdout $result)) (eq $result $saved)))
     (let failed (capture/result cat missing-result-file))
     (dump (list (exit-code $failed) (str/contains (stderr-text $failed) missing-result-file)))
     (let sorter (command sort))
-    (dump (stdout-text (capture/result (fn () (| (printf "b\na\n") ($sorter))))))
-    (let binary (capture/result printf "\\377"))
+    (dump (stdout-text (capture/result {trim #false} (fn () (| (printf "b\na\n") ($sorter))))))
+    (let binary (capture/result {bytes #true} printf "\\377"))
     (dump (list (typeof (CallResult.stdout $binary)) (exit-code $binary)))
     (let trace "")
     (dump (try (check $failed)
@@ -1169,7 +1169,7 @@ test("complete execution results, special variable, bytes, and exceptions share 
     (dump (try (throw payload) (catch err (Error.payload $err))))
     (dump (str "code=$(exit-code $saved)"))
   `);
-  await expect(terminal(page)).toContainText('("hello world\\n" #0 #nil #true #true)');
+  await expect(terminal(page)).toContainText('("hello world" #0 #nil #true #true)');
   await expect(terminal(page)).toContainText('(#1 #true)');
   await expect(terminal(page)).toContainText('"a\\nb\\n"');
   await expect(terminal(page)).toContainText('("bytes" #0)');
@@ -1177,7 +1177,7 @@ test("complete execution results, special variable, bytes, and exceptions share 
   await expect(terminal(page)).toContainText('"invalid-utf8"');
   await expect(terminal(page)).toContainText('"payload"');
   await expect(terminal(page)).toContainText('"code=0"');
-  await execute(page, "(dump (try (capture/result seq 1 2000000) (catch err (list (Error.kind $err) (bytes? (CallResult.stdout (Error.result $err)))))))");
+  await execute(page, "(dump (try (capture/result {bytes #true} seq 1 2000000) (catch err (list (Error.kind $err) (bytes? (CallResult.stdout (Error.result $err)))))))");
   await expect(terminal(page)).toContainText('("output-limit" #true)');
   await execute(page, "(dump (spawn echo unavailable-background))");
   await expect(terminal(page)).toContainText('requires native background-task support');
@@ -1201,7 +1201,7 @@ test("evaluation is silent and ordinary command results do not capture output", 
 test("explicit text capture preserves newlines and carries failed captured output", async ({ page }) => {
   await playground(page);
   await execute(page, String.raw`
-    (let text (capture/stdout printf "a\n\n"))
+    (let text (capture/stdout {trim #false} printf "a\n\n"))
     (let saved $?)
     (dump (list $text (stdout-text $saved) (nil? (CallResult.stderr $saved))))
     (try (capture/stderr cat missing-text-capture)
@@ -1227,53 +1227,81 @@ test("stdout stderr and builtin output arrive while evaluation is still running"
   await expect(page.locator("[data-playground]")).toHaveAttribute("data-state", "ready");
 });
 
-test("trimmed captures remove surrounding whitespace and retain raw result bytes", async ({ page }) => {
+test("captures trim by default and publish matching text results", async ({ page }) => {
   await playground(page);
   await execute(page, String.raw`
     (let raw " \t first\n second\r\n　")
-    (let trimmed (capture/stdout-trim printf "%s" $raw))
+    (let trimmed (capture/stdout printf "%s" $raw))
     (let saved $?)
-    (dump (list $trimmed (eq (stdout-text $saved) $raw)
+    (dump (list $trimmed (eq (stdout-text $saved) (str/trim $raw))
       (nil? (CallResult.stderr $saved))
-      (eq $trimmed (str/trim (capture/stdout printf "%s" $raw)))))
-    (dump (list (capture/stdout-trim true)
-      (capture/stdout-trim printf " \t\r\n　")
-      ((function capture/stdout-trim) (command printf) " referenced\n")
-      (apply "capture/stdout-trim" [printf " applied\n"])))
+      (eq $trimmed (str/trim (capture/stdout {trim #false} printf "%s" $raw)))))
+    (dump (list (capture/stdout true)
+      (capture/stdout printf " \t\r\n　")
+      ((function capture/stdout) (command printf) " referenced\n")
+      (apply "capture/stdout" [printf " applied\n"])))
     (defn emit-error (name) (if (type $name) #nil))
-    (let trimmed_error (capture/stderr-trim emit-error __trim_missing__))
+    (let trimmed_error (capture/stderr emit-error __trim_missing__))
     (let error_result $?)
     (dump (list $trimmed_error
-      (eq (stderr-text $error_result) "type: __trim_missing__: not found\n")
-      (eq $trimmed_error (str/trim (capture/stderr emit-error __trim_missing__)))
-      ((function capture/stderr-trim) emit-error __trim_reference__)
-      (apply (function capture/stderr-trim) [emit-error __trim_applied__])))
+      (eq (stderr-text $error_result) "type: __trim_missing__: not found")
+      (eq $trimmed_error (str/trim (capture/stderr {trim #false} emit-error __trim_missing__)))
+      ((function capture/stderr) emit-error __trim_reference__)
+      (apply (function capture/stderr) [emit-error __trim_applied__])))
   `);
   await expect(terminal(page)).toContainText('("first\\n second" #true #true #true)');
   await expect(terminal(page)).toContainText('("" "" "referenced" "applied")');
   await expect(terminal(page)).toContainText('("type: __trim_missing__: not found" #true #true "type: __trim_reference__: not found" "type: __trim_applied__: not found")');
 });
 
-test("trimmed captures preserve failure output and respect explicit redirection", async ({ page }) => {
+test("captures format failure output and return nil for explicit redirection", async ({ page }) => {
   await playground(page);
   await execute(page, String.raw`
-    (try (capture/stderr-trim cat __trim_failed__)
+    (try (capture/stderr cat __trim_failed__)
       (catch err (dump (list (Error.kind $err)
         (str/contains (stderr-text (Error.result $err)) __trim_failed__)
-        (eq (str/get (stderr-text (Error.result $err)) #-1) "\n")))))
-    (try (capture/stdout-trim printf "\\377")
+        (not (str/ends-with (stderr-text (Error.result $err)) "\n"))))))
+    (try (capture/stdout printf "\\377")
       (catch err (dump (bytes/hex-encode (CallResult.stdout (Error.result $err))))))
-    (try (|> trimmed-out.txt (capture/stdout-trim printf " raw\n"))
-      (catch err (dump (Error.message $err))))
-    (try (|2> trimmed-err.txt (capture/stderr-trim (fn () (if (type __trim_redirected__) #nil))))
-      (catch err (dump (Error.message $err))))
-    (dump (capture/stdout cat trimmed-out.txt))
-    (dump (capture/stdout-trim cat trimmed-err.txt))
+    (let stdout_redirected (|> trimmed-out.txt (capture/stdout printf " raw\n")))
+    (let stderr_redirected (|2> trimmed-err.txt (capture/stderr (fn () (if (type __trim_redirected__) #nil)))))
+    (dump (list (nil? $stdout_redirected) (nil? $stderr_redirected)))
+    (dump (capture/stdout {trim #false} cat trimmed-out.txt))
+    (dump (capture/stdout cat trimmed-err.txt))
   `);
   await expect(terminal(page)).toContainText('("command-failed" #true #true)');
   await expect(terminal(page)).toContainText('"ff"');
-  await expect.poll(async () => (await terminal(page).innerText()).split("\n")
-    .filter(line => line.trim() === '"expected text"').length).toBe(2);
+  await expect(terminal(page)).toContainText('(#true #true)');
   await expect(terminal(page)).toContainText('" raw\\n"');
   await expect(terminal(page)).toContainText('"type: __trim_redirected__: not found"');
+});
+
+test("capture options choose text whitespace or unmodified bytes for either stream", async ({ page }) => {
+  await playground(page);
+  await execute(page, String.raw`
+    (let text (capture/result printf " \t中文\n\n　"))
+    (let saved $?)
+    (dump (list (. $text stdout) (. $text stderr) (eq $text $saved)))
+    (let untrimmed (capture/result {trim #false} printf " raw\n\n"))
+    (dump (. $untrimmed stdout))
+    (let raw (capture/result {bytes #true trim #true} printf " \\377\\000\n"))
+    (dump (list (bytes/hex-encode (. $raw stdout)) (bytes/len (. $raw stderr))))
+    (dump (bytes/hex-encode ((function capture/stdout) {bytes #true} printf " \\377\n")))
+    (dump (apply out [{trim #false} printf " alias\n"]))
+    (dump (bytes/to-text (apply err [{bytes #true trim #true} (fn () (if (type __options_missing__) #nil))])))
+    (try (capture/result printf "\\377")
+      (catch e (dump (list (Error.kind $e) (bytes/hex-encode (. (Error.result $e) stdout))))))
+    (let called #0)
+    (defn target () (set called (+ $called #1)))
+    (try (capture/stdout {trim yes} target) (catch e (dump $called)))
+  `);
+  await expect(terminal(page)).toContainText('("中文" "" #true)');
+  await expect(terminal(page)).toContainText('" raw\\n\\n"');
+  await expect(terminal(page)).toContainText('("20ff000a" #0)');
+  await expect(terminal(page)).toContainText('"20ff0a"');
+  await expect(terminal(page)).toContainText('" alias\\n"');
+  await expect(terminal(page)).toContainText('"type: __options_missing__: not found\\n"');
+  await expect(terminal(page)).toContainText('("runtime" "ff")');
+  await expect.poll(async () => (await terminal(page).innerText()).split("\n")
+    .some(line => line.trim() === "#0")).toBe(true);
 });

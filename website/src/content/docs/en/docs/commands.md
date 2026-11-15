@@ -81,8 +81,10 @@ For example, write stdout to a fresh log and append stderr to another:
 Ordinary commands write to their current destinations and return `CallResult` in
 all positions, including assignments, arguments, and interpolation. Their stdout
 and stderr fields are `#nil` by default. Use `capture/stdout` or `capture/stderr`
-for text, or `capture/result` for both raw byte streams. Text capture preserves all
-newlines. Explicit file redirection takes precedence over capture; pipelines and
+for one stream, or `capture/result` for both streams and a complete result.
+Captured text is trimmed by default; a leading `{trim #false}` keeps whitespace,
+and `{bytes #true}` returns original bytes without trimming.
+Explicit file redirection takes precedence over capture; pipelines and
 files preserve binary bytes.
 
 For complete results, raw-byte capture, `$?`, exceptions, and background execution, see [execution results and tasks](/parsh/en/docs/execution/).
