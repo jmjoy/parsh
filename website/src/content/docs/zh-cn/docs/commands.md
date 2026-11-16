@@ -21,7 +21,7 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 (defn greet (name) (echo hello $name))
 (type greet)
 (type -a echo)
-(let kind (out type -t greet))
+(let kind (<-out type -t greet))
 (dump (if (type -t optional-tool) (optional-tool)))
 ```
 
@@ -39,23 +39,23 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 `-p` 和 `-P` 返回这些名称。
 
 ```parsh
-(echo (out pwd))
+(echo (<-out pwd))
 (| (find . -name "*.rs") (sort))
-(|> files.txt (| (find . -name "*.rs") (sort)))
-(|>> log.txt (echo another entry))
-(<| files.txt (sort))
-(|2> errors.txt
+(out-> files.txt (| (find . -name "*.rs") (sort)))
+(out->> log.txt (echo another entry))
+(in<- files.txt (sort))
+(err-> errors.txt
   (if (cat missing.txt) (echo found) (echo "read failure handled")))
 ```
 
 组合操作如下：
 
 - `|`：将外部命令连接为管道。
-- `|>`、`|1>`：创建或清空文件，并将标准输出重定向到该文件。
-- `|>>`、`|1>>`：创建文件或追加内容，并将标准输出重定向到该文件。
-- `<|`：从文件读取标准输入。
-- `|2>`：创建或清空文件，并将标准错误重定向到该文件。
-- `|2>>`：创建文件或追加内容，并将标准错误重定向到该文件。
+- `out->`：创建或清空文件，并将标准输出重定向到该文件。
+- `out->>`：创建文件或追加内容，并将标准输出重定向到该文件。
+- `in<-`：从文件读取标准输入。
+- `err->`：创建或清空文件，并将标准错误重定向到该文件。
+- `err->>`：创建文件或追加内容，并将标准错误重定向到该文件。
 
 重定向始终将路径作为第一个参数、表达式作为第二个参数。
 重定向形式可以嵌套，也可以包裹整个管道。
@@ -70,14 +70,14 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 例如，将标准输出写入清空后的日志，并将标准错误追加到另一个日志：
 
 ```parsh
-(|1> output.log
-  (|2>> errors.log
+(out-> output.log
+  (err->> errors.log
     (make)))
 ```
 
 普通命令无论出现在顶层、赋值、参数还是插值中，都向当前目标输出并返回 `CallResult`。
-结果的 stdout/stderr 默认是 `#nil`；需要文本时显式使用 `capture/stdout` 或 `capture/stderr`，
-需要两路输出和完整结果时使用 `capture/result`。捕获文本默认裁剪首尾空白；
+结果的 stdout/stderr 默认是 `#nil`；需要文本时显式使用 `<-out` 或 `<-err`，
+需要两路输出和完整结果时使用 `<-result`。捕获文本默认裁剪首尾空白；
 前置 `{trim #false}` 保留原文，`{bytes #true}` 返回不裁剪的原始 bytes。
 显式文件重定向优先于捕获，管道和文件保留二进制字节。
 

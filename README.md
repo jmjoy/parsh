@@ -49,7 +49,7 @@ On Linux, programs launch directly. Compose commands with pipes and redirections
 Keep your familiar tools and use a new syntax:
 
 ```parsh
-(|> files.txt
+(out-> files.txt
   (| (find . -name "*.rs") (sort)))
 ```
 
@@ -60,7 +60,7 @@ script; programs, pipes, and redirections are expressions too. With fewer quotin
 layers to guess, generated scripts read the way they run:
 
 ```parsh
-(let count (int (out (fn () (| (ls) (wc -l))))))
+(let count (int (<-out (fn () (| (ls) (wc -l))))))
 (echo "entries: $count; doubled: $(* $count #2)")
 ```
 

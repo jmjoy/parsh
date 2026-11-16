@@ -66,7 +66,7 @@ error. Functions capture their defining lexical scope and return the last expres
 before parameters are bound. Functions can return numbers, lists, maps, booleans, and `CallResult`.
 Commands inside functions write to their current destinations in every calling
 position. A final command returns its `CallResult` directly. Capture function
-output explicitly with `(capture/stdout function-name args...)`.
+output explicitly with `(<-out function-name args...)`.
 
 ## Function values and parameters
 

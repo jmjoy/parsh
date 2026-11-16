@@ -308,14 +308,14 @@ JSON 错误的 `Error.kind` 为 `json`。
 
 ```parsh
 (dump {name parsh items [#1 #true]})
-(let result (capture/result printf "hello\n"))
+(let result (<-result printf "hello\n"))
 (dump (CallResult.stdout $result))
 ```
 
-需要把显示形式保存为文本时使用 `capture/result`：
+需要把显示形式保存为文本时使用 `<-result`：
 
 ```parsh
-(dump (stdout-text (capture/result dump {name parsh})))
+(dump (stdout-text (<-result dump {name parsh})))
 ```
 
 结果为 `"(map \"name\" \"parsh\")"`。普通 `(let value (dump ...))` 绑定的是 nil，
@@ -354,4 +354,4 @@ JSON 错误的 `Error.kind` 为 `json`。
 
 ## 调用、结果与任务
 
-`command`、`command?`、`callable?`、`bytes?`、`capture/stdout`、`capture/stderr`、`out`、`err`、`capture/result`、`stdout-text`、`stderr-text`、`exit-code`、`signal`、`check`、`throw` 在原生与浏览器环境共用实现；`spawn`、`wait`、`job-status`、`cancel` 要求原生任务支持。这些普通内置都可通过 `function` 和 `apply` 调用。签名及结构体见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。
+`command`、`command?`、`callable?`、`bytes?`、`<-out`、`<-err`、`<-result`、`stdout-text`、`stderr-text`、`exit-code`、`signal`、`check`、`throw` 在原生与浏览器环境共用实现；`spawn`、`wait`、`job-status`、`cancel` 要求原生任务支持。这些普通内置都可通过 `function` 和 `apply` 调用。签名及结构体见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。

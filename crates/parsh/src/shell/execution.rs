@@ -523,12 +523,12 @@ impl Shell {
                 values[0],
                 Value::Function(_) | Value::Command(_)
             ))),
-            "capture/result" | "capture/stdout" | "capture/stderr" => {
+            "<-result" | "<-out" | "<-err" => {
                 let options = CaptureOptions::take(expr, &mut values)?;
                 let callee = values.remove(0);
                 let capture = match name {
-                    "capture/result" => Capture::Result { all_errors: false },
-                    "capture/stdout" => Capture::Stream(Stream::Stdout),
+                    "<-result" => Capture::Result { all_errors: false },
+                    "<-out" => Capture::Stream(Stream::Stdout),
                     _ => Capture::Stream(Stream::Stderr),
                 };
                 let outcome = match capture {

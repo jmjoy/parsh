@@ -40,17 +40,16 @@ pipelines, `type`, `cd`, and `export` share this result type. Arithmetic and dat
 builtins retain their types; user functions return their body value, including a
 command's `CallResult` when it is the final expression.
 
-Use `(capture/stdout pwd)` or `(capture/stderr callee args...)` for text. These
+Use `(<-out pwd)` or `(<-err callee args...)` for text. These
 capture only the selected stream, decode UTF-8 strictly, and remove leading and
 trailing Unicode whitespace by default. The other stream keeps its current
 destination. Empty or whitespace-only output returns empty text; an uncaptured
 or explicitly redirected stream returns nil. Command failures throw with the
 captured result attached.
 
-All three `capture/` functions accept an optional **leading options map**, before
-the callee. `out` and `err` remain aliases for `capture/stdout` and `capture/stderr`
-and accept the same options. These are ordinary builtins supporting `function`
-and `apply`.
+The three capture functions, `<-out`, `<-err`, and `<-result`, accept an optional
+**leading options map**, before the callee. These are ordinary builtins supporting
+`function` and `apply`.
 
 | Option | Default | Behavior |
 | --- | --- | --- |
@@ -58,14 +57,14 @@ and `apply`.
 | `bytes` | `#false` | Return raw bytes; `#true` skips UTF-8 decoding and ignores trim |
 
 Option values must be booleans; unknown keys are errors. The options affect both
-stream fields in `capture/result`, including its nonzero-exit results. A map
+stream fields in `<-result`, including its nonzero-exit results. A map
 passed after the callee remains an ordinary argument.
 
 ```parsh
-(dump (capture/stdout printf " hello\n"))
-(dump (capture/stdout {trim #false} printf " hello\n"))
-(dump (bytes/hex-encode (capture/stdout {bytes #true} printf " hello\n")))
-(dump (apply capture/stdout [{trim #false} printf " hello\n"]))
+(dump (<-out printf " hello\n"))
+(dump (<-out {trim #false} printf " hello\n"))
+(dump (bytes/hex-encode (<-out {bytes #true} printf " hello\n")))
+(dump (apply <-out [{trim #false} printf " hello\n"]))
 ```
 
 Results are `"hello"`, `" hello\n"`, `"2068656c6c6f0a"`, and `" hello\n"`.
@@ -75,11 +74,9 @@ Results are `"hello"`, `" hello\n"`, `"2068656c6c6f0a"`, and `" hello\n"`.
 | --- | --- |
 | `(command name)` | One nonempty text program name; returns `<command name>` |
 | `(apply callee fixed... args)` | Expands only the final list into call arguments |
-| `(capture/stdout [options] callee args...)` | Captured stdout; trimmed text by default, or raw bytes |
-| `(capture/stderr [options] callee args...)` | Captured stderr; trimmed text by default, or raw bytes |
-| `(out [options] callee args...)` | Alias for `capture/stdout` |
-| `(err [options] callee args...)` | Alias for `capture/stderr` |
-| `(capture/result [options] callee args...)` | Complete synchronous `CallResult`; captured fields use the same options |
+| `(<-out [options] callee args...)` | Captured stdout; trimmed text by default, or raw bytes |
+| `(<-err [options] callee args...)` | Captured stderr; trimmed text by default, or raw bytes |
+| `(<-result [options] callee args...)` | Complete synchronous `CallResult`; captured fields use the same options |
 | `(spawn callee args...)` | Flat arguments; returns a native `Job` |
 
 Lists passed to capture helpers and `spawn` remain one language argument; external
@@ -88,20 +85,15 @@ is a function value, command reference, or text name, rather than an unevaluated
 command expression. Wrap multiple expressions or a pipeline in `(fn () ...)`.
 Arguments evaluate once from left to right before capture starts.
 
-`capture/stdout-trim` and `capture/stderr-trim` have been merged into the default
-behavior of `capture/stdout` and `capture/stderr` and are no longer builtin names.
-Use `{trim #false}` where older code relied on preserving whitespace, and
-`{bytes #true}` where it relied on raw `capture/result` fields.
-
 ## Complete results
 
-`capture/result` takes an optional leading options map, the callee, and its
+`<-result` takes an optional leading options map, the callee, and its
 arguments. It returns a `CallResult`, capturing stdout and stderr independently:
 
 ```parsh
-(let result (capture/result printf "hello\n"))
+(let result (<-result printf "hello\n"))
 (dump (list (stdout-text $result) (exit-code $result) (signal $result)))
-(let sum (capture/result + #2 #3))
+(let sum (<-result + #2 #3))
 (dump (. $sum value))
 ```
 
@@ -149,14 +141,14 @@ transport failure retains its original kind if partial output cannot be decoded.
 `signal` returns nil for normal exit or absent termination information. A program exiting with code 143 differs from one killed by SIGTERM. Core-dump information is retained
 in `Signaled.core_dumped` on native Linux.
 
-Nonzero exits and terminating signals are returned as data by `capture/result`.
+Nonzero exits and terminating signals are returned as data by `<-result`.
 Startup, argument, and language errors still throw. A failing command inside a
 function stops that body; capture does not run the remaining expressions. Use
 `check` to throw on a failed result; successful checking returns the same structure:
 
 ```parsh
 (try
-  (check (capture/result cat missing.txt))
+  (check (<-result cat missing.txt))
   (catch err (echo "read failed: $(Error.message $err)")))
 ```
 
@@ -166,13 +158,13 @@ result. Uncaptured foreground commands keep streaming. Pipelines still accept on
 external stages; wrap a pipeline in a function to capture or spawn it:
 
 ```parsh
-(dump (capture/result (fn () (| (printf "b\na\n") (sort)))))
+(dump (<-result (fn () (| (printf "b\na\n") (sort)))))
 ```
 
 Select bytes explicitly to capture binary output without decoding or trimming:
 
 ```parsh
-(let binary (capture/result {bytes #true} printf "\\377\\000\\101"))
+(let binary (<-result {bytes #true} printf "\\377\\000\\101"))
 (dump (bytes/hex-encode (. $binary stdout)))
 ```
 
@@ -185,7 +177,7 @@ for slicing, concatenation, and explicit text conversion.
 same value. It is a complete structure, so obtain the numeric exit code explicitly:
 
 ```parsh
-(let here (capture/stdout pwd))
+(let here (<-out pwd))
 (let saved $?)
 (dump (list $here (exit-code $saved) (signal $saved)))
 (echo "exit=$(exit-code $?)")

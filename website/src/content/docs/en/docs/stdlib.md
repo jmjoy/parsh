@@ -341,14 +341,14 @@ capture rules as other builtin output:
 
 ```parsh
 (dump {name parsh items [#1 #true]})
-(let result (capture/result printf "hello\n"))
+(let result (<-result printf "hello\n"))
 (dump (CallResult.stdout $result))
 ```
 
-Use `capture/result` when the printed representation is needed as text:
+Use `<-result` when the printed representation is needed as text:
 
 ```parsh
-(dump (stdout-text (capture/result dump {name parsh})))
+(dump (stdout-text (<-result dump {name parsh})))
 ```
 
 The result is `"(map \"name\" \"parsh\")"`. Ordinary `(let value (dump ...))`
@@ -394,4 +394,4 @@ called or redefined.
 
 ## Calls, results, and tasks
 
-`command`, `command?`, `callable?`, `bytes?`, `capture/stdout`, `capture/stderr`, `out`, `err`, `capture/result`, `stdout-text`, `stderr-text`, `exit-code`, `signal`, `check`, and `throw` work in native and browser sessions. `spawn`, `wait`, `job-status`, and `cancel` require native task support. All are ordinary builtins available through `function` and `apply`. See [execution results and tasks](/parsh/en/docs/execution/) for signatures and result structures.
+`command`, `command?`, `callable?`, `bytes?`, `<-out`, `<-err`, `<-result`, `stdout-text`, `stderr-text`, `exit-code`, `signal`, `check`, and `throw` work in native and browser sessions. `spawn`, `wait`, `job-status`, and `cancel` require native task support. All are ordinary builtins available through `function` and `apply`. See [execution results and tasks](/parsh/en/docs/execution/) for signatures and result structures.

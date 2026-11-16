@@ -32,28 +32,27 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 外部命令、管道、`type`、`cd`、`export` 使用相同结果类型。算术和数据内置保留原类型，
 用户函数按函数体返回；以命令结束时直接返回该 `CallResult`。
 
-需要文本时使用 `(capture/stdout pwd)` 或 `(capture/stderr callee args...)`。
+需要文本时使用 `(<-out pwd)` 或 `(<-err callee args...)`。
 它们只捕获指定流，严格解码 UTF-8，默认裁剪首尾 Unicode 空白；另一流沿用当前输出目标。
 空输出或全空白输出返回空文本，未捕获或已显式重定向的流返回 nil。
 命令失败会抛错，错误附带捕获结果。
 
-三个 `capture/` 函数都接受可选的**前置选项映射**，放在被调用对象之前。
-`out`、`err` 保留为 `capture/stdout`、`capture/stderr` 的短别名，接受相同选项。
-它们都是普通内置，支持 `function` 和 `apply`。
+三个捕获函数 `<-out`、`<-err`、`<-result` 都接受可选的**前置选项映射**，
+放在被调用对象之前。它们都是普通内置，支持 `function` 和 `apply`。
 
 | 选项 | 默认值 | 行为 |
 | --- | --- | --- |
 | `trim` | `#true` | 裁剪文本首尾 Unicode 空白；`#false` 保留原文 |
 | `bytes` | `#false` | `#true` 返回原始 bytes，跳过 UTF-8 解码，并忽略 trim |
 
-选项值必须为布尔值，未知键会报错。`capture/result` 的两个流字段使用相同选项，
+选项值必须为布尔值，未知键会报错。`<-result` 的两个流字段使用相同选项，
 包括非零退出的结果。放在被调用对象后面的映射仍是普通实参。
 
 ```parsh
-(dump (capture/stdout printf " hello\n"))
-(dump (capture/stdout {trim #false} printf " hello\n"))
-(dump (bytes/hex-encode (capture/stdout {bytes #true} printf " hello\n")))
-(dump (apply capture/stdout [{trim #false} printf " hello\n"]))
+(dump (<-out printf " hello\n"))
+(dump (<-out {trim #false} printf " hello\n"))
+(dump (bytes/hex-encode (<-out {bytes #true} printf " hello\n")))
+(dump (apply <-out [{trim #false} printf " hello\n"]))
 ```
 
 结果依次为 `"hello"`、`" hello\n"`、`"2068656c6c6f0a"` 和 `" hello\n"`。
@@ -63,29 +62,23 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 | --- | --- |
 | `(command name)` | 非空文本程序名，返回 `<command name>` |
 | `(apply callee fixed... args)` | 仅把最后一个列表展开为调用参数 |
-| `(capture/stdout [options] callee args...)` | 捕获 stdout；默认裁剪文本，也可选择原始 bytes |
-| `(capture/stderr [options] callee args...)` | 捕获 stderr；默认裁剪文本，也可选择原始 bytes |
-| `(out [options] callee args...)` | `capture/stdout` 的别名 |
-| `(err [options] callee args...)` | `capture/stderr` 的别名 |
-| `(capture/result [options] callee args...)` | 完整同步 `CallResult`，流字段使用相同选项 |
+| `(<-out [options] callee args...)` | 捕获 stdout；默认裁剪文本，也可选择原始 bytes |
+| `(<-err [options] callee args...)` | 捕获 stderr；默认裁剪文本，也可选择原始 bytes |
+| `(<-result [options] callee args...)` | 完整同步 `CallResult`，流字段使用相同选项 |
 | `(spawn callee args...)` | 实参直接排列，返回原生 `Job` |
 
 传给捕获方法和 `spawn` 的列表仍是一个语言参数；调用外部命令时，才按通常规则展开一层 argv。
 被调用对象应为函数值、命令引用或文本名称；多个表达式或管道放入 `(fn () ...)`。
 所有实参在捕获开始前从左到右各求值一次。
 
-`capture/stdout-trim`、`capture/stderr-trim` 已合并到对应函数的默认行为，不再是内置名称。
-原来需要保留空白的调用添加 `{trim #false}`；原来依赖 `capture/result` 原始 bytes 字段的调用
-添加 `{bytes #true}`。
-
 ## 完整执行结果
 
-`capture/result` 接受可选前置选项映射、被调用对象和直接铺平的实参，分别捕获 stdout/stderr，返回 `CallResult`：
+`<-result` 接受可选前置选项映射、被调用对象和直接铺平的实参，分别捕获 stdout/stderr，返回 `CallResult`：
 
 ```parsh
-(let result (capture/result printf "hello\n"))
+(let result (<-result printf "hello\n"))
 (dump (list (stdout-text $result) (exit-code $result) (signal $result)))
-(let sum (capture/result + #2 #3))
+(let sum (<-result + #2 #3))
 (dump (. $sum value))
 ```
 
@@ -128,12 +121,12 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 因此显式退出码 143 与 SIGTERM 终止不同。
 原生 Linux 的 core dump 信息保存在 `Signaled.core_dumped`。
 
-`capture/result` 将非零退出和信号终止作为数据返回，启动、实参和语言错误仍抛异常。
+`<-result` 将非零退出和信号终止作为数据返回，启动、实参和语言错误仍抛异常。
 函数内部命令失败仍停止执行剩余函数体。`check` 在结果失败时抛出异常，成功时返回同一个结构体：
 
 ```parsh
 (try
-  (check (capture/result cat missing.txt))
+  (check (<-result cat missing.txt))
   (catch err (echo "read failed: $(Error.message $err)")))
 ```
 
@@ -141,13 +134,13 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 未捕获的前台命令仍实时输出。管道阶段仍限外部命令；捕获或后台执行整个管道时使用函数包装：
 
 ```parsh
-(dump (capture/result (fn () (| (printf "b\na\n") (sort)))))
+(dump (<-result (fn () (| (printf "b\na\n") (sort)))))
 ```
 
 显式选择 bytes 可以捕获二进制输出，不解码，也不裁剪：
 
 ```parsh
-(let binary (capture/result {bytes #true} printf "\\377\\000\\101"))
+(let binary (<-result {bytes #true} printf "\\377\\000\\101"))
 (dump (bytes/hex-encode (. $binary stdout)))
 ```
 
@@ -159,7 +152,7 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 需要数值退出码时显式使用访问函数：
 
 ```parsh
-(let here (capture/stdout pwd))
+(let here (<-out pwd))
 (let saved $?)
 (dump (list $here (exit-code $saved) (signal $saved)))
 (echo "exit=$(exit-code $?)")

@@ -14,9 +14,9 @@ const examples: Record<string, string> = {
     "(echo \"hello, parsh\")\n(printf \"%s\\n\" (list \"你好，parsh\" \"a value with spaces\"))",
   pipeline: "(cat fruits.txt)\n(| (sort fruits.txt) (uniq -c))",
   files:
-    "(mkdir -p demo)\n(|> demo/greeting.txt (echo hello))\n(|>> demo/greeting.txt (echo parsh))\n(cat demo/greeting.txt)\n(<| numbers.txt (sort -n))",
+    "(mkdir -p demo)\n(out-> demo/greeting.txt (echo hello))\n(out->> demo/greeting.txt (echo parsh))\n(cat demo/greeting.txt)\n(in<- numbers.txt (sort -n))",
   capture:
-    "(let here (capture/stdout pwd))\n(echo (str \"working in \" $here))\n(if (test -f fruits.txt) (echo \"found fruits.txt\") (echo missing))",
+    "(let here (<-out pwd))\n(echo (str \"working in \" $here))\n(if (test -f fruits.txt) (echo \"found fruits.txt\") (echo missing))",
   hello: "(dump (str \"hello, \" \"parsh\"))\n(dump (list text \"a value with spaces\" #true))",
   variables:
     "(let name world)\n(dump (str \"hello, \" $name))\n(set name parsh)\n(dump (str \"hello, \" $name))",

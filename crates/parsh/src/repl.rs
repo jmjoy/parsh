@@ -1037,7 +1037,7 @@ mod syntax_tests {
             r#"
             (defn known () (exit 9))
             (type type cd known)
-            (str/trim (capture/stdout type -t known))
+            (str/trim (<-out type -t known))
             (if (type -t unknown) (exit 9) (str missing))
             (type -p type)
             "#,
@@ -1699,9 +1699,9 @@ mod syntax_tests {
             "(glob *)",
             "(cd /)",
             "(| (cat) (sort))",
-            "(|> out.txt (str x))",
-            "(<| input.txt (str x))",
-            "(|2>> errors.txt (str x))",
+            "(out-> out.txt (str x))",
+            "(in<- input.txt (str x))",
+            "(err->> errors.txt (str x))",
         ] {
             let events = evaluate(&mut Repl::new(), source);
             let errors = diagnostics(&events);
@@ -2061,7 +2061,7 @@ mod host_tests {
             (type -a echo)
             (type -P echo)
             (type -f echo)
-            (dump (str/trim (capture/stdout type -t binary)))
+            (dump (str/trim (<-out type -t binary)))
             (if (type -t /bin/sh) (exit 9))
         "#,
         );
@@ -2087,7 +2087,7 @@ mod host_tests {
         let events = execute(
             &mut repl,
             r#"
-            (try (capture/result partial-output)
+            (try (<-result partial-output)
               (catch e (dump (list (Error.kind $e) (stdout-text (Error.result $e))
                              (nil? (CallResult.termination (Error.result $e)))))))
         "#,
@@ -2105,7 +2105,7 @@ mod host_tests {
         ));
         let events = execute(
             &mut repl,
-            r#"(dump (str "cwd=$(str/trim (capture/stdout pwd)); $(str/trim (capture/stdout echo "a b"))"))"#,
+            r#"(dump (str "cwd=$(str/trim (<-out pwd)); $(str/trim (<-out echo "a b"))"))"#,
         );
         assert_eq!(outputs(&events), "\"cwd=/home/playground; a b\"\n");
     }
@@ -2185,7 +2185,7 @@ mod host_tests {
             .copied()
             .collect();
         assert_eq!(bytes, b"\xffafter\n");
-        let events = execute(&mut repl, "(capture/stdout binary) (echo skipped)");
+        let events = execute(&mut repl, "(<-out binary) (echo skipped)");
         assert!(outputs(&events).is_empty());
         assert!(
             events.iter().any(
@@ -2203,7 +2203,7 @@ mod host_tests {
         let mut repl = Repl::with_host(TestHost).unwrap();
         let events = execute(
             &mut repl,
-            "(let text (capture/stdout {trim #false} both)) (dump $text)",
+            "(let text (<-out {trim #false} both)) (dump $text)",
         );
         assert_eq!(outputs(&events), "\"out\\n\\n\"\n");
         assert!(events.contains(&Event::Output {
@@ -2212,7 +2212,7 @@ mod host_tests {
         }));
         let events = execute(
             &mut repl,
-            "(set text (capture/stderr {trim #false} both)) (dump $text)",
+            "(set text (<-err {trim #false} both)) (dump $text)",
         );
         assert_eq!(outputs(&events), "out\n\n\"err\\n\"\n");
         assert!(!events.iter().any(|event| matches!(
@@ -2222,7 +2222,7 @@ mod host_tests {
                 ..
             }
         )));
-        for source in ["(capture/stdout false)", "(capture/stderr false)"] {
+        for source in ["(<-out false)", "(<-err false)"] {
             assert!(
                 execute(&mut repl, source)
                     .iter()
@@ -2234,10 +2234,8 @@ mod host_tests {
     #[test]
     fn capture_helpers_publish_text_results_and_support_function_calls() {
         for (name, stream, other, expected) in [
-            ("capture/stdout", "stdout", "stderr", "out"),
-            ("capture/stderr", "stderr", "stdout", "err"),
-            ("out", "stdout", "stderr", "out"),
-            ("err", "stderr", "stdout", "err"),
+            ("<-out", "stdout", "stderr", "out"),
+            ("<-err", "stderr", "stdout", "err"),
         ] {
             let mut repl = Repl::with_host(TestHost).unwrap();
             let result = evaluate(
@@ -2248,7 +2246,7 @@ mod host_tests {
                 (let saved $?)
                 (list $trimmed ({stream}-text $saved)
                     (nil? (CallResult.{other} $saved))
-                    (eq $trimmed (str/trim (capture/{stream} both)))
+                    (eq $trimmed (str/trim ({name} both)))
                     ((function {name}) (command both))
                     (apply "{name}" [(fn () (both))]))
             "#
@@ -2282,17 +2280,17 @@ mod host_tests {
         let result = evaluate(
             &mut repl,
             r#"
-            (let normal (capture/result both))
+            (let normal (<-result both))
             (let saved $?)
             (list (. $normal stdout) (. $normal stderr) (eq $normal $saved))
-            (let untrimmed (capture/result {trim #false} both))
+            (let untrimmed (<-result {trim #false} both))
             (list (. $untrimmed stdout) (. $untrimmed stderr))
-            (let binary (capture/result {bytes #true trim #true} both))
+            (let binary (<-result {bytes #true trim #true} both))
             (list (bytes/to-text (. $binary stdout)) (bytes/to-text (. $binary stderr)))
-            (list (bytes/hex-encode (capture/stdout {bytes #true} binary))
-                  (capture/stdout {bytes #false trim #false} both))
-            ((function capture/stdout) {trim #false} (command both))
-            (apply capture/stderr [{bytes #true} (command both)])
+            (list (bytes/hex-encode (<-out {bytes #true} binary))
+                  (<-out {bytes #false trim #false} both))
+            ((function <-out) {trim #false} (command both))
+            (apply <-err [{bytes #true} (command both)])
         "#,
         );
         assert!(
@@ -2317,10 +2315,10 @@ mod host_tests {
     #[test]
     fn invalid_capture_options_do_not_invoke_the_callee() {
         for source in [
-            "(capture/stdout {bytes yes} called)",
-            "(capture/stderr {trim #1} called)",
-            "(capture/result {unknown #true} called)",
-            "(capture/stdout {})",
+            "(<-out {bytes yes} called)",
+            "(<-err {trim #1} called)",
+            "(<-result {unknown #true} called)",
+            "(<-out {})",
         ] {
             let mut repl = Repl::new();
             evaluate(
@@ -2339,23 +2337,31 @@ mod host_tests {
     }
 
     #[test]
-    fn removed_trim_names_can_be_defined_as_user_functions() {
-        let mut repl = Repl::new();
-        let result = evaluate(
-            &mut repl,
-            r#"
-            (defn capture/stdout-trim () #1)
-            (defn capture/stderr-trim () #2)
-            (list (capture/stdout-trim) (capture/stderr-trim))
-        "#,
-        );
-        assert!(
-            !result
-                .iter()
-                .any(|event| matches!(event, Event::Diagnostic(_))),
-            "{result:?}"
-        );
-        assert_eq!(values(&result), ["(#1 #2)"]);
+    fn previous_io_names_can_be_defined_as_user_functions() {
+        for name in [
+            "out",
+            "err",
+            "capture/stdout",
+            "capture/stderr",
+            "capture/result",
+            "|>",
+            "|1>",
+            "|>>",
+            "|1>>",
+            "|2>",
+            "|2>>",
+            "<|",
+        ] {
+            let mut repl = Repl::with_host(TestHost).unwrap();
+            let result = evaluate(&mut repl, &format!("(defn {name} () #1) ({name})"));
+            assert!(
+                !result
+                    .iter()
+                    .any(|event| matches!(event, Event::Diagnostic(_))),
+                "{name}: {result:?}"
+            );
+            assert_eq!(values(&result), ["#1"], "{name}");
+        }
     }
 
     #[test]

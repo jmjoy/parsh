@@ -415,8 +415,11 @@ fn loop_builtins_complete_in_commands_and_nested_expressions_without_running() {
 }
 
 #[test]
-fn comparison_prefixes_list_the_operators_and_input_redirection() {
-    for (prefix, expected) in [("<", vec!["<", "<="]), (">", vec![">", ">="])] {
+fn comparison_prefixes_list_the_operators_and_capture_helpers() {
+    for (prefix, expected) in [
+        ("<", vec!["<", "<-err", "<-out", "<-result", "<="]),
+        (">", vec![">", ">="]),
+    ] {
         let mut repl = Repl::new();
         type_text(&mut repl, prefix);
         repl.input(Key::Tab);
@@ -431,7 +434,13 @@ fn comparison_prefixes_list_the_operators_and_input_redirection() {
     let events = repl.input(Key::Tab);
     assert_eq!(
         listings(&events),
-        [&vec!["<".to_owned(), "<=".to_owned(), "<|".to_owned()]]
+        [&vec![
+            "<".to_owned(),
+            "<-err".to_owned(),
+            "<-out".to_owned(),
+            "<-result".to_owned(),
+            "<=".to_owned(),
+        ]]
     );
     type_text(&mut repl, "=");
     repl.input(Key::Tab);
@@ -798,13 +807,7 @@ fn narrow_candidate_lists_wrap_safely_and_restore_the_current_input() {
 
 #[test]
 fn capture_helpers_and_their_callees_complete_without_running() {
-    for (prefix, name) in [
-        ("capture/re", "capture/result"),
-        ("capture/stdou", "capture/stdout"),
-        ("capture/stder", "capture/stderr"),
-        ("ou", "out"),
-        ("er", "err"),
-    ] {
+    for (prefix, name) in [("<-re", "<-result"), ("<-ou", "<-out"), ("<-er", "<-err")] {
         let host = TestHost::default();
         let mut repl = Repl::with_host(host.clone()).unwrap();
         type_text(&mut repl, prefix);

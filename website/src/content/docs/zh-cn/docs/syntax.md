@@ -94,7 +94,7 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 (dump (str "$(get name)_suffix"))
 (dump (str "sum=$(+ #1 #2)"))
 (dump (str "nested=$(str "a" 'b')"))
-(dump (str "cwd=$(capture/stdout pwd)"))
+(dump (str "cwd=$(<-out pwd)"))
 (dump (str '$name $(+ 1 2)\n'))
 (dump (str "\$name \$(+ 1 2)"))
 ```
@@ -110,7 +110,7 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 其他副作用与错误规则与普通调用相同。
 标量按 `str` 的规则转换：数值、布尔值转文本，nil 转空文本；
 集合、结构体、表单、函数、命令引用和 bytes 不能隐式转成文本。
-外部命令返回 `CallResult` 并输出两路流。需要文本时显式使用 `capture/stdout` 或 `capture/stderr`，
+外部命令返回 `CallResult` 并输出两路流。需要文本时显式使用 `<-out` 或 `<-err`，
 默认裁剪首尾空白，前置 `{trim #false}` 可以保留原文。
 错误会停止当前批次。整个结果保持为一个参数，插入的值不会再次解析或插值。
 

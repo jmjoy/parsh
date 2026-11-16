@@ -255,7 +255,7 @@ fn enter_submits_and_typed_closers_remain_edits() {
     terminal.send(b"\r");
     let end = terminal.expect(b"\r\nENTER_TEST\r\n", offset);
     terminal.ready_after(end);
-    let offset = terminal.send(b"echo \"x)\" (capture/stdout printf y)\r");
+    let offset = terminal.send(b"echo \"x)\" (<-out printf y)\r");
     let end = terminal.expect(b"\r\nx) y\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);

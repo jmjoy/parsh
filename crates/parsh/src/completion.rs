@@ -119,16 +119,7 @@ impl Context {
             || (frame.items == 1
                 && matches!(
                     frame.head.as_deref(),
-                    Some(
-                        "command"
-                            | "capture/result"
-                            | "capture/stdout"
-                            | "capture/stderr"
-                            | "out"
-                            | "err"
-                            | "spawn"
-                            | "apply"
-                    )
+                    Some("command" | "<-result" | "<-out" | "<-err" | "spawn" | "apply")
                 ))
             || (frame.items == 2 && frame.capture_options)
         {
@@ -253,13 +244,7 @@ impl Scanner<'_> {
                             && frame.head.as_deref() == Some("map")
                             && matches!(
                                 parent.head.as_deref(),
-                                Some(
-                                    "capture/result"
-                                        | "capture/stdout"
-                                        | "capture/stderr"
-                                        | "out"
-                                        | "err"
-                                )
+                                Some("<-result" | "<-out" | "<-err")
                             )
                         {
                             parent.capture_options = true;

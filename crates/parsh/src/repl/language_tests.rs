@@ -387,7 +387,7 @@ fn module_members_are_reserved_and_legacy_names_can_be_redefined() {
     ] {
         assert_eq!(
             evaluated(&format!(
-                "(function {name}) (str/trim (capture/stdout type -t {name}))"
+                "(function {name}) (str/trim (<-out type -t {name}))"
             )),
             [format!("<function {name}>"), r#""builtin""#.into()],
         );
@@ -663,7 +663,7 @@ fn callable_names_and_explicit_command_references_are_first_class() {
         (apply + #1 [#2 #3])
         (apply "str/join" [[a b] ","])
         (apply "map/get" [{name parsh} name])
-        (let r (capture/result + #1 #2))
+        (let r (<-result + #1 #2))
         (list (CallResult.value $r) (CallResult.termination $r)
               (text? (CallResult.stdout $r)) (stdout-text $r))
         "#
@@ -784,6 +784,6 @@ fn result_interpolation_and_background_capability_are_explicit() {
 
 #[test]
 fn higher_order_capture_calls_have_a_bounded_stack() {
-    let source = format!("({} + #1)", "capture/result ".repeat(256));
+    let source = format!("({} + #1)", "<-result ".repeat(256));
     fails(&source, "capture nesting exceeds 32 levels");
 }

@@ -11,10 +11,10 @@ The `$ ()` prompt supplies the outer parentheses. Type `echo hello` and press En
 
 ```parsh
 (echo "hello, parsh")
-(let here (capture/stdout pwd))
+(let here (<-out pwd))
 (echo (str "working in " $here))
 (| (sort fruits.txt) (uniq -c))
-(|> results.txt (<| numbers.txt (sort -n)))
+(out-> results.txt (in<- numbers.txt (sort -n)))
 (cat results.txt)
 ```
 
@@ -33,15 +33,15 @@ Files, `cd`, explicit `glob`, command capture, pipes, and all parsh redirection 
 ```parsh
 (mkdir -p demo)
 (cd demo)
-(|> greeting.txt (echo hello))
-(|>> greeting.txt (echo parsh))
+(out-> greeting.txt (echo hello))
+(out->> greeting.txt (echo parsh))
 (cp greeting.txt copy.txt)
 (printf "%s\n" (glob *.txt))
 (dump (if (test -f copy.txt) (cat copy.txt) (echo missing)))
 (cd ..)
 ```
 
-Nested commands also stream output and return `CallResult`. Capture text explicitly with `capture/stdout` or `capture/stderr`; both trim surrounding whitespace by default. Use a leading `{trim #false}` to preserve it or `{bytes #true}` for original bytes. Explicit file redirection takes precedence over capture. Files and pipelines preserve binary bytes.
+Nested commands also stream output and return `CallResult`. Capture text explicitly with `<-out` or `<-err`; both trim surrounding whitespace by default. Use a leading `{trim #false}` to preserve it or `{bytes #true}` for original bytes. Explicit file redirection takes precedence over capture. Files and pipelines preserve binary bytes.
 
 Browser pipelines run one stage at a time with buffered output. They report the rightmost nonzero status, and terminal stdout/stderr are forwarded as bytes are written. Pipeline stages remain buffered rather than concurrent, and SIGPIPE behavior differs from native. stdin is EOF unless supplied by a file or pipeline. Each command's output and each pipeline buffer are limited to 8 MiB; the virtual filesystem is limited to 32 MiB. Commands such as `grep`, `sed`, and `find` and interactive programs are not included.
 
@@ -57,12 +57,12 @@ that cannot implicitly become text, including maps and structs.
 | External commands | Listed coreutils subset | Executable programs available to the session |
 | Files | Temporary virtual filesystem | Local filesystem |
 | Pipelines | Buffered stages | Concurrent streaming stages |
-| Command references, `apply`, `capture/result`, `$?`, exceptions | Supported | Supported |
+| Command references, `apply`, `<-result`, `$?`, exceptions | Supported | Supported |
 | Signals and background tasks | Unavailable | Supported |
 | `http/request`, `http/get`, `http/post` | Unavailable | Supported |
 
-`capture/result` stores trimmed text by default, just like `capture/stdout` and
-`capture/stderr`. All accept a leading `{trim #false}` to preserve text whitespace
+`<-result` stores trimmed text by default, just like `<-out` and
+`<-err`. All accept a leading `{trim #false}` to preserve text whitespace
 or `{bytes #true}` for raw bytes without trimming. The previous REPL value `$_`
 and previous execution result `$?` have different update rules; see
 [variables and scope](/parsh/en/docs/variables/).

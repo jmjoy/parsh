@@ -22,7 +22,7 @@ Use `type` to inspect command lookup without executing the command:
 (defn greet (name) (echo hello $name))
 (type greet)
 (type -a echo)
-(let kind (out type -t greet))
+(let kind (<-out type -t greet))
 (dump (if (type -t optional-tool) (optional-tool)))
 ```
 
@@ -41,23 +41,23 @@ commands are reported by the host's available command names; `-p` and `-P`
 return those names.
 
 ```parsh
-(echo (out pwd))
+(echo (<-out pwd))
 (| (find . -name "*.rs") (sort))
-(|> files.txt (| (find . -name "*.rs") (sort)))
-(|>> log.txt (echo another entry))
-(<| files.txt (sort))
-(|2> errors.txt
+(out-> files.txt (| (find . -name "*.rs") (sort)))
+(out->> log.txt (echo another entry))
+(in<- files.txt (sort))
+(err-> errors.txt
   (if (cat missing.txt) (echo found) (echo "read failure handled")))
 ```
 
 The operators are:
 
 - `|`: connect external commands in a pipeline.
-- `|>`, `|1>`: create or truncate a file and redirect stdout.
-- `|>>`, `|1>>`: create or append a file and redirect stdout.
-- `<|`: read stdin from a file.
-- `|2>`: create or truncate a file and redirect stderr.
-- `|2>>`: create or append a file and redirect stderr.
+- `out->`: create or truncate a file and redirect stdout.
+- `out->>`: create or append a file and redirect stdout.
+- `in<-`: read stdin from a file.
+- `err->`: create or truncate a file and redirect stderr.
+- `err->>`: create or append a file and redirect stderr.
 
 Redirection always takes the path first and an expression second. Wrappers can
 nest and can enclose an entire pipeline. Pipeline stages must call external
@@ -73,15 +73,15 @@ Use an explicit reference to bypass a same-named language command:
 For example, write stdout to a fresh log and append stderr to another:
 
 ```parsh
-(|1> output.log
-  (|2>> errors.log
+(out-> output.log
+  (err->> errors.log
     (make)))
 ```
 
 Ordinary commands write to their current destinations and return `CallResult` in
 all positions, including assignments, arguments, and interpolation. Their stdout
-and stderr fields are `#nil` by default. Use `capture/stdout` or `capture/stderr`
-for one stream, or `capture/result` for both streams and a complete result.
+and stderr fields are `#nil` by default. Use `<-out` or `<-err`
+for one stream, or `<-result` for both streams and a complete result.
 Captured text is trimmed by default; a leading `{trim #false}` keeps whitespace,
 and `{bytes #true}` returns original bytes without trimming.
 Explicit file redirection takes precedence over capture; pipelines and

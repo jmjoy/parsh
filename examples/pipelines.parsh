@@ -10,7 +10,7 @@
 
 (; Explicitly capture pipeline stdout and keep it as one argument. )
 (let unique
-  (capture/stdout (fn ()
+  (<-out (fn ()
     (| (printf "%s\n" $fruits)
        (sort)
        (uniq)))))
@@ -18,6 +18,6 @@
 
 (; Convert the numeric text produced by an external command before arithmetic. )
 (let lines
-  (int (capture/stdout (fn ()
+  (int (<-out (fn ()
     (| (printf "%s\n" $fruits) (wc -l))))))
 (echo "lines=$lines double=$(* $lines #2)")

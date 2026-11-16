@@ -438,13 +438,11 @@ const BUILTINS: &[&str] = &[
     "exit",
     "type",
     "|",
-    "|>",
-    "|1>",
-    "|>>",
-    "|1>>",
-    "<|",
-    "|2>",
-    "|2>>",
+    "out->",
+    "out->>",
+    "in<-",
+    "err->",
+    "err->>",
 ];
 
 fn builtin(name: &str) -> bool {
@@ -454,7 +452,7 @@ fn builtin(name: &str) -> bool {
 fn requires_host(name: &str) -> bool {
     matches!(
         name,
-        "glob" | "cd" | "load" | "|" | "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>"
+        "glob" | "cd" | "load" | "|" | "out->" | "out->>" | "in<-" | "err->" | "err->>"
     )
 }
 
@@ -1368,13 +1366,13 @@ impl Shell {
                 }
                 .into())
             }
-            "|>" | "|1>" | "|>>" | "|1>>" | "<|" | "|2>" | "|2>>" => {
+            "out->" | "out->>" | "in<-" | "err->" | "err->>" => {
                 if self.host.is_some() {
                     Self::arity(expr, args, 2, 2)?;
                     let destination = self.scalar(&args[0], env, io)?;
                     let file_mode = match name {
-                        "<|" => FileMode::Read,
-                        "|>>" | "|1>>" | "|2>>" => FileMode::Append,
+                        "in<-" => FileMode::Read,
+                        "out->>" | "err->>" => FileMode::Append,
                         _ => FileMode::Write,
                     };
                     let host = self.host.as_ref().unwrap().clone();
@@ -1385,8 +1383,8 @@ impl Shell {
                     let file = Some(Rc::new(HostFile { handle, host }));
                     let mut redirected = io.clone();
                     match name {
-                        "<|" => redirected.host_input = file,
-                        "|2>" | "|2>>" => redirected.host_error = file,
+                        "in<-" => redirected.host_input = file,
+                        "err->" | "err->>" => redirected.host_error = file,
                         _ => redirected.host_output = file,
                     }
                     return self.eval(&args[1], env, mode, &redirected);
@@ -1396,8 +1394,8 @@ impl Shell {
                     Self::arity(expr, args, 2, 2)?;
                     let destination = self.scalar(&args[0], env, io)?;
                     let path = self.path(&destination);
-                    let append = matches!(name, "|>>" | "|1>>" | "|2>>");
-                    let file = if name == "<|" {
+                    let append = matches!(name, "out->>" | "err->>");
+                    let file = if name == "in<-" {
                         File::open(path)
                     } else {
                         OpenOptions::new()
@@ -1411,8 +1409,8 @@ impl Shell {
                     let file = Arc::new(file);
                     let mut redirected = io.clone();
                     match name {
-                        "<|" => redirected.input = Some(file),
-                        "|2>" | "|2>>" => redirected.error = Some(file),
+                        "in<-" => redirected.input = Some(file),
+                        "err->" | "err->>" => redirected.error = Some(file),
                         _ => redirected.output = Output::File(file),
                     }
                     self.eval(&args[1], env, mode, &redirected)

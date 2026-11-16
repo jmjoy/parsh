@@ -331,8 +331,8 @@ fn module_names_preserve_external_path_lookup_and_explicit_command_calls() {
 #[test]
 fn maps_capture_commands_and_expand_only_explicit_key_and_value_lists() {
     let output = run(r#"
-        (let m (map (capture/stdout printf name) (str/trim (capture/stdout printf 'parsh\n\n')) count #2))
-        (set m (map/set $m empty (capture/stdout printf '')))
+        (let m (map (<-out printf name) (str/trim (<-out printf 'parsh\n\n')) count #2))
+        (set m (map/set $m empty (<-out printf '')))
         (printf "<%s>\n" (map/get $m name) (map/get $m count) (map/get $m empty))
         (printf "key=%s\n" (map/keys $m))
         (set m (map/set $m name updated))
@@ -356,7 +356,7 @@ fn maps_capture_commands_and_expand_only_explicit_key_and_value_lists() {
 fn collection_sugar_captures_commands_and_expands_list_arguments() {
     let output = run(r#"
         []{}
-        (let config {(capture/stdout printf name) (str/trim (capture/stdout printf 'parsh\n\n')) items [(capture/stdout printf 'a b') second]})
+        (let config {(<-out printf name) (str/trim (<-out printf 'parsh\n\n')) items [(<-out printf 'a b') second]})
         (printf "<%s>\n" (map/get $config name) (map/get $config items))
         (if (eq [one {key [two]}] (list one (map key (list two))))
             (echo equivalent)
@@ -509,11 +509,11 @@ fn type_output_supports_capture_and_stdout_and_stderr_redirection() {
         &[
             "-c",
             r#"
-        (printf "<%s>\n" (str/trim (capture/stdout type -t type)))
-        (|> output (type type))
-        (|>> output (type -t cd))
-        (printf "<%s>\n" (stdout-text (|> explicit (type -t type))))
-        (if (|2> errors (type no-such-parsh-command)) (exit 9))
+        (printf "<%s>\n" (str/trim (<-out type -t type)))
+        (out-> output (type type))
+        (out->> output (type -t cd))
+        (printf "<%s>\n" (stdout-text (out-> explicit (type -t type))))
+        (if (err-> errors (type no-such-parsh-command)) (exit 9))
     "#,
         ],
         "",
@@ -567,8 +567,8 @@ fn interpolated_strings_capture_commands_without_splitting_arguments() {
         (let name "a b")
         (defn greet () (str "$name!"))
         (printf "<%s>\n" "$name $(+ #1 #2)" '$name\n'
-            "text=$(str/trim (capture/stdout printf "x\n\n"))" "$(greet)" "nested=$(str "a" 'b')"
-            "$(capture/stdout sh -c 'printf captured; printf warning >&2')")
+            "text=$(str/trim (<-out printf "x\n\n"))" "$(greet)" "nested=$(str "a" 'b')"
+            "$(<-out sh -c 'printf captured; printf warning >&2')")
     "#);
     success(&output);
     assert_eq!(
@@ -576,7 +576,7 @@ fn interpolated_strings_capture_commands_without_splitting_arguments() {
         "<a b 3>\n<$name\\n>\n<text=x>\n<a b!>\n<nested=ab>\n<captured>\n"
     );
     assert_eq!(stderr(&output), "warning");
-    let output = run(r#"(printf %s "$(capture/stdout false)") (echo skipped)"#);
+    let output = run(r#"(printf %s "$(<-out false)") (echo skipped)"#);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
 }
@@ -587,7 +587,7 @@ fn triple_quoted_strings_keep_multiline_command_arguments_intact() {
         (let name "a b")
         (printf "<%s>\n" """hello "$name"
 sum=$(+ #1 #2)
-capture=$(str/trim (capture/stdout printf "x\n\n"))""" ''''$missing' $(missing)\n
+capture=$(str/trim (<-out printf "x\n\n"))""" ''''$missing' $(missing)\n
 literal''')
     "#);
     success(&output);
@@ -614,7 +614,7 @@ fn interpolated_command_names_pipelines_and_redirection_paths_work() {
         ("$command" "<%s>\n" "$(get name)")
         (| ("$(get command)" %s "sum=$(+ #1 #2)") (cat))
         (let path {})
-        (|> "$path" (printf %s "file=$(+ #2 #3)"))
+        (out-> "$path" (printf %s "file=$(+ #2 #3)"))
         (cat "$path")
     "#,
         quote(path.to_str().unwrap())
@@ -630,7 +630,7 @@ fn interpolated_command_names_pipelines_and_redirection_paths_work() {
 #[test]
 fn arithmetic_composes_with_command_capture_functions_arguments_and_environment() {
     let output = run(r#"
-        (let count (+ (int (capture/stdout printf "  0012 \n")) #3))
+        (let count (+ (int (<-out printf "  0012 \n")) #3))
         (defn twice (n) (* $n #2))
         (set count (+ $count #1))
         (printf "<%s>\n" $count (twice $count) (/ $count #2)
@@ -652,9 +652,9 @@ fn arithmetic_composes_with_command_capture_functions_arguments_and_environment(
 #[test]
 fn numeric_comparisons_explicitly_convert_captured_output_and_drive_conditions() {
     let output = run(r#"
-        (let count (+ (int (capture/stdout printf "  0012 \n")) #3))
+        (let count (+ (int (<-out printf "  0012 \n")) #3))
         (defn enough (n) (>= $n #15.0))
-        (printf "%s\n" (< (int (capture/stdout printf 2)) (int (capture/stdout printf 10)))
+        (printf "%s\n" (< (int (<-out printf 2)) (int (<-out printf 10)))
             (<= $count #15) (> $count #14.5) (enough $count)
             (!= $count #15.0) (> #9007199254740993 #9007199254740992.0))
         (if (> $count #10) (printf larger) (echo skipped))
@@ -733,7 +733,7 @@ fn comments_are_reader_forms_not_evaluated_arguments() {
 #[test]
 fn nested_commands_capture_complete_stdout_without_splitting() {
     let source = format!(
-        "(printf \"<%s>\" (str/trim (capture/stdout sh -c {})))",
+        "(printf \"<%s>\" (str/trim (<-out sh -c {})))",
         quote("printf warning >&2; printf 'a b\nc\n\n'")
     );
     let output = run(&source);
@@ -752,7 +752,7 @@ fn lexical_functions_loops_and_typed_returns() {
         (set name changed)
         (call inner)
         (defn greet (who) (printf hello-) (printf "%s\n" $who))
-        (printf "<%s>\n" (str/trim (capture/stdout greet world)))
+        (printf "<%s>\n" (str/trim (<-out greet world)))
         (defn items () (list "a b" c))
         (for item (items) (printf "[%s]\n" $item))
         (defn factory (value) (defn captured () (printf "%s" $value)))
@@ -786,18 +786,18 @@ fn while_command_conditions_and_loop_values_capture_complete_stdout() {
     let output = run(r#"
         (let n #0)
         (printf "<%s>\n"
-          (capture/stdout {trim #false} (fn () (while (test $n -lt 3)
+          (<-out {trim #false} (fn () (while (test $n -lt 3)
             (printf "[%s]" $n)
             (set n (+ $n #1))
             (printf .)))))
         (while (false) (echo skipped))
         (while (| (false) (true)) (echo skipped))
         (printf "<%s>\n"
-          (str/trim (capture/stdout (fn () (while #true
+          (str/trim (<-out (fn () (while #true
             (printf discarded)
             (break (printf "a b\n\n")))))))
         (printf "<%s>\n"
-          (str/trim (capture/stdout (fn () (for item (list a b c)
+          (str/trim (<-out (fn () (for item (list a b c)
             (printf discarded)
             (break (printf "c d\n\n")))))))
         (echo done)
@@ -815,7 +815,7 @@ fn loop_jumps_propagate_through_host_arguments_and_redirection_paths() {
         "(glob (break passed))",
         "(cd (break passed))",
         "(export UNUSED (break passed))",
-        "(|> (break passed) (echo skipped))",
+        "(out-> (break passed) (echo skipped))",
         "(| (printf (break passed) $undefined) (cat))",
     ] {
         let output = run(&format!(
@@ -829,13 +829,13 @@ fn loop_jumps_propagate_through_host_arguments_and_redirection_paths() {
     let path = directory.path().join("loop.txt");
     let output = run(&format!(
         r#"
-        (|> {}
+        (out-> {}
           (for item (list a b c)
             (if (eq $item b) (continue))
             (printf %s $item)
             (if (eq $item c) (break))
             (printf .)))
-        (|>> {} (while #true (printf D) (break)))
+        (out->> {} (while #true (printf D) (break)))
         (cat {})
         "#,
         quote(path.to_str().unwrap()),
@@ -911,9 +911,8 @@ fn pipelines_stream_large_outputs_and_return_rightmost_failure() {
     let output = run("(| (head -c 1048576 /dev/zero) (cat))");
     success(&output);
     assert_eq!(output.stdout.len(), 1048576);
-    let output = run(
-        "(printf \"<%s>\" (str/trim (capture/stdout (fn () (| (head -c 1048576 /dev/zero) (wc -c))))))",
-    );
+    let output =
+        run("(printf \"<%s>\" (str/trim (<-out (fn () (| (head -c 1048576 /dev/zero) (wc -c))))))");
     success(&output);
     assert_eq!(stdout(&output), "<1048576>");
     let output = run(r#"(| (sh -c "exit 7") (sh -c "exit 3") (cat)) (echo bad)"#);
@@ -929,16 +928,16 @@ fn redirections_compose_with_nested_capture_and_cwd() {
     let output = run(&format!(
         r#"
         (cd {})
-        (let nested (str/trim (capture/stdout printf "nested\n\n")))
-        (|> out.txt (printf "%s" $nested))
-        (|>> out.txt (printf "-tail"))
-        (<| out.txt (cat))
-        (|2> err.txt (sh -c "printf warning >&2"))
-        (|> sorted.txt (| (printf "b\na\n") (sort)))
+        (let nested (str/trim (<-out printf "nested\n\n")))
+        (out-> out.txt (printf "%s" $nested))
+        (out->> out.txt (printf "-tail"))
+        (in<- out.txt (cat))
+        (err-> err.txt (sh -c "printf warning >&2"))
+        (out-> sorted.txt (| (printf "b\na\n") (sort)))
         (defn report () (sh -c "printf function-output; printf function-error >&2"))
-        (|1> combined-out.txt (|2>> combined-err.txt (report)))
-        (|1>> combined-out.txt
-          (|2>> combined-err.txt
+        (out-> combined-out.txt (err->> combined-err.txt (report)))
+        (out->> combined-out.txt
+          (err->> combined-err.txt
             (| (sh -c "printf pipeline-output; printf pipeline-error >&2") (cat))))
     "#,
         quote(directory.path().to_str().unwrap())
@@ -969,11 +968,9 @@ fn redirections_compose_with_nested_capture_and_cwd() {
 
 #[test]
 fn output_redirections_truncate_append_create_and_preserve_the_other_stream() {
-    for (overwrite, append, redirects_stdout) in [
-        ("|>", "|>>", true),
-        ("|1>", "|1>>", true),
-        ("|2>", "|2>>", false),
-    ] {
+    for (overwrite, append, redirects_stdout) in
+        [("out->", "out->>", true), ("err->", "err->>", false)]
+    {
         let directory = tempfile::tempdir().unwrap();
         fs::write(directory.path().join("existing.txt"), "stale contents").unwrap();
         let output = run(&format!(
@@ -1195,13 +1192,13 @@ fn variable_command_names_and_permission_errors() {
 
 #[test]
 fn binary_capture_fails_but_binary_redirection_preserves_bytes() {
-    let output = run(r#"(printf "%s" (capture/stdout printf "\\377"))"#);
+    let output = run(r#"(printf "%s" (<-out printf "\\377"))"#);
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("not UTF-8"));
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("binary");
     let output = run(&format!(
-        r#"(|> {} (printf "\\377"))"#,
+        r#"(out-> {} (printf "\\377"))"#,
         quote(path.to_str().unwrap())
     ));
     success(&output);
@@ -1236,7 +1233,7 @@ fn structs_and_macros_run_in_scripts() {
 #[test]
 fn dot_reads_captured_bytes_and_nested_runtime_fields_in_scripts() {
     let output = run(r#"
-        (let result (capture/result {bytes #true} sh -c 'printf "\377"; printf error >&2; exit 7'))
+        (let result (<-result {bytes #true} sh -c 'printf "\377"; printf error >&2; exit 7'))
         (let saved $?)
         (let stream stdout)
         (dump (list (eq (. $result stdout) (CallResult.stdout $result))
@@ -1292,14 +1289,14 @@ fn function_values_capture_command_output_and_return_across_redirections() {
           (printf ignored)
           (return (printf returned))
           (exit 9))
-        (printf "<%s>\n" (capture/stdout captured) (capture/stdout (function captured))
-                (capture/stdout (fn () (apply (function captured) []))))
-        (defn redirected () (|> output.txt (return (list one two))) (exit 9))
+        (printf "<%s>\n" (<-out captured) (<-out (function captured))
+                (<-out (fn () (apply (function captured) []))))
+        (defn redirected () (out-> output.txt (return (list one two))) (exit 9))
         (printf "<%s>\n" (redirected))
         (apply (function cd) [.])
         (printf "<%s>\n" (apply (function glob) ['*.txt']))
-        (printf "<%s>\n" (str/trim (capture/stdout (function type) -t fn list/get round)))
-        (printf "<%s>\n" (str/join (str/lines (capture/stdout {trim #false} printf ' a\nb\n')) ','))
+        (printf "<%s>\n" (str/trim (<-out (function type) -t fn list/get round)))
+        (printf "<%s>\n" (str/join (str/lines (<-out {trim #false} printf ' a\nb\n')) ','))
     "#,
         ],
         "",
@@ -1341,8 +1338,8 @@ fn scalar_literals_and_conversions_preserve_external_text_and_failure_status() {
     let output = run(r##"
         #1 #false #nil
         (printf "%s|%s|%s|%s\n" #1 #1.0 #false #nil)
-        (printf "%s|%s|%s|%s\n" (int (capture/stdout printf ' 1e2 ')) (float 1)
-                (bool (capture/stdout printf ' false ')) (typeof (capture/stdout printf '#1')))
+        (printf "%s|%s|%s|%s\n" (int (<-out printf ' 1e2 ')) (float 1)
+                (bool (<-out printf ' false ')) (typeof (<-out printf '#1')))
         #false
         (printf continued)
     "##);
@@ -1375,9 +1372,9 @@ fn scalar_literals_and_conversions_preserve_external_text_and_failure_status() {
 #[test]
 fn numeric_text_from_commands_environment_and_arguments_requires_conversion() {
     for source in [
-        "(+ (capture/stdout printf 1) #1)",
+        "(+ (<-out printf 1) #1)",
         "(export NUMBER_TEXT 1) (+ $NUMBER_TEXT #1)",
-        "(list/get [a b] (capture/stdout printf 0))",
+        "(list/get [a b] (<-out printf 0))",
     ] {
         let output = run(source);
         assert_eq!(output.status.code(), Some(2), "{source}");
@@ -1416,7 +1413,7 @@ fn complete_results_preserve_both_streams_status_and_last_result() {
     let output = run(r#"
         (let here (pwd)) (let saved $?)
         (printf "%s/%s\n" (exit-code $saved) (and (eq $here $saved) (nil? (CallResult.stdout $here)) (nil? (CallResult.stderr $here))))
-        (let r (capture/result sh -c 'printf output; printf error >&2; exit 7'))
+        (let r (<-result sh -c 'printf output; printf error >&2; exit 7'))
         (set saved $?)
         (printf "%s/%s/%s/%s/%s\n" (stdout-text $r) (stderr-text $r)
                 (exit-code $r) (signal $r) (eq $r $saved))
@@ -1441,15 +1438,15 @@ fn commands_through_apply_preserve_argument_values_and_run_once() {
         (printf "/%s/" $calls)
         (apply printf ['<%s>' hello world])
         (defn echo (x) (str wrapped- $x))
-        (printf "/%s/%s" (capture/result echo a) (stdout-text (capture/result (command echo) a)))
+        (printf "/%s/%s" (<-result echo a) (stdout-text (<-result (command echo) a)))
         "#);
     // A result struct cannot accidentally become an external argument.
     assert_eq!(output.status.code(), Some(2));
     assert!(stdout(&output).starts_with("<$missing (exit 99)><a b>/1/<hello><world>"));
     assert!(stderr(&output).contains("got a struct"));
     let output = run(r#"(defn echo (x) (str wrapped- $x))
-        (printf "%s/%s" (CallResult.value (capture/result echo a))
-                (str/trim (stdout-text (capture/result (command echo) a))))"#);
+        (printf "%s/%s" (CallResult.value (<-result echo a))
+                (str/trim (stdout-text (<-result (command echo) a))))"#);
     success(&output);
     assert_eq!(stdout(&output), "wrapped-a/a");
 }
@@ -1457,8 +1454,8 @@ fn commands_through_apply_preserve_argument_values_and_run_once() {
 #[test]
 fn signal_termination_is_distinct_from_an_explicit_exit_code() {
     let output = run(r#"
-        (let normal (capture/result sh -c 'exit 143'))
-        (let killed (capture/result sh -c 'kill -TERM $$'))
+        (let normal (<-result sh -c 'exit 143'))
+        (let killed (<-result sh -c 'kill -TERM $$'))
         (printf "%s/%s/%s/%s" (exit-code $normal) (signal $normal)
                 (exit-code $killed) (signal $killed))
         "#);
@@ -1469,12 +1466,12 @@ fn signal_termination_is_distinct_from_an_explicit_exit_code() {
 #[test]
 fn raw_capture_accepts_binary_and_dual_streams_without_deadlocking() {
     let output = run(r#"
-        (let binary (capture/result {bytes #true} sh -c 'printf "\377"'))
+        (let binary (<-result {bytes #true} sh -c 'printf "\377"'))
         (check $binary)
         (printf "%s/%s/" (bytes? (CallResult.stdout $binary))
-                (eq (CallResult.stdout $binary) (CallResult.stdout (capture/result {bytes #true} sh -c 'printf "\377"'))))
+                (eq (CallResult.stdout $binary) (CallResult.stdout (<-result {bytes #true} sh -c 'printf "\377"'))))
         (try (stdout-text $binary) (catch e (printf invalid)))
-        (let large (capture/result sh -c 'head -c 1048576 /dev/zero; head -c 1048576 /dev/zero >&2'))
+        (let large (<-result sh -c 'head -c 1048576 /dev/zero; head -c 1048576 /dev/zero >&2'))
         (printf "/%s/%s" (str/len (stdout-text $large)) (str/len (stderr-text $large)))
         "#);
     success(&output);
@@ -1484,7 +1481,7 @@ fn raw_capture_accepts_binary_and_dual_streams_without_deadlocking() {
 #[test]
 fn capture_limits_raise_an_error_with_partial_output() {
     let output = run(r#"
-        (try (capture/result {bytes #true} head -c 8388609 /dev/zero)
+        (try (<-result {bytes #true} head -c 8388609 /dev/zero)
           (catch e (printf "%s/%s" (Error.kind $e)
             (bytes? (CallResult.stdout (Error.result $e))))))
         "#);
@@ -1499,10 +1496,10 @@ fn capture_preserves_redirection_and_pipeline_stage_information() {
         &[
             "-c",
             r#"
-        (let r (|> out (|2> err (capture/result sh -c 'printf stdout; printf stderr >&2'))))
+        (let r (out-> out (err-> err (<-result sh -c 'printf stdout; printf stderr >&2'))))
         (printf "%s/%s/" (nil? (CallResult.stdout $r)) (nil? (CallResult.stderr $r)))
         (cat out err)
-        (set r (capture/result (fn () (| (sh -c 'exit 7') (sh -c 'exit 3') (cat)))))
+        (set r (<-result (fn () (| (sh -c 'exit 7') (sh -c 'exit 3') (cat)))))
         (printf "/%s/%s/%s" (exit-code $r) (list/len (CallResult.stages $r))
           (Exited.code (StageResult.termination (list/first (CallResult.stages $r)))))
         "#,
@@ -1521,9 +1518,9 @@ fn captured_function_failures_stop_the_body_and_finally_runs() {
         (defn failing ()
           (try (printf before) (false) (set trace wrong)
             (finally (set trace cleaned))))
-        (let r (capture/result failing))
+        (let r (<-result failing))
         (printf "%s/%s/%s" (stdout-text $r) (exit-code $r) $trace)
-        (try (capture/result missing-parsh-command) (catch e (printf "/%s/%s" (Error.kind $e) (nil? (CallResult.termination $?)))))
+        (try (<-result missing-parsh-command) (catch e (printf "/%s/%s" (Error.kind $e) (nil? (CallResult.termination $?)))))
         "#);
     success(&output);
     assert_eq!(stdout(&output), "before/1/cleaned/spawn-failed/true");
@@ -1572,10 +1569,10 @@ fn background_builtins_and_environment_changes_are_isolated() {
             "-c",
             r#"
         (export PARSH_JOB_VALUE parent)
-        (let original (str/trim (capture/stdout pwd)))
-        (let j (spawn (fn () (cd /) (export PARSH_JOB_VALUE child) (printf "%s/%s" (str/trim (capture/stdout pwd)) $PARSH_JOB_VALUE))))
+        (let original (str/trim (<-out pwd)))
+        (let j (spawn (fn () (cd /) (export PARSH_JOB_VALUE child) (printf "%s/%s" (str/trim (<-out pwd)) $PARSH_JOB_VALUE))))
         (let r (wait $j))
-        (printf "%s/%s/%s/" (stdout-text $r) (eq $original (str/trim (capture/stdout pwd))) $PARSH_JOB_VALUE)
+        (printf "%s/%s/%s/" (stdout-text $r) (eq $original (str/trim (<-out pwd))) $PARSH_JOB_VALUE)
         (let math (spawn + #2 #3))
         (printf "%s/" (CallResult.value (wait $math)))
         (let empty (spawn cat))
@@ -1641,13 +1638,13 @@ fn finally_executes_before_exit_and_during_cooperative_cancellation() {
         &[
             "-c",
             r#"
-        (defn cleanup () (|> cleaned (printf first)) (|>> cleaned (printf second)))
+        (defn cleanup () (out-> cleaned (printf first)) (out->> cleaned (printf second)))
         (let j (spawn (fn ()
-          (try (|> ready (printf ready)) (while #true #nil)
+          (try (out-> ready (printf ready)) (while #true #nil)
             (finally (cleanup))))))
         (while (not (test -f ready)) (sleep 0.01))
         (cancel $j) (wait $j)
-        (try (exit 7) (finally (|> exited (printf yes))))
+        (try (exit 7) (finally (out-> exited (printf yes))))
         "#,
         ],
         "",
@@ -1682,9 +1679,9 @@ fn task_exit_and_background_completion_do_not_exit_or_overwrite_the_parent() {
 #[test]
 fn finally_and_skipped_iterations_cannot_replace_the_returned_command_metadata() {
     let output = run(r#"
-        (let r (capture/result (fn () (try (sh -c 'exit 7') (finally (printf cleaned))))))
+        (let r (<-result (fn () (try (sh -c 'exit 7') (finally (printf cleaned))))))
         (printf "%s/%s/" (exit-code $r) (stdout-text $r))
-        (let next (capture/result (fn ()
+        (let next (<-result (fn ()
           (for n [#0 #1]
             (if (= $n #1) (do (printf skipped) (continue)))
             (printf completed)))))
@@ -1712,7 +1709,7 @@ fn external_references_and_dynamic_text_are_valid_pipeline_heads() {
     let output = run(r#"
         (let sorter (command sort))
         (let sink cat)
-        (let r (capture/result {trim #false} (fn () (| (printf "b\na\n") ($sorter) ($sink)))))
+        (let r (<-result {trim #false} (fn () (| (printf "b\na\n") ($sorter) ($sink)))))
         (printf "%s" (stdout-text $r))
         (let j (spawn (fn () (| (printf worker) ((command cat))))))
         (printf "%s" (stdout-text (wait $j)))
@@ -1749,13 +1746,13 @@ fn command_results_stream_in_value_positions_and_keep_stream_fields_nil() {
 #[test]
 fn explicit_text_capture_preserves_whitespace_streams_and_failure_results() {
     let output = run(r#"
-        (let text (capture/stdout {trim #false} sh -c 'printf " a\n\n"; printf warning >&2'))
+        (let text (<-out {trim #false} sh -c 'printf " a\n\n"; printf warning >&2'))
         (let saved $?)
         (dump $text)
         (printf "%s/%s/" (eq $text (stdout-text $saved)) (nil? (CallResult.stderr $saved)))
-        (dump (capture/stderr {trim #false} sh -c 'printf visible; printf "error\n" >&2'))
-        (dump (capture/stdout true))
-        (try (capture/stdout sh -c 'printf partial; exit 7')
+        (dump (<-err {trim #false} sh -c 'printf visible; printf "error\n" >&2'))
+        (dump (<-out true))
+        (try (<-out sh -c 'printf partial; exit 7')
           (catch e (printf "%s/%s" (exit-code (Error.result $e)) (stdout-text (Error.result $e)))))
     "#);
     success(&output);
@@ -1764,7 +1761,7 @@ fn explicit_text_capture_preserves_whitespace_streams_and_failure_results() {
         "\" a\\n\\n\"\ntrue/true/visible\"error\\n\"\n\"\"\n7/partial"
     );
     assert_eq!(stderr(&output), "warning");
-    for name in ["capture/stdout", "capture/stderr"] {
+    for name in ["<-out", "<-err"] {
         let output = run(&format!("({name} false) (echo skipped)"));
         assert_eq!(output.status.code(), Some(1));
         assert!(output.stdout.is_empty());
@@ -1774,10 +1771,10 @@ fn explicit_text_capture_preserves_whitespace_streams_and_failure_results() {
 #[test]
 fn returned_results_are_snapshots_and_conditions_accept_them_through_apply() {
     let output = run(r#"
-        (let saved (capture/result printf "hello\n"))
+        (let saved (<-result printf "hello\n"))
         (defn saved-result () $saved)
         (printf "%s/%s/" (eq (saved-result) $saved) (eq $? $saved))
-        (let failed (capture/result false))
+        (let failed (<-result false))
         (printf "%s/%s/%s/%s" (if $saved yes no) (if $failed yes no)
             (apply not [$saved]) (apply not [$failed]))
     "#);
@@ -1789,11 +1786,11 @@ fn returned_results_are_snapshots_and_conditions_accept_them_through_apply() {
 fn capture_arguments_evaluate_before_capture_and_nested_captures_stay_separate() {
     let output = run(r#"
         (let count #0)
-        (let captured (capture/stdout printf "%s" (do (printf before) (set count (+ $count #1)) value)))
+        (let captured (<-out printf "%s" (do (printf before) (set count (+ $count #1)) value)))
         (printf "/%s/%s/" $count $captured)
-        (dump (capture/stdout (fn ()
+        (dump (<-out (fn ()
             (printf outer-)
-            (let inner (capture/stdout printf inner))
+            (let inner (<-out printf inner))
             (printf "%s" $inner))))
     "#);
     success(&output);
@@ -1808,9 +1805,9 @@ fn text_capture_respects_file_redirection_and_inherited_capture_budgets() {
             "-c",
             r#"
         (let captured unset)
-        (|> out (set captured (capture/stdout printf "raw\n")))
+        (out-> out (set captured (<-out printf "raw\n")))
         (printf "%s/" (nil? $captured))
-        (|2> err (set captured (capture/stderr sh -c 'printf error >&2')))
+        (err-> err (set captured (<-err sh -c 'printf error >&2')))
         (printf "%s" (nil? $captured))
     "#,
         ],
@@ -1822,9 +1819,9 @@ fn text_capture_respects_file_redirection_and_inherited_capture_budgets() {
     assert_eq!(fs::read(directory.path().join("out")).unwrap(), b"raw\n");
     assert_eq!(fs::read(directory.path().join("err")).unwrap(), b"error");
     let output = run(r#"
-        (try (capture/result {bytes #true} (fn ()
+        (try (<-result {bytes #true} (fn ()
           (for n [#1 #2 #3 #4 #5 #6 #7 #8 #9]
-            (capture/stdout sh -c 'head -c 1048576 /dev/zero >&2'))))
+            (<-out sh -c 'head -c 1048576 /dev/zero >&2'))))
           (catch e (printf "%s/%s" (Error.kind $e)
             (bytes/len (CallResult.stderr (Error.result $e))))))
     "#);
@@ -1835,10 +1832,8 @@ fn text_capture_respects_file_redirection_and_inherited_capture_budgets() {
 #[test]
 fn captures_trim_by_default_and_publish_matching_text_results() {
     for (name, stream, other, redirect) in [
-        ("capture/stdout", "stdout", "stderr", ""),
-        ("capture/stderr", "stderr", "stdout", " >&2"),
-        ("out", "stdout", "stderr", ""),
-        ("err", "stderr", "stdout", " >&2"),
+        ("<-out", "stdout", "stderr", ""),
+        ("<-err", "stderr", "stdout", " >&2"),
     ] {
         for text in ["\u{a0}\t alpha \n beta \r\n\u{3000}", "", " \t\r\n\u{2003}"] {
             let call = format!(
@@ -1850,7 +1845,7 @@ fn captures_trim_by_default_and_publish_matching_text_results() {
                 r#"
                 (let trimmed ({name} {call}))
                 (let saved $?)
-                (let composed (str/trim (capture/{stream} {{trim #false}} {call})))
+                (let composed (str/trim ({name} {{trim #false}} {call})))
                 (printf "%s/%s/%s/%s" (eq $trimmed $composed) (eq $trimmed {expected})
                     (eq ({stream}-text $saved) {raw}) (nil? (CallResult.{other} $saved)))
             "#,
@@ -1866,12 +1861,7 @@ fn captures_trim_by_default_and_publish_matching_text_results() {
 
 #[test]
 fn trimmed_captures_support_callable_values_and_evaluate_arguments_once_in_order() {
-    for (name, redirect) in [
-        ("capture/stdout", ""),
-        ("capture/stderr", " >&2"),
-        ("out", ""),
-        ("err", " >&2"),
-    ] {
+    for (name, redirect) in [("<-out", ""), ("<-err", " >&2")] {
         let script = quote(&format!("printf '%s' \"$1\"{redirect}"));
         let output = run(&format!(
             r#"
@@ -1899,19 +1889,14 @@ fn trimmed_captures_support_callable_values_and_evaluate_arguments_once_in_order
 #[test]
 fn trimmed_captures_keep_the_other_stream_and_propagate_errors_with_raw_results() {
     let output = run(r#"
-        (let out (capture/stdout sh -c 'printf " out\n"; printf warning >&2'))
-        (let err (capture/stderr sh -c 'printf visible; printf " err\n" >&2'))
+        (let out (<-out sh -c 'printf " out\n"; printf warning >&2'))
+        (let err (<-err sh -c 'printf visible; printf " err\n" >&2'))
         (printf "/%s/%s" $out $err)
     "#);
     success(&output);
     assert_eq!(stdout(&output), "visible/out/err");
     assert_eq!(stderr(&output), "warning");
-    for (name, stream, redirect) in [
-        ("capture/stdout", "stdout", ""),
-        ("capture/stderr", "stderr", " >&2"),
-        ("out", "stdout", ""),
-        ("err", "stderr", " >&2"),
-    ] {
+    for (name, stream, redirect) in [("<-out", "stdout", ""), ("<-err", "stderr", " >&2")] {
         let failed = run(&format!(
             r#"
             (try ({name} sh -c 'printf " partial\n"{redirect}; exit 7')
@@ -1940,10 +1925,8 @@ fn trimmed_captures_keep_the_other_stream_and_propagate_errors_with_raw_results(
 #[test]
 fn captures_return_nil_when_the_target_stream_is_redirected() {
     for (name, stream, redirection, redirect) in [
-        ("capture/stdout", "stdout", "|>", ""),
-        ("capture/stderr", "stderr", "|2>", " >&2"),
-        ("out", "stdout", "|>", ""),
-        ("err", "stderr", "|2>", " >&2"),
+        ("<-out", "stdout", "out->", ""),
+        ("<-err", "stderr", "err->", " >&2"),
     ] {
         let directory = tempfile::tempdir().unwrap();
         let source = format!(
@@ -1978,7 +1961,7 @@ fn complete_capture_uses_trimmed_text_by_default_and_options_apply_to_both_strea
         let expected = quote(if trim { text.trim() } else { text });
         let source = format!(
             r#"
-            (let result (capture/result {options} sh -c 'printf "%s" "$1"; printf "%s" "$1" >&2' parsh {raw}))
+            (let result (<-result {options} sh -c 'printf "%s" "$1"; printf "%s" "$1" >&2' parsh {raw}))
             (let saved $?)
             (dump (list (eq $result $saved) (eq (. $result value) #nil)
                 (eq (bytes? (. $result stdout)) #{bytes})
@@ -2001,12 +1984,7 @@ fn complete_capture_uses_trimmed_text_by_default_and_options_apply_to_both_strea
 
 #[test]
 fn single_stream_binary_options_preserve_whitespace_and_never_decode() {
-    for (name, stream, redirect) in [
-        ("capture/stdout", "stdout", ""),
-        ("capture/stderr", "stderr", " >&2"),
-        ("out", "stdout", ""),
-        ("err", "stderr", " >&2"),
-    ] {
+    for (name, stream, redirect) in [("<-out", "stdout", ""), ("<-err", "stderr", " >&2")] {
         for trim in ["#true", "#false"] {
             let source = format!(
                 r#"
@@ -2034,15 +2012,15 @@ fn capture_options_and_arguments_evaluate_once_in_order_for_all_call_forms() {
         (let trace (str))
         (defn mark (label value) (set trace (str $trace $label)) $value)
         (defn emit (settings names) (dump (list $settings $names)))
-        (let direct (capture/stdout (mark o {trim #false}) (mark c (function emit))
+        (let direct (<-out (mark o {trim #false}) (mark c (function emit))
                       (mark a {data #true}) (mark b [one two])))
         (let saved $?)
-        (let referenced ((function capture/stdout) {trim #false} emit {data #true} [one two]))
-        (let applied (apply capture/stdout [{trim #false} emit {data #true} [one two]]))
+        (let referenced ((function <-out) {trim #false} emit {data #true} [one two]))
+        (let applied (apply <-out [{trim #false} emit {data #true} [one two]]))
         (dump (list $trace (eq $direct $referenced) (eq $direct $applied)
                     (eq $direct (. $saved stdout)) (str/ends-with $direct "\n")))
         (let options {bytes #true})
-        (dump (bytes/to-text (apply out [$options printf " raw\n"])))
+        (dump (bytes/to-text (apply <-out [$options printf " raw\n"])))
     "#);
     success(&output);
     assert_eq!(
@@ -2055,14 +2033,14 @@ fn capture_options_and_arguments_evaluate_once_in_order_for_all_call_forms() {
 #[test]
 fn complete_capture_rejects_invalid_utf8_with_an_inspectable_raw_result() {
     let output = run(r#"
-        (try (capture/result sh -c 'printf "ok\n"; printf "\377" >&2')
+        (try (<-result sh -c 'printf "ok\n"; printf "\377" >&2')
           (catch e
             (dump (list (Error.kind $e) (eq $? (Error.result $e))
                         (bytes/hex-encode (. (Error.result $e) stdout))
                         (bytes/hex-encode (. (Error.result $e) stderr))))))
-        (let result (capture/result {bytes #true} sh -c 'printf "ok\n"; printf "\377" >&2'))
+        (let result (<-result {bytes #true} sh -c 'printf "ok\n"; printf "\377" >&2'))
         (dump (list (bytes/hex-encode (. $result stdout)) (bytes/hex-encode (. $result stderr))))
-        (dump (capture/stdout sh -c 'printf ok; printf "\377" >&2'))
+        (dump (<-out sh -c 'printf ok; printf "\377" >&2'))
     "#);
     success(&output);
     assert_eq!(
@@ -2081,12 +2059,12 @@ fn capture_failures_follow_options_without_hiding_the_original_failure() {
     ] {
         let output = run(&format!(
             r#"
-            (try (capture/stdout {options} sh -c 'printf " partial\n"; exit 7')
+            (try (<-out {options} sh -c 'printf " partial\n"; exit 7')
               (catch e (dump (list (Error.kind $e) (exit-code (Error.result $e))
                                   (eq (stdout-text (Error.result $e)) {expected})
                                   (eq (bytes? (. (Error.result $e) stdout)) #{bytes})
                                   (eq $? (Error.result $e))))))
-            (let result (capture/result {options} sh -c 'printf " partial\n"; exit 7'))
+            (let result (<-result {options} sh -c 'printf " partial\n"; exit 7'))
             (dump (list (exit-code $result) (eq (stdout-text $result) {expected})))
         "#,
             expected = quote(expected)
@@ -2098,7 +2076,7 @@ fn capture_failures_follow_options_without_hiding_the_original_failure() {
         );
     }
     let output = run(r#"
-        (try (capture/stdout sh -c 'printf "\377"; exit 9')
+        (try (<-out sh -c 'printf "\377"; exit 9')
           (catch e (dump (list (Error.kind $e) (exit-code (Error.result $e))
                               (bytes/hex-encode (. (Error.result $e) stdout))))))
     "#);
@@ -2109,12 +2087,12 @@ fn capture_failures_follow_options_without_hiding_the_original_failure() {
 #[test]
 fn formatted_capture_results_survive_user_functions_and_background_transfer() {
     let output = run(r#"
-        (let result (capture/result printf " hello\n"))
+        (let result (<-result printf " hello\n"))
         (defn saved () $result)
         (dump (eq (saved) $result))
         (let job (spawn (fn ()
-            (list (capture/stdout printf " text\n")
-                  (capture/stdout {bytes #true} printf " bytes\n")))))
+            (list (<-out printf " text\n")
+                  (<-out {bytes #true} printf " bytes\n")))))
         (let values (. (wait $job) value))
         (dump (list (list/first $values) (bytes/to-text (list/get $values #1))))
     "#);

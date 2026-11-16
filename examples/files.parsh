@@ -3,22 +3,22 @@
    Native only: mktemp is not included in the browser coreutils subset. )
 
 (let original_directory $PWD)
-(let temporary_directory (capture/stdout mktemp -d))
+(let temporary_directory (<-out mktemp -d))
 (try
   (cd $temporary_directory)
   (export LC_ALL C)
 
-  (|> fruits.txt (printf "pear\napple\npear\nbanana\n"))
-  (|>> fruits.txt (echo apple))
-  (|> sorted.txt (| (cat fruits.txt) (sort) (uniq)))
+  (out-> fruits.txt (printf "pear\napple\npear\nbanana\n"))
+  (out->> fruits.txt (echo apple))
+  (out-> sorted.txt (| (cat fruits.txt) (sort) (uniq)))
   (echo "sorted unique fruit:")
-  (<| sorted.txt (cat))
+  (in<- sorted.txt (cat))
 
   (for file (glob *.txt)
     (echo "found $file"))
 
   (; Conditions can handle a failed command while stderr goes to a file. )
-  (|2> errors.txt
+  (err-> errors.txt
     (if (cat missing.txt)
         (echo "missing.txt exists")
         (echo "missing.txt: failure handled")))

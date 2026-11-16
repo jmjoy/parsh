@@ -108,7 +108,7 @@ whole input, otherwise it inserts a newline.
 (dump (str "$(get name)_suffix"))
 (dump (str "sum=$(+ #1 #2)"))
 (dump (str "nested=$(str "a" 'b')"))
-(dump (str "cwd=$(capture/stdout pwd)"))
+(dump (str "cwd=$(<-out pwd)"))
 (dump (str '$name $(+ 1 2)\n'))
 (dump (str "\$name \$(+ 1 2)"))
 ```
@@ -128,8 +128,8 @@ lexical scope, while `let` binds in the surrounding expression scope; side effec
 and errors otherwise match ordinary calls. Scalars convert as `str` does: numbers and
 booleans become text and nil becomes empty text. Collections, structs, forms, functions,
 command references and bytes cannot implicitly become text. External
-commands stream both outputs and return `CallResult`; use `capture/stdout` or
-`capture/stderr` explicitly for text. Captures trim surrounding whitespace by default;
+commands stream both outputs and return `CallResult`; use `<-out` or
+`<-err` explicitly for text. Captures trim surrounding whitespace by default;
 pass a leading `{trim #false}` to preserve it. Errors stop the current batch. The resulting text stays one
 argument, and inserted values are never parsed or interpolated again.
 

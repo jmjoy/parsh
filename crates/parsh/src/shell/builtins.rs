@@ -146,11 +146,9 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "command?",
     "callable?",
     "bytes?",
-    "capture/result",
-    "capture/stdout",
-    "capture/stderr",
-    "out",
-    "err",
+    "<-result",
+    "<-out",
+    "<-err",
     "spawn",
     "wait",
     "job-status",
@@ -329,7 +327,7 @@ fn arity(name: &str) -> (usize, usize) {
         "gensym" => (0, 1),
         "-" | "/" | "min" | "max" | "list/append" => (1, usize::MAX),
         "apply" => (2, usize::MAX),
-        "capture/result" | "capture/stdout" | "capture/stderr" | "spawn" => (1, usize::MAX),
+        "<-result" | "<-out" | "<-err" | "spawn" => (1, usize::MAX),
         "map/get" | "list/get" | "str/get" | "list/slice" | "str/slice" => (2, 3),
         "map/set" | "list/set" | "list/insert" | "str/replace" => (3, 3),
         "list/range" => (1, 3),
@@ -370,11 +368,6 @@ impl Shell {
         mode: Mode,
         io: &Io,
     ) -> EvalResult<Value> {
-        let name = match name {
-            "out" => "capture/stdout",
-            "err" => "capture/stderr",
-            _ => name,
-        };
         let (min, max) = arity(name);
         Self::arity_count(expr, args.len(), min, max)?;
         if super::functional::NAMES.contains(&name) {
@@ -397,9 +390,9 @@ impl Shell {
             "http/request" | "http/get" | "http/post" | "http/body-text" => {
                 http::call(self, expr, name, args, env, mode, io)
             }
-            "command" | "command?" | "callable?" | "bytes?" | "capture/result"
-            | "capture/stdout" | "capture/stderr" | "spawn" | "wait" | "job-status" | "cancel"
-            | "check" | "stdout-text" | "stderr-text" | "exit-code" | "signal" | "throw" => {
+            "command" | "command?" | "callable?" | "bytes?" | "<-result" | "<-out" | "<-err"
+            | "spawn" | "wait" | "job-status" | "cancel" | "check" | "stdout-text"
+            | "stderr-text" | "exit-code" | "signal" | "throw" => {
                 self.execution_builtin(expr, name, args, env, mode, io)
             }
             "." => {

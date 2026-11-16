@@ -60,8 +60,8 @@ another shell to parse again, so there is no second round of quoting and no
 injection layer.
 
 Commands always return `CallResult` and write stdout/stderr to their current
-destinations without implicit buffering. Capture explicitly with `capture/stdout`,
-`capture/stderr`, or `capture/result`. Ordinary failures stop the current batch;
+destinations without implicit buffering. Capture explicitly with `<-out`,
+`<-err`, or `<-result`. Ordinary failures stop the current batch;
 conditions can inspect results, and exceptions provide recovery. Results retain
 exit, signal, and pipeline-stage information.
 
