@@ -155,7 +155,8 @@ function stops that body; capture does not run the remaining expressions. Use
 Explicit file redirection takes precedence over capture. Captured streams share an
 8 MiB limit; overflow stops execution and retains partial output in the error's
 result. Uncaptured foreground commands keep streaming. Pipelines still accept only
-external stages; wrap a pipeline in a function to capture or spawn it:
+external stages. Use `<-|out`, `<-|err`, or `<-|result` to capture a pipeline.
+Wrap it in a function when passing it to `spawn`:
 
 ```parsh
 (dump (<-result (fn () (| (printf "b\na\n") (sort)))))

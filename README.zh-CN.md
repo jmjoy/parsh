@@ -56,7 +56,7 @@ parsh（**parenthesis shell**）是一个交互命令与脚本共用同一种小
 少一层需要猜的引号，生成的脚本读起来就是它执行的样子：
 
 ```parsh
-(let count (int (<-out (fn () (| (ls) (wc -l))))))
+(let count (int (<-|out (ls) (wc -l))))
 (echo "entries: $count; doubled: $(* $count #2)")
 ```
 

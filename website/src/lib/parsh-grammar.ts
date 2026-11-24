@@ -48,7 +48,7 @@ export default {
     },
     {
       name: "keyword.operator.parsh",
-      match: "(?<=\\()(?:[.+*/=-]|!=|[<>]=?|\\||<-(?:out|err|result)|(?:out|err)->>?|in<-)(?=[\\s()\\[\\]{}\"'])",
+      match: "(?<=\\()(?:[.+*/=-]|!=|[<>]=?|\\||<-(?:out|err|result)|<-\\|(?:out|err|result)|(?:out|err)->>?|in<-)(?=[\\s()\\[\\]{}\"'])",
     },
     { name: "entity.name.function.parsh", match: "(?<=\\()[^\\s()\\[\\]{}\"'$]+" },
     { name: "punctuation.section.parens.parsh", match: "[()\\[\\]{}]" },

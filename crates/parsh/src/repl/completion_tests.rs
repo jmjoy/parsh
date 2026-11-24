@@ -417,7 +417,19 @@ fn loop_builtins_complete_in_commands_and_nested_expressions_without_running() {
 #[test]
 fn comparison_prefixes_list_the_operators_and_capture_helpers() {
     for (prefix, expected) in [
-        ("<", vec!["<", "<-err", "<-out", "<-result", "<="]),
+        (
+            "<",
+            vec![
+                "<",
+                "<-err",
+                "<-out",
+                "<-result",
+                "<-|err",
+                "<-|out",
+                "<-|result",
+                "<=",
+            ],
+        ),
         (">", vec![">", ">="]),
     ] {
         let mut repl = Repl::new();
@@ -439,6 +451,9 @@ fn comparison_prefixes_list_the_operators_and_capture_helpers() {
             "<-err".to_owned(),
             "<-out".to_owned(),
             "<-result".to_owned(),
+            "<-|err".to_owned(),
+            "<-|out".to_owned(),
+            "<-|result".to_owned(),
             "<=".to_owned(),
         ]]
     );

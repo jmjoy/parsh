@@ -87,4 +87,16 @@ and `{bytes #true}` returns original bytes without trimming.
 Explicit file redirection takes precedence over capture; pipelines and
 files preserve binary bytes.
 
+Use `<-|out`, `<-|err`, or `<-|result` to capture a single pipeline without an
+outer zero-argument function:
+
+```parsh
+(let count (int (<-|out
+  (find . -name "*.rs")
+  (wc -l))))
+```
+
+They are equivalent to wrapping `(| ...)` in `(fn () ...)` and passing it to
+`<-out`, `<-err`, or `<-result`.
+
 For complete results, raw-byte capture, `$?`, exceptions, and background execution, see [execution results and tasks](/parsh/en/docs/execution/).

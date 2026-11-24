@@ -923,6 +923,21 @@ fn pipelines_stream_large_outputs_and_return_rightmost_failure() {
 }
 
 #[test]
+fn pipeline_capture_macros_avoid_the_function_wrapper() {
+    let output = run(r#"
+        (let count (int (<-|out (printf "%s\n" b a) (sort) (wc -l))))
+        (let warning (<-|err (sh -c "printf warning >&2") (cat)))
+        (let result (<-|result (printf "b\na\n") (sort)))
+        (let raw (<-|out {trim #false} (printf "a\n\n") (cat)))
+        (printf "%s/%s/%s/%s" $count $warning (stdout-text $result) (nil? (exit-code $result)))
+        (printf "<%s>" $raw)
+        "#);
+    success(&output);
+    assert_eq!(stdout(&output), "2/warning/a\nb/false<a\n\n>");
+    assert!(stderr(&output).is_empty());
+}
+
+#[test]
 fn redirections_compose_with_nested_capture_and_cwd() {
     let directory = tempfile::tempdir().unwrap();
     let output = run(&format!(
