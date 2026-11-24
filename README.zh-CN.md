@@ -36,8 +36,8 @@ parsh（**parenthesis shell**）是一个交互命令与脚本共用同一种小
 没有隐式分词或通配符展开，无需猜测空格会如何影响参数：
 
 ```parsh
-(let files (list "a file.rs" "b.rs"))
-(dump (list $files))
+(let files ["a file.rs" "b.rs"])
+(dump [$files])
 ```
 
 ## 真实命令，结构化组合

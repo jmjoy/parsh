@@ -1,7 +1,7 @@
 #!/usr/bin/env parsh
 (; Run with: cargo run -- examples/arithmetic.parsh )
 
-(let numbers (list #3 #5 #7 #9))
+(let numbers [#3 #5 #7 #9])
 (let total #0)
 (for number $numbers
   (set total (+ $total $number)))

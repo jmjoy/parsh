@@ -82,7 +82,7 @@ the default; an intermediate non-map value remains an error.
 ```parsh
 (let original {http {retries #2}})
 (let updated (map/update-in $original [http retries] (function +) #1))
-(dump (list $original $updated))
+(dump [$original $updated])
 (dump (map/get-in $updated [http retries]))
 ```
 
@@ -99,9 +99,9 @@ Every session starts with these ordinary, redefinable macros:
 | `(cond (condition body...) ... (else body...))` | Run the first matching clause; an optional else must be last |
 | `(-> value steps...)` | Insert the preceding expression as the first argument of each step |
 | `(->> value steps...)` | Insert the preceding expression as the last argument of each step |
-| `(<-|out stages...)` | Capture pipeline stdout, equivalent to passing a zero-argument function to `<-out` |
-| `(<-|err stages...)` | Capture pipeline stderr, equivalent to passing a zero-argument function to `<-err` |
-| `(<-|result stages...)` | Capture a complete pipeline result, equivalent to passing a zero-argument function to `<-result` |
+| `(<-\|out stages...)` | Capture pipeline stdout, equivalent to passing a zero-argument function to `<-out` |
+| `(<-\|err stages...)` | Capture pipeline stderr, equivalent to passing a zero-argument function to `<-err` |
+| `(<-\|result stages...)` | Capture a complete pipeline result, equivalent to passing a zero-argument function to `<-result` |
 
 Conditions use the existing boolean or `CallResult` rules. Bodies run only when
 selected and return their last value. If no body is selected, the result is nil. Each `cond`
@@ -121,8 +121,8 @@ for custom definitions.
 
 ## Forms, reading, and evaluation
 
-Forms are syntax values, distinct from runtime lists. Reader sugar such as
-`[a b]` is represented as the call form `(list a b)`.
+Forms are syntax values, distinct from runtime lists. The reader represents
+`[a b]` as a call to `list` with `a` and `b` as its arguments.
 
 | Call | Result |
 | --- | --- |

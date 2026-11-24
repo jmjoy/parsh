@@ -37,7 +37,7 @@ parsh 没有正式的宣言。下面这些是实现在反复回归的原则，�
 文本永远是一个参数，列表只向外层命令参数展开一层。通配是一次调用，而不是一条语法规则：
 
 ```parsh
-(let files (list "a file.rs" "b.rs"))
+(let files ["a file.rs" "b.rs"])
 (printf "<%s>\n" $files)
 (dump (for file (glob "*.rs") (echo $file)))
 ```

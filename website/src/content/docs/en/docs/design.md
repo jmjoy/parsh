@@ -44,7 +44,7 @@ Text stays one argument. Lists expand one level into external command
 arguments. Globbing is a call, not a syntax rule:
 
 ```parsh
-(let files (list "a file.rs" "b.rs"))
+(let files ["a file.rs" "b.rs"])
 (printf "<%s>\n" $files)
 (dump (for file (glob "*.rs") (echo $file)))
 ```

@@ -80,9 +80,9 @@ Results are `"hello"`, `" hello\n"`, `"2068656c6c6f0a"`, and `" hello\n"`.
 | `(spawn callee args...)` | Flat arguments; returns a native `Job` |
 
 Lists passed to capture helpers and `spawn` remain one language argument; external
-command calls then apply the usual one-level list expansion to argv. The callee
-is a function value, command reference, or text name, rather than an unevaluated
-command expression. Wrap multiple expressions or a pipeline in `(fn () ...)`.
+command calls then apply the usual one-level list expansion to argv. Pass a
+function value, command reference, or text name as the callee. Use `(fn () ...)`
+to group multiple expressions or to pass a pipeline to `spawn`.
 Arguments evaluate once from left to right before capture starts.
 
 ## Complete results
@@ -92,7 +92,7 @@ arguments. It returns a `CallResult`, capturing stdout and stderr independently:
 
 ```parsh
 (let result (<-result printf "hello\n"))
-(dump (list (stdout-text $result) (exit-code $result) (signal $result)))
+(dump [(stdout-text $result) (exit-code $result) (signal $result)])
 (let sum (<-result + #2 #3))
 (dump (. $sum value))
 ```
@@ -154,12 +154,11 @@ function stops that body; capture does not run the remaining expressions. Use
 
 Explicit file redirection takes precedence over capture. Captured streams share an
 8 MiB limit; overflow stops execution and retains partial output in the error's
-result. Uncaptured foreground commands keep streaming. Pipelines still accept only
-external stages. Use `<-|out`, `<-|err`, or `<-|result` to capture a pipeline.
-Wrap it in a function when passing it to `spawn`:
+result. Uncaptured foreground commands keep streaming. Pipeline stages must call
+external commands. Use `<-|out`, `<-|err`, or `<-|result` to capture a pipeline.
 
 ```parsh
-(dump (<-result (fn () (| (printf "b\na\n") (sort)))))
+(dump (<-|result (printf "b\na\n") (sort)))
 ```
 
 Select bytes explicitly to capture binary output without decoding or trimming:
@@ -180,7 +179,7 @@ same value. It is a complete structure, so obtain the numeric exit code explicit
 ```parsh
 (let here (<-out pwd))
 (let saved $?)
-(dump (list $here (exit-code $saved) (signal $saved)))
+(dump [$here (exit-code $saved) (signal $saved)])
 (echo "exit=$(exit-code $?)")
 ```
 

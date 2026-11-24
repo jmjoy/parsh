@@ -39,8 +39,8 @@ Text stays one argument. Lists expand one level into external command arguments.
 No implicit word splitting or globbing, and no guessing what spaces will do:
 
 ```parsh
-(let files (list "a file.rs" "b.rs"))
-(dump (list $files))
+(let files ["a file.rs" "b.rs"])
+(dump [$files])
 ```
 
 ## Real commands, structured composition

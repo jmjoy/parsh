@@ -17,7 +17,7 @@ sum=$(+ #1 #2)""")
 $(pwd)\n''')
 
 (; Lists expand into arguments; spaces and empty strings stay intact. )
-(let items (list "one item" second ""))
+(let items ["one item" second ""])
 (printf "item: <%s>\n" $items)
 
 (let field language)

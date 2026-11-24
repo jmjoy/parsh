@@ -7,7 +7,7 @@ description: "裸词、字符串、值的类型与结构化注释。"
 
 ```parsh
 (dump (str "hello, " (str "a " "friend")))
-(dump (list one "two words" #true))
+(dump [one "two words" #true])
 ```
 
 在值的位置，裸词表示文本：`123`、`true`、`false` 和 `nil` 都没有特殊的字面量含义。
@@ -22,7 +22,7 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 ```parsh
 (dump (eq true true))
 (dump (not #false))
-(dump (list a "b c" #true))
+(dump [a "b c" #true])
 ```
 
 显式 `dump` 依次打印 `#true`、`#true` 和 `("a" "b c" #true)`。`dump` 使用引号与转义显示文本，将 nil 显示为 `#nil`。REPL 与脚本都不会自动打印返回值。
@@ -37,7 +37,7 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 
 ```parsh
 (let config {retries #3 timeout #1.5 enabled #false})
-(dump (list (typeof #1) (typeof 1) (eq #1 1)))
+(dump [(typeof #1) (typeof 1) (eq #1 1)])
 ```
 
 列表显示为 `("int" "text" #false)`。数字和布尔结果显示时带 `#`，包括集合中的元素；
@@ -62,7 +62,7 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 
 ## 集合语法糖
 
-`[...]` 是 `(list ...)` 的简写，`{...}` 是 `(map ...)` 的简写：
+用 `[...]` 构造列表，用 `{...}` 构造映射。读取器分别将它们展开为对 `list` 和 `map` 的调用。
 
 ```parsh
 (dump [])

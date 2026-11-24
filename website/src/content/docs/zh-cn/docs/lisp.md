@@ -71,7 +71,7 @@ description: "函数组合、嵌套更新、预置宏、语法表单与脚本加
 ```parsh
 (let original {http {retries #2}})
 (let updated (map/update-in $original [http retries] (function +) #1))
-(dump (list $original $updated))
+(dump [$original $updated])
 (dump (map/get-in $updated [http retries]))
 ```
 
@@ -88,9 +88,9 @@ description: "函数组合、嵌套更新、预置宏、语法表单与脚本加
 | `(cond (condition body...) ... (else body...))` | 执行首个匹配分支；可选的 else 必须在最后 |
 | `(-> value steps...)` | 将上一步表达式插入每步调用的第一个参数位置 |
 | `(->> value steps...)` | 将上一步表达式插入每步调用的最后一个参数位置 |
-| `(<-|out stages...)` | 捕获管道标准输出，等价于 `<-out` 包裹零参数函数 |
-| `(<-|err stages...)` | 捕获管道标准错误，等价于 `<-err` 包裹零参数函数 |
-| `(<-|result stages...)` | 捕获管道完整结果，等价于 `<-result` 包裹零参数函数 |
+| `(<-\|out stages...)` | 捕获管道标准输出，等价于 `<-out` 包裹零参数函数 |
+| `(<-\|err stages...)` | 捕获管道标准错误，等价于 `<-err` 包裹零参数函数 |
+| `(<-\|result stages...)` | 捕获管道完整结果，等价于 `<-result` 包裹零参数函数 |
 
 条件遵循现有布尔值或 `CallResult` 规则。只执行选中的主体，返回主体最后一个值；
 没有选中主体时返回 nil。`cond` 的每个分支都需要一个条件和至少一个主体表达式，
@@ -108,7 +108,8 @@ description: "函数组合、嵌套更新、预置宏、语法表单与脚本加
 
 ## 表单、读取与求值
 
-Form 是语法值，与运行时列表不同。读取器会把 `[a b]` 这样的简写表示为调用表单 `(list a b)`。
+Form 是语法值，与运行时列表不同。读取器将 `[a b]` 表示为对 `list` 的调用，
+实参为 `a` 和 `b`。
 
 | 调用 | 结果 |
 | --- | --- |

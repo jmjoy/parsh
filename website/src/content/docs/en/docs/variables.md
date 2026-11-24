@@ -60,7 +60,7 @@ only when used inside a string. `get` is a reserved built-in command name.
 For expression interpolation and literal dollars, see [strings](/parsh/en/docs/syntax/#strings-and-interpolation).
 
 ```parsh
-(let files (list "a file.rs" other.rs))
+(let files ["a file.rs" other.rs])
 (printf "<%s>\n" $files)
 (dump (for file (glob *.rs)
   (echo $file)))

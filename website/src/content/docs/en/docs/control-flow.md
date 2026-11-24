@@ -43,7 +43,7 @@ and `set` can update an outer binding.
 (dump (while (< $count #5)
   (set count (+ $count #1))
   (if (= $count #2) (continue))
-  (if (= $count #4) (break (list stopped $count)))
+  (if (= $count #4) (break [stopped $count]))
   (echo iteration $count)))
 ```
 
@@ -117,8 +117,8 @@ also return its expansion early; return in expanded code belongs to the caller.
 (defn greet (who)
   (str "hello, " $who))
 (dump (greet parsh))
-(dump (if #true (list yes) (list no)))
-(dump (for item (list first last) (str $item)))
+(dump (if #true [yes] [no]))
+(dump (for item [first last] (str $item)))
 ```
 
 An interactive session displays `"hello, parsh"`, `("yes")`, and `"last"`. A loop returns the last body's result, rather than collecting every iteration. These examples work in the browser playground.

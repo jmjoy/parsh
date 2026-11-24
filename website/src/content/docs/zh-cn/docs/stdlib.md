@@ -82,8 +82,8 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 `empty?` 只接受文本、列表和映射。
 
 ```parsh
-(dump (list (typeof (command echo)) (command? (command echo))
-      (callable? (function +)) (callable? echo)))
+(dump [(typeof (command echo)) (command? (command echo))
+       (callable? (function +)) (callable? echo)])
 ```
 
 结果为 `("command" #true #true #false)`。
@@ -104,7 +104,7 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 | `(round n)` | 最接近的 i64，中点远离零 |
 
 ```parsh
-(dump (list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5)))
+(dump [(quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5)])
 ```
 
 结果为 `(#-2 #-1 #3 #-3)`。`quot/rem` 仅接受 int，其他数值函数只接受 int 或 float；文本应先用 `int`、`float` 显式转换。
@@ -132,7 +132,7 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 ```parsh
 (let original [a b])
 (let updated (list/append $original [c d]))
-(dump (list $original $updated))
+(dump [$original $updated])
 (dump (list/concat $original [c d]))
 (dump (list/get $updated #-1))
 (dump (list/slice $updated #1 #-1))
@@ -178,7 +178,7 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 | `(str/lower text)` / `(str/upper text)` | Unicode 小写或大写文本 |
 
 ```parsh
-(dump (list (str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3)))
+(dump [(str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3)])
 (dump (str/join (str/split "a,b,c" ",") " / "))
 (dump (str/lines "a\r\nb\n"))
 ```
@@ -254,7 +254,7 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 ```parsh
 (let calls #0)
 (dump (map/get {name parsh} name (do (set calls (+ $calls #1)) fallback)))
-(dump (list $calls))
+(dump [$calls])
 ```
 
 结果为 `"parsh"` 和 `(#1)`。已有 nil 值的键仍然命中，返回 nil；默认值仍被求值。
@@ -296,8 +296,8 @@ JSON 错误的 `Error.kind` 为 `json`。
 
 ```parsh
 (let raw (bytes/hex-decode "00ff41"))
-(dump (list (bytes/len $raw) (bytes/base64-encode $raw)
-      (bytes/to-text (bytes/slice $raw #-1))))
+(dump [(bytes/len $raw) (bytes/base64-encode $raw)
+       (bytes/to-text (bytes/slice $raw #-1))])
 ```
 
 结果为 `(#3 "AP9B" "A")`。bytes 显示为 `<bytes N>`，不能隐式变成文本，需显式解码或编码。

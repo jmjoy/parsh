@@ -7,7 +7,7 @@ Every call is a parenthesized expression. Inner calls are evaluated as arguments
 
 ```parsh
 (dump (str "hello, " (str "a " "friend")))
-(dump (list one "two words" #true))
+(dump [one "two words" #true])
 ```
 
 In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no
@@ -27,7 +27,7 @@ See [type predicates](/parsh/en/docs/stdlib/#type-predicates) for runtime type n
 ```parsh
 (dump (eq true true))
 (dump (not #false))
-(dump (list a "b c" #true))
+(dump [a "b c" #true])
 ```
 
 The explicit `dump` calls print `#true`, `#true`, and `("a" "b c" #true)`. `dump` displays text with quotes and escapes and nil as `#nil`. Neither the REPL nor scripts automatically print return values.
@@ -44,7 +44,7 @@ Use `#` to create typed scalars: `#1` is an int, `#1.0` and `#1e3` are floats,
 
 ```parsh
 (let config {retries #3 timeout #1.5 enabled #false})
-(dump (list (typeof #1) (typeof 1) (eq #1 1)))
+(dump [(typeof #1) (typeof 1) (eq #1 1)])
 ```
 
 The list displays as `("int" "text" #false)`. Numeric and boolean results display
@@ -74,7 +74,8 @@ command failure behavior. Numeric values and nil are not implicit conditions.
 
 ## Collection shorthand
 
-`[...]` is shorthand for `(list ...)`, and `{...}` is shorthand for `(map ...)`:
+Use `[...]` to construct a list and `{...}` to construct a map. The reader
+expands these forms into calls to `list` and `map`, respectively.
 
 ```parsh
 (dump [])

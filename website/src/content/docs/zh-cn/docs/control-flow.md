@@ -40,7 +40,7 @@ description: "词法函数、条件分支、顺序求值与循环。"
 (dump (while (< $count #5)
   (set count (+ $count #1))
   (if (= $count #2) (continue))
-  (if (= $count #4) (break (list stopped $count)))
+  (if (= $count #4) (break [stopped $count]))
   (echo iteration $count)))
 ```
 
@@ -102,8 +102,8 @@ description: "词法函数、条件分支、顺序求值与循环。"
 (defn greet (who)
   (str "hello, " $who))
 (dump (greet parsh))
-(dump (if #true (list yes) (list no)))
-(dump (for item (list first last) (str $item)))
+(dump (if #true [yes] [no]))
+(dump (for item [first last] (str $item)))
 ```
 
 交互环境依次显示 `"hello, parsh"`、`("yes")` 和 `"last"`。循环返回最后一次循环体的结果，不会收集每次迭代的值。这组示例可以直接在浏览器终端中运行。

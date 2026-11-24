@@ -2,7 +2,7 @@
 (; Run with: cargo run -- examples/pipelines.parsh )
 
 (export LC_ALL C)
-(let fruits (list pear apple pear banana apple))
+(let fruits [pear apple pear banana apple])
 (echo "sorted counts:")
 (| (printf "%s\n" $fruits)
    (sort)

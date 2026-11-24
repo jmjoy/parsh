@@ -47,7 +47,7 @@ description: "变量绑定、环境变量、列表、映射与显式展开。"
 `get` 是保留的内置命令名。表达式插值和字面美元符的规则见[字符串](/parsh/zh-cn/docs/syntax/#字符串与插值)。
 
 ```parsh
-(let files (list "a file.rs" other.rs))
+(let files ["a file.rs" other.rs])
 (printf "<%s>\n" $files)
 (dump (for file (glob *.rs)
   (echo $file)))

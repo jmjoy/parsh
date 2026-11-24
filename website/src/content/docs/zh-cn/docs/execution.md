@@ -68,7 +68,8 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 | `(spawn callee args...)` | 实参直接排列，返回原生 `Job` |
 
 传给捕获方法和 `spawn` 的列表仍是一个语言参数；调用外部命令时，才按通常规则展开一层 argv。
-被调用对象应为函数值、命令引用或文本名称；多个表达式或管道放入 `(fn () ...)`。
+被调用对象应为函数值、命令引用或文本名称。可用 `(fn () ...)` 包裹多个表达式，
+也可用它把管道传给 `spawn`。
 所有实参在捕获开始前从左到右各求值一次。
 
 ## 完整执行结果
@@ -77,7 +78,7 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 
 ```parsh
 (let result (<-result printf "hello\n"))
-(dump (list (stdout-text $result) (exit-code $result) (signal $result)))
+(dump [(stdout-text $result) (exit-code $result) (signal $result)])
 (let sum (<-result + #2 #3))
 (dump (. $sum value))
 ```
@@ -131,11 +132,11 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 ```
 
 显式文件重定向优先于捕获。两路捕获合计上限 8 MiB，超限时停止执行，在异常结果中保留已有输出。
-未捕获的前台命令仍实时输出。管道阶段仍限外部命令；捕获整个管道时可以使用
-`<-|out`、`<-|err`、`<-|result`。需要传给 `spawn` 时使用函数包装：
+未捕获的前台命令仍实时输出。管道各阶段都必须调用外部命令。
+用 `<-|out`、`<-|err` 或 `<-|result` 捕获管道。
 
 ```parsh
-(dump (<-result (fn () (| (printf "b\na\n") (sort)))))
+(dump (<-|result (printf "b\na\n") (sort)))
 ```
 
 显式选择 bytes 可以捕获二进制输出，不解码，也不裁剪：
@@ -155,7 +156,7 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 ```parsh
 (let here (<-out pwd))
 (let saved $?)
-(dump (list $here (exit-code $saved) (signal $saved)))
+(dump [$here (exit-code $saved) (signal $saved)])
 (echo "exit=$(exit-code $?)")
 ```
 

@@ -9,7 +9,7 @@
 (; Captures trim text by default and publish the same result as $? . )
 (let result (<-result $printer "hello\n\n"))
 (let saved $?)
-(dump (list (stdout-text $result) (exit-code $result) (signal $result)))
+(dump [(stdout-text $result) (exit-code $result) (signal $result)])
 (echo "saved result=$(eq $result $saved); text=$(text? (. $result stdout))")
 (dump (<-out {trim #false} $printer " hello\n\n"))
 (let binary (<-result {bytes #true} $printer " \\377\n"))
@@ -17,13 +17,13 @@
 (let sum (<-result + #2 #3))
 (echo "language return value=$(. $sum value)")
 
-(; Wrap a pipeline in a function; command references are valid stage heads. )
+(; Command references are valid pipeline stage heads. )
 (let sorter (command sort))
-(let sorted (<-result {trim #false} (fn () (| (printf "b\na\n") ($sorter)))))
+(let sorted (<-|result {trim #false} (printf "b\na\n") ($sorter)))
 (dump (stdout-text $sorted))
 
 (; Capture returns nonzero exits as data, including each pipeline stage. )
-(let failed (<-result (fn () (| (false) (true)))))
+(let failed (<-|result (false) (true)))
 (echo "pipeline exit=$(exit-code $failed)")
 (dump (. $failed stages))
 (try

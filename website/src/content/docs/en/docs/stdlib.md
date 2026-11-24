@@ -94,8 +94,8 @@ reference values; it returns false for text names even though the call interface
 can resolve them. `empty?` accepts only text, lists, and maps.
 
 ```parsh
-(dump (list (typeof (command echo)) (command? (command echo))
-      (callable? (function +)) (callable? echo)))
+(dump [(typeof (command echo)) (command? (command echo))
+       (callable? (function +)) (callable? echo)])
 ```
 
 The result is `("command" #true #true #false)`.
@@ -116,7 +116,7 @@ bare word is text; `(number? #123)` is true. Commands in value position return `
 | `(round n)` | Nearest i64, with ties away from zero |
 
 ```parsh
-(dump (list (quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5)))
+(dump [(quot #-7 #3) (rem #-7 #3) (round #2.5) (round #-2.5)])
 ```
 
 The result is `(#-2 #-1 #3 #-3)`. `quot/rem` require int values; other numeric helpers require int or float
@@ -145,7 +145,7 @@ zero, integer overflow, rounding outside i64, and non-finite values are language
 ```parsh
 (let original [a b])
 (let updated (list/append $original [c d]))
-(dump (list $original $updated))
+(dump [$original $updated])
 (dump (list/concat $original [c d]))
 (dump (list/get $updated #-1))
 (dump (list/slice $updated #1 #-1))
@@ -196,7 +196,7 @@ Results are `(#1 #3 #5)`, `(#5 #3 #1)`, `("a" ("c" "d") "b")`,
 | `(str/lower text)` / `(str/upper text)` | Unicode lowercase or uppercase text |
 
 ```parsh
-(dump (list (str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3)))
+(dump [(str/len "中文") (str/get "中文" #-1) (str/slice "中文abc" #1 #3)])
 (dump (str/join (str/split "a,b,c" ",") " / "))
 (dump (str/lines "a\r\nb\n"))
 ```
@@ -279,7 +279,7 @@ propagates its errors:
 ```parsh
 (let calls #0)
 (dump (map/get {name parsh} name (do (set calls (+ $calls #1)) fallback)))
-(dump (list $calls))
+(dump [$calls])
 ```
 
 Results are `"parsh"` and `(#1)`. A stored nil value counts as present and returns
@@ -326,8 +326,8 @@ lowercase digits, requires an even length, and rejects whitespace and non-hex te
 
 ```parsh
 (let raw (bytes/hex-decode "00ff41"))
-(dump (list (bytes/len $raw) (bytes/base64-encode $raw)
-      (bytes/to-text (bytes/slice $raw #-1))))
+(dump [(bytes/len $raw) (bytes/base64-encode $raw)
+       (bytes/to-text (bytes/slice $raw #-1))])
 ```
 
 The result is `(#3 "AP9B" "A")`. Bytes display as `<bytes N>` and cannot implicitly

@@ -3,7 +3,7 @@
 
 (let completed #0)
 (let item outer)
-(for item (list first skip third stop unreachable)
+(for item [first skip third stop unreachable]
   (if (eq $item skip) (continue))
   (if (eq $item stop) (break))
   (set completed (+ $completed #1))
@@ -11,7 +11,7 @@
 (printf "completed=%s outer binding=%s\n" $completed $item)
 
 (; An inner break ends its own loop; the outer loop keeps running. )
-(for row (list A B)
+(for row [A B]
   (for column (list/range #1 #4)
     (if (= $column #3) (break))
     (echo "$row$column")))
