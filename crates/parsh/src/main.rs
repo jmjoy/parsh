@@ -3,8 +3,11 @@ use parsh::{editor, run_source, shell::Shell};
 use std::{
     fs,
     io::{self, IsTerminal, Read},
+    path::PathBuf,
     process::ExitCode,
 };
+
+mod startup;
 
 #[derive(Parser)]
 #[command(
@@ -13,6 +16,14 @@ use std::{
     after_help = "With no FILE or -c, start interactively on a terminal, otherwise read a script from stdin.\nInteractive: Enter evaluates complete input, supplying one outer ')' when needed; Ctrl+J inserts a newline."
 )]
 struct Cli {
+    /// Load FILE as startup configuration in any mode
+    #[arg(long, value_name = "FILE", conflicts_with = "no_config")]
+    config: Option<PathBuf>,
+
+    /// Skip automatic configuration and template creation
+    #[arg(long)]
+    no_config: bool,
+
     /// Execute SOURCE, with remaining arguments available as $args
     #[arg(
         short = 'c',
@@ -39,32 +50,35 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<i32, Box<dyn std::error::Error>> {
-    if let Some(command) = cli.command {
-        let mut arguments = command.into_iter();
-        let source = arguments.next().expect("clap requires SOURCE with -c");
-        let mut shell = Shell::new(arguments.collect())?;
-        return Ok(run_source(&mut shell, "-c", &source));
+fn run(cli: Cli) -> io::Result<i32> {
+    let command = cli.command.is_some();
+    let mut arguments = cli.command.unwrap_or(cli.script).into_iter();
+    let first = arguments.next();
+    let interactive = first.is_none() && io::stdin().is_terminal();
+    let mut shell = Shell::new(arguments.collect())?;
+
+    if interactive {
+        shell.interactive()?;
+    }
+    if !cli.no_config
+        && let Some(code) = startup::load(&mut shell, cli.config.as_deref(), interactive)
+    {
+        return Ok(code);
+    }
+    if interactive {
+        return editor::run(&mut shell);
     }
 
-    let mut arguments = cli.script.into_iter();
-    let first = arguments.next();
     match first.as_deref() {
+        Some(source) if command => Ok(run_source(&mut shell, "-c", source)),
         Some(file) if file != "-" => {
             let source = fs::read_to_string(file)?;
-            let mut shell = Shell::new(arguments.collect())?;
             Ok(run_source(&mut shell, file, &source))
         }
         _ => {
-            let mut shell = Shell::new(arguments.collect())?;
-            if first.is_none() && io::stdin().is_terminal() {
-                shell.interactive()?;
-                Ok(editor::run(&mut shell)?)
-            } else {
-                let mut source = String::new();
-                io::stdin().read_to_string(&mut source)?;
-                Ok(run_source(&mut shell, "stdin", &source))
-            }
+            let mut source = String::new();
+            io::stdin().read_to_string(&mut source)?;
+            Ok(run_source(&mut shell, "stdin", &source))
         }
     }
 }

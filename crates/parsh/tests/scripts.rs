@@ -1,7 +1,7 @@
 use std::{
     fs,
     io::{Read, Write},
-    os::unix::{fs::PermissionsExt, process::CommandExt},
+    os::unix::{ffi::OsStrExt, fs::PermissionsExt, process::CommandExt},
     path::Path,
     process::{Command, Output, Stdio},
     thread,
@@ -25,10 +25,16 @@ fn invoke(args: &[&str], stdin: &str) -> Output {
 }
 
 fn invoke_in(args: &[&str], stdin: &str, directory: Option<&Path>) -> Output {
+    invoke_configured(args, stdin, |command| {
+        if let Some(directory) = directory {
+            command.current_dir(directory);
+        }
+    })
+}
+
+fn invoke_configured(args: &[&str], stdin: &str, configure: impl FnOnce(&mut Command)) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_parsh"));
-    if let Some(directory) = directory {
-        command.current_dir(directory);
-    }
+    configure(&mut command);
     let mut child = command
         .args(args)
         .stdin(Stdio::piped())
@@ -1088,13 +1094,158 @@ fn scripts_stdin_arguments_shebang_and_exit() {
 }
 
 #[test]
+fn batch_entries_skip_default_configuration_and_template_creation() {
+    let directory = tempfile::tempdir().unwrap();
+    let xdg = directory.path().join("xdg");
+    let config = xdg.join("parsh/config.parsh");
+    let script = directory.path().join("app.parsh");
+    let source = "(echo MAIN)";
+    fs::write(&script, source).unwrap();
+
+    let run = |args, stdin| {
+        invoke_configured(args, stdin, |command| {
+            command
+                .current_dir(directory.path())
+                .env("HOME", directory.path())
+                .env("XDG_CONFIG_HOME", &xdg);
+        })
+    };
+    let output = run(&[], source);
+    success(&output);
+    assert_eq!(stdout(&output), "MAIN\n");
+    assert!(!xdg.exists());
+
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    fs::write(config, "(exit 33)").unwrap();
+    for (args, input) in [
+        (&["-c", source][..], ""),
+        (&["app.parsh"][..], ""),
+        (&[][..], source),
+        (&["-"][..], source),
+    ] {
+        let output = run(args, input);
+        success(&output);
+        assert_eq!(stdout(&output), "MAIN\n");
+    }
+}
+
+#[test]
+fn explicit_config_shares_session_state_and_preserves_batch_stdin() {
+    let directory = tempfile::tempdir().unwrap();
+    let configs = directory.path().join("startup files");
+    fs::create_dir(&configs).unwrap();
+    fs::write(configs.join("library.parsh"), "(defn answer () #42)").unwrap();
+    fs::write(
+        configs.join("config.parsh"),
+        r#"
+        (let from_stdin (<-out cat))
+        (let from_file (<-out (fn () (in<- "startup files/input.txt" (cat)))))
+        (export PARSH_TEST_SETTING configured)
+        (let startup_args $args)
+        (cd "startup files")
+        (load library.parsh)
+        "#,
+    )
+    .unwrap();
+    fs::write(configs.join("input.txt"), "redirected\n").unwrap();
+    let source = r#"
+        (dump [(answer) $from_stdin $from_file $PARSH_TEST_SETTING])
+        (dump (eq $startup_args $args))
+        (for arg $args (printf "<%s>\n" $arg))
+        (cat input.txt)
+        (cat)
+    "#;
+    fs::write(directory.path().join("app.parsh"), source).unwrap();
+    let expected = "(#42 \"\" \"redirected\" \"configured\")\n#true\n";
+
+    for (entry, input, output_tail) in [
+        (&["-c", source][..], "command input\n", "command input\n"),
+        (&["app.parsh"][..], "script input\n", "script input\n"),
+        (&["-"][..], source, ""),
+        (&[][..], source, ""),
+    ] {
+        let mut args = vec!["--config", "startup files/config.parsh"];
+        args.extend(entry);
+        let arguments = if entry.is_empty() {
+            ""
+        } else {
+            args.extend(["--no-config", "--config", "--", "a b"]);
+            "<--no-config>\n<--config>\n<-->\n<a b>\n"
+        };
+        let output = invoke_in(&args, input, Some(directory.path()));
+        success(&output);
+        assert_eq!(
+            stdout(&output),
+            format!("{expected}{arguments}redirected\n{output_tail}")
+        );
+        assert!(stderr(&output).is_empty());
+    }
+}
+
+#[test]
+fn explicit_config_failure_or_exit_stops_the_main_task() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("settings.parsh");
+    for (source, status, diagnostic) in [
+        (None, 2, "settings.parsh"),
+        (Some("(echo SKIPPED)\n("), 2, "settings.parsh:2:1"),
+        (Some("(load settings.parsh)"), 2, "cyclic load"),
+        (Some("(false)\n(echo SKIPPED)"), 1, "settings.parsh:1:1"),
+        (Some("(exit 0)\n(echo SKIPPED)"), 0, ""),
+        (Some("(exit 19)"), 19, ""),
+    ] {
+        if let Some(source) = source {
+            fs::write(&path, source).unwrap();
+        }
+        let output = invoke_in(
+            &["--config", "settings.parsh", "-c", "(echo MAIN)"],
+            "",
+            Some(directory.path()),
+        );
+        assert_eq!(output.status.code(), Some(status), "{}", stderr(&output));
+        assert!(output.stdout.is_empty());
+        if diagnostic.is_empty() {
+            assert!(output.stderr.is_empty());
+        } else {
+            assert!(stderr(&output).contains(diagnostic), "{}", stderr(&output));
+        }
+    }
+}
+
+#[test]
+fn explicit_config_accepts_a_non_utf8_directory() {
+    let directory = tempfile::tempdir().unwrap();
+    let configs = directory
+        .path()
+        .join(std::ffi::OsStr::from_bytes(b"config-\xff"));
+    fs::create_dir(&configs).unwrap();
+    let path = configs.join("config.parsh");
+    fs::write(&path, "(load lib.parsh)").unwrap();
+    fs::write(configs.join("lib.parsh"), "(let setting #42)").unwrap();
+    let output = invoke_configured(&["-c", "(dump $setting)"], "", |command| {
+        command.arg("--config").arg(&path);
+    });
+    success(&output);
+    assert_eq!(stdout(&output), "#42\n");
+}
+
+#[test]
 fn cli_help_version_and_argument_errors() {
     for flag in ["-h", "--help"] {
         let output = invoke(&[flag], "");
         success(&output);
         assert!(stderr(&output).is_empty());
         let help = stdout(&output);
-        for text in ["Usage:", "SOURCE", "FILE", "--help", "--version", "Enter"] {
+        for text in [
+            "Usage:",
+            "SOURCE",
+            "FILE",
+            "--config",
+            "--no-config",
+            "--help",
+            "--version",
+            "Enter",
+        ] {
             assert!(help.contains(text), "missing {text:?}: {help}");
         }
     }
@@ -1114,6 +1265,9 @@ fn cli_help_version_and_argument_errors() {
         assert!(stderr(&output).contains("error:"));
         assert!(stderr(&output).contains("--help"));
     }
+    let output = invoke(&["--config", "missing", "--no-config"], "");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("cannot be used with"));
 }
 
 #[test]

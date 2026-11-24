@@ -32,6 +32,33 @@ parsh - first < examples/hello.parsh
 命令行选项由 clap 解析。脚本路径或 `-c SOURCE` 之后的所有参数都会原样传入脚本，
 包括 `--help` 和 `--`。如果脚本文件名以 `-` 开头，可使用 `parsh -- -script.parsh`。
 
+## 启动配置
+
+交互式 parsh 在显示第一个提示符前执行 `config.parsh`。优先使用绝对路径
+`$XDG_CONFIG_HOME/parsh/config.parsh`，其次使用绝对路径 `$HOME/.config/parsh/config.parsh`。
+两个环境变量都没有提供绝对路径时，跳过自动配置。
+
+parsh 首次创建 `parsh` 配置目录时，会写入带注释示例的模板，并向 stderr 打印路径。
+目录已存在时，可以自行创建或删除 `config.parsh`。
+
+配置文件使用普通 Parsh 代码。下面的示例为会话设置环境变量并定义命令。
+
+```parsh
+(export EDITOR vi)
+(defn hello () (echo "hello from parsh"))
+```
+
+`-c`、脚本文件和从 stdin 读取源码的方式默认跳过配置。
+在命令或脚本前加 `--config FILE` 可以指定配置文件，也可用 `--no-config` 跳过配置。
+`FILE` 的相对路径以启动工作目录为基准。两个选项互斥。
+
+```console
+parsh --no-config
+parsh --config ./settings.parsh -c '(hello)'
+```
+
+执行顺序和错误处理见[交互配置](/parsh/zh-cn/docs/interactive/#配置)。
+
 ## 第一次交互
 
 在 `$ ()` 提示符中输入 `dump (str "hello, " "parsh")` 并按 Enter，parsh 会补上外层右括号，显示 `"hello, parsh"`。输入未完成时 Enter 换行，Ctrl+J 始终换行。

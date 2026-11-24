@@ -391,7 +391,7 @@ pub struct Shell {
     finally_depth: usize,
     cleanup_depth: usize,
     capture_depth: usize,
-    load_paths: Vec<String>,
+    load_paths: Vec<OsString>,
     last_result: Value,
     #[cfg(feature = "native")]
     tasks: Arc<tasks::Registry>,
@@ -772,11 +772,15 @@ impl Shell {
     }
 
     pub fn execute(&mut self, expr: &Expr) -> Result<Value, Error> {
+        self.reset_evaluation();
+        self.eval(expr, &self.root.clone(), Mode::Normal, &Io::default())
+            .map_err(|signal| signal.into_error(expr))
+    }
+
+    fn reset_evaluation(&mut self) {
         self.interrupted.store(false, Ordering::Relaxed);
         self.output.borrow_mut().bytes = 0;
         self.macro_depth = 0;
-        self.eval(expr, &self.root.clone(), Mode::Normal, &Io::default())
-            .map_err(|signal| signal.into_error(expr))
     }
 
     fn check(&self, expr: &Expr) -> Result<(), Error> {

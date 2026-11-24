@@ -2,16 +2,20 @@
 
 use nix::{
     pty::{Winsize, openpty},
+    sys::stat::Mode,
     sys::{
         signal::{Signal, killpg},
         termios::{self, LocalFlags},
     },
-    unistd::{Pid, tcgetpgrp},
+    unistd::{Pid, mkfifo, tcgetpgrp},
 };
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{self, Read, Write},
-    os::{fd::AsRawFd, unix::process::CommandExt},
+    os::{
+        fd::AsRawFd,
+        unix::{fs::symlink, process::CommandExt},
+    },
     process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant},
@@ -31,6 +35,12 @@ impl Terminal {
     }
 
     fn configured(configure: impl FnOnce(&mut Command)) -> Self {
+        let mut terminal = Self::spawn(configure);
+        terminal.ready_after(0);
+        terminal
+    }
+
+    fn spawn(configure: impl FnOnce(&mut Command)) -> Self {
         let pty = openpty(
             Some(&Winsize {
                 ws_row: 24,
@@ -47,6 +57,8 @@ impl Terminal {
         let mut command = Command::new(env!("CARGO_BIN_EXE_parsh"));
         command
             .env("TERM", "xterm-256color")
+            .env_remove("HOME")
+            .env_remove("XDG_CONFIG_HOME")
             .stdin(Stdio::from(slave.try_clone().unwrap()))
             .stdout(Stdio::from(slave.try_clone().unwrap()))
             .stderr(Stdio::from(slave.try_clone().unwrap()));
@@ -72,15 +84,13 @@ impl Terminal {
                 -1
             );
         }
-        let mut terminal = Self {
+        Self {
             child,
             master,
             slave,
             bytes: Vec::new(),
             original,
-        };
-        terminal.expect(b"\x1b[?2004h", 0);
-        terminal
+        }
     }
 
     fn send(&mut self, bytes: &[u8]) -> usize {
@@ -228,6 +238,188 @@ impl Drop for Terminal {
             let _ = self.child.wait();
         }
     }
+}
+
+#[test]
+fn first_repl_creates_a_template_using_home_when_xdg_is_relative() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(".config/parsh/config.parsh");
+    let start = || {
+        Terminal::configured(|command| {
+            command
+                .env("HOME", directory.path())
+                .env("XDG_CONFIG_HOME", "relative-config");
+        })
+    };
+    let mut terminal = start();
+    let notice = format!("parsh: created configuration file {}\r\n", path.display());
+    let end = terminal.expect(notice.as_bytes(), 0);
+    terminal.ready_after(end);
+    terminal.exit(0);
+    let template = fs::read_to_string(&path).unwrap();
+    assert!(template.contains("(; (export "));
+    assert!(template.contains("(; (defn "));
+
+    fs::remove_file(&path).unwrap();
+    let mut terminal = start();
+    terminal.exit(0);
+    assert!(!path.exists());
+    assert!(!visible_text(&terminal.bytes).contains("created configuration file"));
+}
+
+#[test]
+fn concurrent_repl_startups_publish_one_template() {
+    let directory = tempfile::tempdir().unwrap();
+    let xdg = directory.path().join("xdg");
+    let start = || {
+        Terminal::spawn(|command| {
+            command.env("XDG_CONFIG_HOME", &xdg);
+        })
+    };
+    let mut first = start();
+    let mut second = start();
+    first.ready_after(0);
+    second.ready_after(0);
+    let config_dir = xdg.join("parsh");
+    let path = config_dir.join("config.parsh");
+    let notice = format!("parsh: created configuration file {}", path.display());
+    let notices = visible_text(&first.bytes).matches(&notice).count()
+        + visible_text(&second.bytes).matches(&notice).count();
+    assert_eq!(notices, 1);
+    assert_eq!(fs::read_dir(&config_dir).unwrap().count(), 1);
+    assert!(fs::read_to_string(&path).unwrap().ends_with(" )\n"));
+    first.exit(0);
+    second.exit(0);
+}
+
+#[test]
+fn repl_loads_linked_configuration_before_prompt_and_keeps_its_definitions() {
+    let directory = tempfile::tempdir().unwrap();
+    let xdg = directory.path().join("xdg");
+    let config_dir = xdg.join("parsh");
+    let dotfiles = directory.path().join("dotfiles");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::create_dir(&dotfiles).unwrap();
+    let path = config_dir.join("config.parsh");
+    let target = dotfiles.join("startup.parsh");
+    let source = r#"
+(load lib.parsh)
+(export PARSH_STARTUP ready)
+(let startup_input (<-out sh -c 'printf "STARTUP-INPUT\n" >&2; IFS= read -r line; printf "%s" "$line"'))
+(printf 'STARTUP-DONE\n')
+#42
+"#;
+    fs::write(&target, source).unwrap();
+    symlink(&target, &path).unwrap();
+    fs::write(
+        dotfiles.join("lib.parsh"),
+        "(let startup_value #7) (defn startup-value () $startup_value)",
+    )
+    .unwrap();
+    let mut terminal = Terminal::spawn(|command| {
+        command
+            .env("HOME", directory.path())
+            .env("XDG_CONFIG_HOME", &xdg);
+    });
+    let input = terminal.expect(b"STARTUP-INPUT\r\n", 0);
+    terminal.send(b"from tty\n");
+    let done = terminal.expect(b"STARTUP-DONE\r\n", input);
+    terminal.ready_after(done);
+    let history = terminal.send(b"\x10\r");
+    let offset =
+        terminal.execute("(dump [(startup-value) $PARSH_STARTUP $startup_input (nil? $_)])");
+    let end = terminal.expect(b"\r\n(#7 \"ready\" \"from tty\" #true)\r\n", offset);
+    terminal.ready_after(end);
+    assert!(!visible_text(&terminal.bytes[history..end]).contains("STARTUP-DONE"));
+    terminal.exit(0);
+    assert_eq!(fs::read_link(&path).unwrap(), target);
+    assert_eq!(fs::read_to_string(&target).unwrap(), source);
+}
+
+#[test]
+fn repl_recovers_from_default_config_errors_and_keeps_completed_runtime_effects() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("parsh/config.parsh");
+    fs::create_dir(path.parent().unwrap()).unwrap();
+    for (source, position, expected) in [
+        ("(let setting #7)\n(", "2:1", "\"absent\""),
+        ("(let setting #7)\n(false)\n(set setting #9)", "2:1", "#7"),
+    ] {
+        fs::write(&path, source).unwrap();
+        let mut terminal = Terminal::configured(|command| {
+            command.env("XDG_CONFIG_HOME", directory.path());
+        });
+        terminal.expect(format!("{}:{position}:", path.display()).as_bytes(), 0);
+        let offset = terminal.execute("(try (dump $setting) (catch e (dump absent)))");
+        let end = terminal.expect(format!("\r\n{expected}\r\n").as_bytes(), offset);
+        terminal.ready_after(end);
+        terminal.exit(0);
+    }
+
+    fs::remove_file(&path).unwrap();
+    symlink("absent.parsh", &path).unwrap();
+    let mut terminal = Terminal::configured(|command| {
+        command.env("XDG_CONFIG_HOME", directory.path());
+    });
+    terminal.expect(format!("{}: ", path.display()).as_bytes(), 0);
+    terminal.exit(0);
+    assert_eq!(fs::read_link(&path).unwrap().to_str(), Some("absent.parsh"));
+
+    fs::remove_file(&path).unwrap();
+    mkfifo(&path, Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
+    let mut terminal = Terminal::configured(|command| {
+        command.env("XDG_CONFIG_HOME", directory.path());
+    });
+    terminal.expect(b"expected a regular configuration file", 0);
+    terminal.exit(0);
+}
+
+#[test]
+fn repl_no_config_skips_creation_and_execution() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("parsh/config.parsh");
+    let start = || {
+        Terminal::configured(|command| {
+            command
+                .env("XDG_CONFIG_HOME", directory.path())
+                .arg("--no-config");
+        })
+    };
+    start().exit(0);
+    assert!(!path.parent().unwrap().exists());
+
+    fs::create_dir(path.parent().unwrap()).unwrap();
+    fs::write(&path, "(exit 33)").unwrap();
+    start().exit(0);
+}
+
+#[test]
+fn repl_explicit_config_is_strict_and_automatic_config_can_exit() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("parsh/config.parsh");
+    fs::create_dir(path.parent().unwrap()).unwrap();
+    fs::write(&path, "(exit 33)").unwrap();
+    let mut terminal = Terminal::spawn(|command| {
+        command
+            .env("XDG_CONFIG_HOME", directory.path())
+            .arg("--config")
+            .arg(directory.path().join("missing.parsh"));
+    });
+    terminal.wait_exit(2);
+    terminal.expect(b"missing.parsh", 0);
+    assert!(
+        !terminal
+            .bytes
+            .windows(8)
+            .any(|bytes| bytes == b"\x1b[?2004h")
+    );
+
+    fs::write(&path, "(exit 0)").unwrap();
+    let mut terminal = Terminal::spawn(|command| {
+        command.env("XDG_CONFIG_HOME", directory.path());
+    });
+    terminal.wait_exit(0);
+    assert!(terminal.bytes.is_empty());
 }
 
 #[test]

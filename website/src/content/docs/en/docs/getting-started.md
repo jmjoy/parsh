@@ -34,6 +34,38 @@ Options are parsed by clap. After the script path or `-c SOURCE`, every remainin
 argument is passed through unchanged, including `--help` and `--`.
 Use `parsh -- -script.parsh` for a script filename beginning with `-`.
 
+## Startup configuration
+
+Interactive parsh runs `config.parsh` before the first prompt. It uses
+`$XDG_CONFIG_HOME/parsh/config.parsh` when `XDG_CONFIG_HOME` is absolute, falling
+back to `$HOME/.config/parsh/config.parsh` when `HOME` is absolute. Automatic
+configuration requires one of those base directories.
+
+When parsh first creates its `parsh` configuration directory, it writes a template
+with commented examples and prints its path to stderr. If the directory already
+exists, you can create or remove `config.parsh` yourself.
+
+The file runs as ordinary Parsh code. This example sets an environment variable
+and defines a command for the session.
+
+```parsh
+(export EDITOR vi)
+(defn hello () (echo "hello from parsh"))
+```
+
+`-c`, script files, and scripts read from stdin skip automatic configuration.
+Set `--config FILE` before the command or script to load a specific file, or
+start with `--no-config` to skip configuration. A relative `FILE` is resolved
+from the startup working directory. The two options are mutually exclusive.
+
+```console
+parsh --no-config
+parsh --config ./settings.parsh -c '(hello)'
+```
+
+See [interactive configuration](/parsh/en/docs/interactive/#configuration) for
+how startup scripts are evaluated and how errors are handled.
+
 ## Your first session
 
 Type `dump (str "hello, " "parsh")` at the `$ ()` prompt and press Enter. parsh supplies the outer closing parenthesis and displays `"hello, parsh"`. Enter inserts a newline when input is unfinished; Ctrl+J always inserts a newline.

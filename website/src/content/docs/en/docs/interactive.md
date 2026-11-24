@@ -132,7 +132,29 @@ Native parsh supports interactive foreground programs and pipelines, plus isolat
 background tasks through `spawn`, `wait`, `job-status`, and `cancel`; see
 [execution results and tasks](/parsh/en/docs/execution/#native-background-tasks).
 There is no `bg`, `fg`, or suspend/resume support; children ignore Ctrl+Z.
-Macros are supported. History is session-local; persistent history and configuration
-are not yet implemented.
+History is session-local.
 
 The browser playground shares this editor's input, completion, history, paste, and layout model. It completes only commands and temporary files available in its isolated host. It evaluates the language and runs a coreutils subset; pressing Ctrl+C during execution resets the browser session. Native foreground programs and terminal handoffs apply to Linux only.
+
+## Configuration
+
+Native parsh executes its startup file in the current session before the first
+prompt. Bindings, functions, macros, environment variables, and directory changes
+are available to later commands. Startup expressions stay out of history.
+Use `(load helpers.parsh)` in the startup file to split up your configuration.
+Nested paths resolve relative to the loaded file's actual directory, including when
+the file is a symbolic link. See [script loading](/parsh/en/docs/lisp/#loading-scripts).
+
+A missing default file is skipped. If automatic configuration fails, parsh
+reports the error and opens the prompt. Each file is parsed in full before it
+runs. A runtime error stops the file and keeps the effects of earlier expressions.
+When `--config FILE` is given, a failure stops startup, and `(exit CODE)` ends
+the process in either case.
+
+In batch mode, commands in the startup file read EOF by default and can redirect
+their input with `in<-`. The main command or script retains its own stdin. A
+relative script filename on the command line is resolved from the startup working
+directory. Commands inside the script use the session's current directory.
+
+See [startup configuration](/parsh/en/docs/getting-started/#startup-configuration)
+for paths and invocation examples.

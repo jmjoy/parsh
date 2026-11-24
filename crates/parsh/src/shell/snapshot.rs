@@ -213,7 +213,7 @@ pub(super) struct TaskSnapshot {
     environment: HashMap<OsString, OsString>,
     cwd: PathBuf,
     last_result: FrozenValue,
-    load_paths: Vec<String>,
+    load_paths: Vec<OsString>,
 }
 impl TaskSnapshot {
     pub fn new(shell: &Shell, callee: &Value, values: &[Value]) -> Self {

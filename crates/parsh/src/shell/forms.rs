@@ -1,4 +1,15 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    ffi::OsString,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+#[cfg(feature = "native")]
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{self, Read as _},
+    os::unix::fs::OpenOptionsExt,
+    path::Path,
+    sync::Arc,
+};
 
 use super::{Arguments, Env, Error, EvalResult, Mode, Scope, Shell, Signal, Value, host_path};
 use crate::{
@@ -305,80 +316,108 @@ impl Shell {
         if self.load_paths.len() >= 32 {
             return Err(load_error(expr, "load nesting exceeds 32 files").into());
         }
-        let base = if let Some(parent) = self.load_paths.last() {
-            parent
-                .rsplit_once('/')
+        let caller = Scope::parent(env).unwrap_or_else(|| env.clone());
+        if let Some(host) = &self.host {
+            let base = self
+                .load_paths
+                .last()
+                .and_then(|parent| parent.to_str())
+                .and_then(|parent| parent.rsplit_once('/'))
                 .map(|(directory, _)| if directory.is_empty() { "/" } else { directory })
-                .unwrap_or("/")
-                .to_owned()
-        } else if self.host.is_some() {
-            self.host_cwd.clone()
-        } else {
-            #[cfg(feature = "native")]
-            {
-                self.cwd.to_string_lossy().into_owned()
-            }
-            #[cfg(not(feature = "native"))]
-            {
-                return Err(load_error(expr, "load requires a filesystem host").into());
-            }
-        };
-        let path = if self.host.is_some() {
-            host_path(&base, path)
-        } else {
-            #[cfg(feature = "native")]
-            {
-                std::path::Path::new(&base)
-                    .join(path)
-                    .to_string_lossy()
-                    .into_owned()
-            }
-            #[cfg(not(feature = "native"))]
-            {
-                return Err(load_error(expr, "load requires a filesystem host").into());
-            }
-        };
-        let (path, bytes) = if let Some(host) = &self.host {
+                .unwrap_or(&self.host_cwd);
+            let path = host_path(base, path);
             let bytes = host
                 .borrow_mut()
-                .read_file(&base, &path)
+                .read_file(base, &path)
                 .map_err(|error| load_error(expr, error.message))?;
-            (path, bytes)
-        } else {
-            #[cfg(feature = "native")]
-            {
-                use std::io::Read;
-                let canonical = std::fs::canonicalize(&path)
-                    .map_err(|error| load_error(expr, format!("{path}: {error}")))?;
-                let file = std::fs::File::open(&canonical)
-                    .map_err(|error| load_error(expr, format!("{path}: {error}")))?;
-                let mut bytes = Vec::new();
-                file.take(MAX_OUTPUT_BYTES as u64 + 1)
-                    .read_to_end(&mut bytes)
-                    .map_err(|error| load_error(expr, format!("{path}: {error}")))?;
-                (canonical.to_string_lossy().into_owned(), bytes)
-            }
-            #[cfg(not(feature = "native"))]
-            {
-                return Err(load_error(expr, "load requires a filesystem host").into());
-            }
+            return self.eval_loaded_source(expr, path.into(), bytes, &caller, mode, io);
+        }
+        #[cfg(feature = "native")]
+        {
+            let path = self
+                .load_paths
+                .last()
+                .and_then(|parent| Path::new(parent).parent())
+                .unwrap_or(&self.cwd)
+                .join(path);
+            let (canonical, bytes) = read_native_source(&path, false)
+                .map_err(|error| load_error(expr, format!("{}: {error}", path.display())))?;
+            self.eval_loaded_source(expr, canonical, bytes, &caller, mode, io)
+        }
+        #[cfg(not(feature = "native"))]
+        Err(load_error(expr, "load requires a filesystem host").into())
+    }
+
+    /// Execute a startup file in the native session scope.
+    /// With `inherit_stdin` disabled, commands in the file receive EOF by default.
+    #[cfg(feature = "native")]
+    pub fn load_startup_file(&mut self, path: &Path, inherit_stdin: bool) -> Result<(), Error> {
+        let expr = Expr {
+            kind: Kind::Nil,
+            offset: 0,
         };
+        if self.syntax_only || self.host.is_some() {
+            return Err(Error {
+                kind: "unsupported".into(),
+                ..Error::new(&expr, "startup configuration requires a native shell")
+            });
+        }
+        if path.as_os_str().is_empty() {
+            return Err(load_error(&expr, "configuration path is empty"));
+        }
+        let path = self.cwd.join(path);
+        let (canonical, bytes) = read_native_source(&path, true)
+            .map_err(|error| load_error(&expr, format!("{}: {error}", path.display())))?;
+        let input = if inherit_stdin {
+            None
+        } else {
+            let file = File::open("/dev/null").map_err(|error| {
+                load_error(&expr, format!("{}: /dev/null: {error}", path.display()))
+            })?;
+            Some(Arc::new(file))
+        };
+        let io = Io {
+            input,
+            ..Io::default()
+        };
+        self.reset_evaluation();
+        self.eval_loaded_source(
+            &expr,
+            canonical,
+            bytes,
+            &self.root.clone(),
+            Mode::Normal,
+            &io,
+        )
+        .map(|_| ())
+        .map_err(|signal| signal.into_error(&expr))
+    }
+
+    fn eval_loaded_source(
+        &mut self,
+        expr: &Expr,
+        path: OsString,
+        bytes: Vec<u8>,
+        env: &Env,
+        mode: Mode,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        let name = path.to_string_lossy();
         if self.load_paths.contains(&path) {
-            return Err(load_error(expr, format!("cyclic load: {path}")).into());
+            return Err(load_error(expr, format!("cyclic load: {name}")).into());
         }
         if bytes.len() > MAX_OUTPUT_BYTES {
-            return Err(load_error(expr, "source file exceeds 8 MiB").into());
+            return Err(load_error(expr, format!("{name}: source file exceeds 8 MiB")).into());
         }
         let source = String::from_utf8(bytes)
-            .map_err(|_| load_error(expr, format!("{path}: source must be UTF-8")))?;
-        let caller = Scope::parent(env).unwrap_or_else(|| env.clone());
-        self.load_paths.push(path.clone());
+            .map_err(|_| load_error(expr, format!("{name}: source must be UTF-8")))?;
+        self.load_paths.push(path);
         let result = (|| {
             let mut reader = Reader::new(&source);
             let mut forms = Vec::new();
             loop {
                 match reader.read() {
-                    Read::End => return self.sequence(&forms, &caller, mode, io),
+                    Read::End => return self.sequence(&forms, env, mode, io),
                     Read::Form(node) if node.kind == Kind::Comment => {}
                     Read::Form(node) => {
                         if !node.is_top_level() {
@@ -401,7 +440,7 @@ impl Shell {
                 }
             }
         })();
-        self.load_paths.pop();
+        let path = self.load_paths.pop().expect("loaded source on the stack");
         result.map_err(|signal| match signal {
             Signal::Error(mut error) => {
                 if !error.exit {
@@ -409,7 +448,7 @@ impl Shell {
                         offset: error.offset,
                         message: error.message,
                     }
-                    .render(&path, &source);
+                    .render(&path.to_string_lossy(), &source);
                     error.offset = expr.offset;
                 }
                 Signal::Error(error)
@@ -417,6 +456,28 @@ impl Shell {
             signal => signal,
         })
     }
+}
+
+#[cfg(feature = "native")]
+fn read_native_source(path: &Path, require_regular_file: bool) -> io::Result<(OsString, Vec<u8>)> {
+    let canonical = fs::canonicalize(path)?;
+    let mut options = OpenOptions::new();
+    options.read(true);
+    if require_regular_file {
+        // Opening a FIFO must not hang before we can check the file type.
+        options.custom_flags(nix::libc::O_NONBLOCK);
+    }
+    let file = options.open(&canonical)?;
+    if require_regular_file && !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected a regular configuration file",
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_OUTPUT_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    Ok((canonical.into_os_string(), bytes))
 }
 
 fn form(kind: Kind, expr: &Expr) -> Value {

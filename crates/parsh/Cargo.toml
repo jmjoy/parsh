@@ -16,6 +16,7 @@ native = [
     "dep:crossterm",
     "dep:nix",
     "dep:signal-hook",
+    "dep:tempfile",
     "dep:ureq",
 ]
 
@@ -41,6 +42,7 @@ indexmap = "2"
 nix = { version = "0.31", features = ["fs", "process", "signal", "term", "user"], optional = true }
 serde_json = { version = "1", features = ["preserve_order"] }
 signal-hook = { version = "0.3", optional = true }
+tempfile = { version = "3", optional = true }
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
 ureq = { version = "3", optional = true }
