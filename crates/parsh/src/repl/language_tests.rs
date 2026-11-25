@@ -586,22 +586,61 @@ fn list_forms_have_scopes_and_bindings_return_nil() {
 }
 
 #[test]
-fn let_rejects_duplicate_bindings_before_evaluating_the_rhs() {
-    let mut repl = Repl::new();
-    let events = evaluate(
-        &mut repl,
-        r#"
+fn let_rebinds_in_the_same_scope_with_the_previous_binding_available_to_the_rhs() {
+    assert_eq!(
+        evaluated(
+            r#"
         (let trace before)
         (let value original)
-        (let value (set trace changed))
+        (let value (do (set trace changed) (str $value revised)))
+        (let value #42)
+        (list $trace $value (typeof $value))
         "#,
+        ),
+        [r#"("changed" #42 "int")"#],
     );
+}
+
+#[test]
+fn failed_let_rhs_keeps_the_previous_binding() {
+    let mut repl = Repl::new();
+    let events = evaluate(&mut repl, "(let value original) (let value (throw stop))");
     assert_eq!(diagnostics(&events).len(), 1, "{events:?}");
-    assert!(diagnostics(&events)[0].contains("already bound in this scope"));
-    assert!(values(&events).is_empty(), "{events:?}");
     assert_eq!(
-        values(&evaluate(&mut repl, "(list $trace $value)")),
-        [r#"("before" "original")"#]
+        values(&evaluate(&mut repl, "(get value)")),
+        [r#""original""#]
+    );
+}
+
+#[test]
+fn let_rebinding_keeps_old_bindings_in_existing_closures() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (let value outer)
+        (let saved (fn () $value))
+        (let value inner)
+        (set value changed)
+        (list ($saved) $value)
+        "#,
+        ),
+        [r#"("outer" "changed")"#],
+    );
+}
+
+#[test]
+fn recursive_closures_can_resolve_their_late_self_binding() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (let recurse (fn (value)
+          (if (= $value #0)
+            done
+            ($recurse (- $value #1)))))
+        ($recurse #3)
+        "#,
+        ),
+        [r#""done""#],
     );
 }
 

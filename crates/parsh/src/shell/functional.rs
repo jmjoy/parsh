@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use indexmap::IndexMap;
 
 use super::{
-    Arguments, Env, Error, EvalResult, Function, FunctionValue, Mode, Number, Parameters, Shell,
-    Value,
+    Arguments, Env, Error, EvalResult, Function, FunctionValue, Mode, Number, Parameters, Scope,
+    Shell, Value,
 };
 use crate::{
     reader::{Expr, Kind, Read, Reader},
@@ -50,11 +50,11 @@ impl Shell {
         else {
             unreachable!("adapter definitions are valid function forms")
         };
-        let closure = self.child_scope(env);
-        closure
-            .borrow_mut()
-            .variables
-            .extend(bindings.into_iter().map(|(key, value)| (key.into(), value)));
+        let captured = self.capture_scope(env);
+        let closure = self.child_scope(&captured);
+        for (key, value) in bindings {
+            Scope::bind(&closure, key, value);
+        }
         FunctionValue::user(
             name,
             Function {

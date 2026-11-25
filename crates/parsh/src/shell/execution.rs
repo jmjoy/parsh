@@ -407,7 +407,7 @@ impl Shell {
                     .enumerate()
                     .map(|(index, value)| {
                         let key = format!("argument_{index}");
-                        local.borrow_mut().variables.insert(key.clone(), value);
+                        Scope::bind(&local, &key, value);
                         Expr {
                             kind: Kind::Variable(key),
                             offset: expr.offset,
@@ -752,10 +752,8 @@ impl Shell {
             && !error.cancelled
         {
             let handler = self.child_scope(env);
-            handler
-                .borrow_mut()
-                .variables
-                .insert(Self::binding(&items[1])?.into(), error.as_value(true));
+            let variable = Self::binding(&items[1])?;
+            Scope::bind(&handler, variable, error.as_value(true));
             result = self.sequence(&items[2..], &handler, mode, io);
         }
         if let Some(items) = finally {

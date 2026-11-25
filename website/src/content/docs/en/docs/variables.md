@@ -32,10 +32,11 @@ and captured lexical environment.
 
 Every parenthesized expression creates a fresh lexical scope. `let` is a
 declaration form: it binds in the scope surrounding the current parenthesized
-expression. A duplicate name in that same scope is an error, checked before the
-right-hand side is evaluated; nested scopes may shadow outer bindings. A top-level
-`(let name value)` therefore binds in the session scope, while `let` inside `do`, a
-function, or a loop stays in that enclosing body scope.
+expression. Reusing a name creates a new binding, and the right-hand side can read
+the previous binding before the new one is installed. Nested scopes may shadow outer
+bindings, and closures keep the binding that was visible when they were created. A
+top-level `(let name value)` therefore binds in the session scope, while `let` inside
+`do`, a function, or a loop stays in that enclosing body scope.
 `let` and `set` both return `nil` after a successful update. `set` first checks for the
 nearest existing binding or environment entry; an undefined name errors before the
 right-hand side is evaluated. It then evaluates the right-hand side and updates the
@@ -165,11 +166,10 @@ Nested calls do not automatically update it. Values retain their original types,
 including lists, maps, functions, nil, and `CallResult`. Storing a result does not
 capture terminal output. No return value is displayed automatically.
 
-`_` is an ordinary session binding: `set`, `export`, and local shadowing follow
-the usual rules. It is already bound at the top level, so another top-level
-`let _` reports a duplicate binding. Every successful expression replaces the
-session binding with its return value, so `(set _ #42)` ends with `$_` equal to
-`#nil`, the return value of `set`.
+`_` is an ordinary session binding: `let`, `set`, `export`, and local shadowing
+follow the usual rules. A top-level `let _` creates a new binding. Every successful
+expression replaces the current session binding with its return value, so `(set _ #42)`
+ends with `$_` equal to `#nil`, the return value of `set`.
 
 Empty input, comments, incomplete input, and errors do not automatically update
 `_`. Explicit assignments made before an error are not rolled back. Scripts do

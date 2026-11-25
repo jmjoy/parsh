@@ -61,8 +61,9 @@ failure in a `while` body stops execution, including when the loop is used as a 
 
 Function names and parameter declarations use bare names. Read parameter and
 local variable values with `$name`. Each function call creates a fresh call scope;
-`let` in the body stays in that scope, and repeating `let` in the same scope is an
-error. Functions capture their defining lexical scope and return the last expression's value. Argument expressions are evaluated
+`let` in the body stays in that scope, and repeating `let` creates a new binding in
+the same scope. Functions capture the bindings visible in their defining lexical
+scope and return the last expression's value. Argument expressions are evaluated
 before parameters are bound. Functions can return numbers, lists, maps, booleans, and `CallResult`.
 Commands inside functions write to their current destinations in every calling
 position. A final command returns its `CallResult` directly. Capture function

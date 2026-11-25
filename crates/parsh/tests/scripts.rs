@@ -1932,6 +1932,19 @@ fn background_functions_copy_closure_graphs_and_return_stable_closures() {
 }
 
 #[test]
+fn background_tasks_preserve_shadowed_closure_bindings() {
+    let output = run(r#"
+        (let value parent)
+        (let saved (fn () $value))
+        (let value child)
+        (let job (spawn $saved))
+        (dump (CallResult.value (wait $job)))
+    "#);
+    success(&output);
+    assert_eq!(stdout(&output), "\"parent\"\n");
+}
+
+#[test]
 fn background_builtins_and_environment_changes_are_isolated() {
     let directory = tempfile::tempdir().unwrap();
     let output = invoke_in(

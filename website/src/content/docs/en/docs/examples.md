@@ -59,7 +59,7 @@ Scripts print explicitly with `echo`, `printf`, and `dump`; file mode does not a
 ## Running in the browser
 
 Paste scripts marked “Native and browser” into the [playground](/parsh/en/playground/) and press Enter.
-Use a fresh session for each script to avoid duplicate top-level `let` bindings. The browser has no
+Use a fresh session for each independent script so previous bindings do not affect its results. The browser has no
 script-file entry point, `$args` is empty, and pipelines buffer one stage at a time; native pipelines stream.
 `hello.parsh` depends on script arguments and repository paths, `files.parsh` uses `mktemp`,
 `tasks.parsh` uses native background tasks, and `http.parsh` sends native HTTP requests.

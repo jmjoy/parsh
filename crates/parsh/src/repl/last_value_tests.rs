@@ -101,11 +101,11 @@ fn underscore_follows_ordinary_assignment_export_and_shadowing_rules() {
     );
     let events = execute(&mut repl, "(let _ #100)");
     assert!(
-        events.iter().any(
-            |event| matches!(event, Event::Diagnostic(text) if text.contains("already bound"))
-        )
+        events
+            .iter()
+            .all(|event| !matches!(event, Event::Diagnostic(_)))
     );
-    assert_eq!(binding(&mut repl, "_"), Value::Text("exported".into()));
+    assert_eq!(binding(&mut repl, "_"), Value::Nil);
 }
 
 #[test]

@@ -41,7 +41,7 @@ Scripts do not automatically print expression return values; these examples use
 | [http.parsh](http.parsh) | Native HTTP responses, headers, byte bodies, and JSON decoding | Native only |
 
 The browser column means you can paste the script into the [playground](https://jmjoy.github.io/parsh/en/playground/)
-and press Enter. Use a fresh session for each script to avoid duplicate `let` bindings.
+and press Enter. Use a fresh session for each independent script so previous bindings do not affect its results.
 The browser has no script-file entry point, `$args` is empty, and pipelines buffer one stage at a time.
 `hello.parsh` uses script arguments and repository paths; `files.parsh` uses `mktemp`,
 which is absent from the browser. Background tasks and HTTP requests require native parsh.

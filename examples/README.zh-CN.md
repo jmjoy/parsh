@@ -41,7 +41,7 @@ cargo run -- examples/tasks.parsh
 | [http.parsh](http.parsh) | 原生 HTTP 响应、headers、字节 body 和 JSON 解码 | 仅原生 |
 
 浏览器列表示可以把脚本内容粘贴到[在线体验终端](https://jmjoy.github.io/parsh/zh-cn/playground/)后按 Enter 执行。
-使用新的会话运行每个脚本，避免重复 `let` 绑定；浏览器没有脚本文件入口，`$args` 为空，管道按阶段缓冲执行。
+独立脚本建议使用新的会话，避免之前的绑定影响结果；浏览器没有脚本文件入口，`$args` 为空，管道按阶段缓冲执行。
 `hello.parsh` 使用脚本参数和仓库路径；`files.parsh` 使用浏览器未提供的 `mktemp`；后台任务和 HTTP 请求要求原生环境。
 
 示例中的外部命令来自标准 Linux coreutils。`files.parsh` 在临时目录中写文件，

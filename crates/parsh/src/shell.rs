@@ -240,11 +240,17 @@ impl Signal {
 type EvalResult<T> = Result<T, Signal>;
 
 type Env = Rc<RefCell<Scope>>;
+type Binding = Rc<RefCell<Value>>;
 
 #[derive(Default)]
 struct Scope {
-    variables: HashMap<String, Value>,
+    variables: HashMap<String, Binding>,
     parent: Option<Env>,
+    /// Names that were not present when a closure was captured are resolved
+    /// against this live environment. Existing names use the captured binding
+    /// cells above, which gives `let` Rust-style shadowing without breaking
+    /// recursive closures.
+    fallback: Option<Env>,
 }
 
 impl Scope {
@@ -252,6 +258,7 @@ impl Scope {
         Rc::new(RefCell::new(Self {
             variables: HashMap::new(),
             parent: Some(parent.clone()),
+            fallback: None,
         }))
     }
 
@@ -259,42 +266,102 @@ impl Scope {
         env.borrow().parent.clone()
     }
 
-    fn contains_local(env: &Env, name: &str) -> bool {
-        env.borrow().variables.contains_key(name)
+    fn bind(env: &Env, name: &str, value: Value) {
+        env.borrow_mut()
+            .variables
+            .insert(name.into(), Rc::new(RefCell::new(value)));
+    }
+
+    /// Capture the current lexical chain while sharing its binding cells.
+    ///
+    /// A later `let` replaces a name with a fresh cell in the live scope. A
+    /// closure captured here keeps the old cell, while `set` continues to
+    /// mutate that cell. The live fallback keeps recursive closures working
+    /// when their self-binding does not exist until the `let` completes.
+    fn capture(env: &Env) -> (Env, Vec<Env>) {
+        fn clone_chain(env: &Env, captured: &mut Vec<Env>) -> Env {
+            let (variables, parent) = {
+                let scope = env.borrow();
+                (scope.variables.clone(), scope.parent.clone())
+            };
+            let parent = parent.map(|parent| clone_chain(&parent, captured));
+            let clone = Rc::new(RefCell::new(Scope {
+                variables,
+                parent,
+                fallback: None,
+            }));
+            captured.push(clone.clone());
+            clone
+        }
+
+        let mut captured = Vec::new();
+        let clone = clone_chain(env, &mut captured);
+        let fallback = env.borrow().fallback.clone().or_else(|| Some(env.clone()));
+        clone.borrow_mut().fallback = fallback;
+        (clone, captured)
     }
 
     fn find(env: &Env, name: &str) -> Option<Env> {
-        let scope = env.borrow();
-        if scope.variables.contains_key(name) {
+        let (contains, parent, fallback) = {
+            let scope = env.borrow();
+            (
+                scope.variables.contains_key(name),
+                scope.parent.clone(),
+                scope.fallback.clone(),
+            )
+        };
+        if contains {
             Some(env.clone())
         } else {
-            scope
-                .parent
+            parent
                 .as_ref()
                 .and_then(|parent| Self::find(parent, name))
+                .or_else(|| {
+                    fallback
+                        .as_ref()
+                        .and_then(|fallback| Self::find(fallback, name))
+                })
         }
     }
 
     fn get(env: &Env, name: &str) -> Option<Value> {
-        let scope = env.borrow();
-        scope.variables.get(name).cloned().or_else(|| {
-            scope
-                .parent
-                .as_ref()
-                .and_then(|parent| Self::get(parent, name))
-        })
+        let (binding, parent, fallback) = {
+            let scope = env.borrow();
+            (
+                scope.variables.get(name).cloned(),
+                scope.parent.clone(),
+                scope.fallback.clone(),
+            )
+        };
+        binding
+            .map(|binding| binding.borrow().clone())
+            .or_else(|| parent.as_ref().and_then(|parent| Self::get(parent, name)))
+            .or_else(|| {
+                fallback
+                    .as_ref()
+                    .and_then(|fallback| Self::get(fallback, name))
+            })
     }
 
     fn set(env: &Env, name: &str, value: &Value) -> bool {
-        let mut scope = env.borrow_mut();
-        if let Some(existing) = scope.variables.get_mut(name) {
-            *existing = value.clone();
+        let (binding, parent, fallback) = {
+            let scope = env.borrow();
+            (
+                scope.variables.get(name).cloned(),
+                scope.parent.clone(),
+                scope.fallback.clone(),
+            )
+        };
+        if let Some(existing) = binding {
+            *existing.borrow_mut() = value.clone();
             true
         } else {
-            scope
-                .parent
+            parent
                 .as_ref()
                 .is_some_and(|parent| Self::set(parent, name, value))
+                || fallback
+                    .as_ref()
+                    .is_some_and(|fallback| Self::set(fallback, name, value))
         }
     }
 }
@@ -483,12 +550,16 @@ fn host_path(cwd: &str, path: &str) -> String {
 }
 
 impl Shell {
+    fn capture_scope(&mut self, env: &Env) -> Env {
+        let (scope, captured) = Scope::capture(env);
+        self.scopes.extend(captured.iter().map(Rc::downgrade));
+        scope
+    }
+
     /// Create an isolated language session without filesystem or process access.
     pub fn syntax() -> Self {
         let root = Rc::new(RefCell::new(Scope::default()));
-        root.borrow_mut()
-            .variables
-            .insert("args".into(), Value::List(Vec::new()));
+        Scope::bind(&root, "args", Value::List(Vec::new()));
         let mut shell = Self {
             #[cfg(feature = "native")]
             cwd: PathBuf::new(),
@@ -758,8 +829,9 @@ impl Shell {
     pub fn new(args: Vec<String>) -> std::io::Result<Self> {
         let mut shell = Self::syntax();
         shell.initial_args = args.clone();
-        shell.root.borrow_mut().variables.insert(
-            "args".into(),
+        Scope::bind(
+            &shell.root,
+            "args",
             Value::List(args.into_iter().map(Value::Text).collect()),
         );
         shell.cwd = std::env::current_dir()?;
@@ -778,7 +850,9 @@ impl Shell {
     }
 
     pub(crate) fn record_repl_value(&mut self, value: Value) {
-        self.root.borrow_mut().variables.insert("_".into(), value);
+        if !Scope::set(&self.root, "_", &value) {
+            Scope::bind(&self.root, "_", value);
+        }
     }
 
     pub fn execute(&mut self, expr: &Expr) -> Result<Value, Error> {
@@ -1042,15 +1116,8 @@ impl Shell {
                     // to the surrounding expression scope so they remain visible
                     // to later siblings and to the top-level session.
                     let target = Scope::parent(env).unwrap_or_else(|| env.clone());
-                    if Scope::contains_local(&target, variable) {
-                        return Err(Error::new(
-                            &args[0],
-                            format!("variable {variable} is already bound in this scope"),
-                        )
-                        .into());
-                    }
                     let value = self.value(&args[1], env, io)?;
-                    target.borrow_mut().variables.insert(variable.into(), value);
+                    Scope::bind(&target, variable, value);
                 } else {
                     // Resolve the destination before evaluating the right-hand side.
                     // This both avoids side effects for an undefined name and keeps a
@@ -1067,7 +1134,7 @@ impl Shell {
                     }
                     let value = self.value(&args[1], env, io)?;
                     if let Some(target) = target {
-                        target.borrow_mut().variables.insert(variable.into(), value);
+                        Scope::set(&target, variable, &value);
                     } else {
                         self.environment.insert(
                             variable.into(),
@@ -1120,7 +1187,7 @@ impl Shell {
                     Function {
                         parameters: Parameters::parse(&args[0], "function")?,
                         body: args[1..].to_vec(),
-                        closure: env.clone(),
+                        closure: self.capture_scope(env),
                     },
                 )))
             }
@@ -1179,7 +1246,7 @@ impl Shell {
                 for (index, value) in values.into_iter().enumerate() {
                     self.check(expr)?;
                     let local = self.child_scope(env);
-                    local.borrow_mut().variables.insert(variable.into(), value);
+                    Scope::bind(&local, variable, value);
                     match self.loop_body(
                         &args[2..],
                         &local,
@@ -1239,6 +1306,7 @@ impl Shell {
                     .into());
                 }
                 let names = Parameters::parse(&args[1], "function")?;
+                let closure = self.capture_scope(env);
                 self.functions.insert(
                     function_name.clone(),
                     FunctionValue::user(
@@ -1246,7 +1314,7 @@ impl Shell {
                         Function {
                             parameters: names,
                             body: args[2..].to_vec(),
-                            closure: env.clone(),
+                            closure,
                         },
                     ),
                 );
@@ -1568,12 +1636,13 @@ impl Shell {
             return Err(Error::new(&args[0], format!("{name} is a struct member")));
         }
         let parameters = Parameters::parse(&args[1], "macro")?;
+        let closure = self.capture_scope(env);
         self.macros.insert(
             name.clone(),
             Function {
                 parameters,
                 body: args[2..].to_vec(),
-                closure: env.clone(),
+                closure,
             },
         );
         Ok(())

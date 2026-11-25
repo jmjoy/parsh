@@ -262,10 +262,7 @@ impl Shell {
         let result = (|| {
             let mut supplied = values.into_iter();
             for parameter in &definition.parameters.required {
-                local
-                    .borrow_mut()
-                    .variables
-                    .insert(parameter.clone(), supplied.next().unwrap());
+                Scope::bind(&local, parameter, supplied.next().unwrap());
             }
             for (parameter, default) in &definition.parameters.optional {
                 let value = if let Some(value) = supplied.next() {
@@ -275,16 +272,10 @@ impl Shell {
                 } else {
                     Value::Nil
                 };
-                local
-                    .borrow_mut()
-                    .variables
-                    .insert(parameter.clone(), value);
+                Scope::bind(&local, parameter, value);
             }
             if let Some(parameter) = &definition.parameters.rest {
-                local
-                    .borrow_mut()
-                    .variables
-                    .insert(parameter.clone(), Value::List(supplied.collect()));
+                Scope::bind(&local, parameter, Value::List(supplied.collect()));
             }
             self.sequence(&definition.body, &local, mode, io)
         })();
@@ -318,6 +309,7 @@ impl Drop for Shell {
                 let mut scope = scope.borrow_mut();
                 scope.variables.clear();
                 scope.parent = None;
+                scope.fallback = None;
             }
         }
     }

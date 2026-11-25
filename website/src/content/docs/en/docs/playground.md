@@ -68,7 +68,8 @@ and previous execution result `$?` have different update rules; see
 [variables and scope](/parsh/en/docs/variables/).
 
 Use the [examples guide](/parsh/en/docs/examples/) to select scripts that run in
-the browser. Reset between independent scripts to avoid duplicate top-level bindings.
+the browser. Reset between independent scripts so previous bindings do not affect
+their results.
 
 ## Sessions and keys
 

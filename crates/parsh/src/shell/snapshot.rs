@@ -18,8 +18,9 @@ enum FrozenValue {
 }
 #[derive(Clone)]
 struct FrozenScope {
-    variables: HashMap<String, FrozenValue>,
+    variables: HashMap<String, usize>,
     parent: Option<usize>,
+    fallback: Option<usize>,
 }
 #[derive(Clone)]
 struct Definition {
@@ -37,8 +38,10 @@ enum FrozenFunction {
 #[derive(Default)]
 struct Builder {
     scope_ids: HashMap<usize, usize>,
+    binding_ids: HashMap<usize, usize>,
     function_ids: HashMap<usize, usize>,
     scopes: Vec<Option<FrozenScope>>,
+    bindings: Vec<Option<FrozenValue>>,
     functions: Vec<Option<FrozenFunction>>,
 }
 impl Builder {
@@ -50,14 +53,42 @@ impl Builder {
         let id = self.scopes.len();
         self.scope_ids.insert(key, id);
         self.scopes.push(None);
-        let env = env.borrow();
-        let parent = env.parent.as_ref().map(|p| self.scope(p));
-        let variables = env
-            .variables
-            .iter()
-            .map(|(name, value)| (name.clone(), self.value(value)))
+        let (parent_env, fallback_env, variables) = {
+            let scope = env.borrow();
+            (
+                scope.parent.clone(),
+                scope.fallback.clone(),
+                scope
+                    .variables
+                    .iter()
+                    .map(|(name, binding)| (name.clone(), binding.clone()))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let parent = parent_env.as_ref().map(|parent| self.scope(parent));
+        let fallback = fallback_env.as_ref().map(|fallback| self.scope(fallback));
+        let variables = variables
+            .into_iter()
+            .map(|(name, binding)| (name, self.binding(&binding)))
             .collect();
-        self.scopes[id] = Some(FrozenScope { variables, parent });
+        self.scopes[id] = Some(FrozenScope {
+            variables,
+            parent,
+            fallback,
+        });
+        id
+    }
+
+    fn binding(&mut self, binding: &Binding) -> usize {
+        let key = Rc::as_ptr(binding) as usize;
+        if let Some(id) = self.binding_ids.get(&key) {
+            return *id;
+        }
+        let id = self.bindings.len();
+        self.binding_ids.insert(key, id);
+        self.bindings.push(None);
+        let value = binding.borrow().clone();
+        self.bindings[id] = Some(self.value(&value));
         id
     }
     fn definition(&mut self, f: &Function) -> Definition {
@@ -114,6 +145,7 @@ impl Builder {
         Frozen {
             value,
             scopes: self.scopes.into_iter().map(Option::unwrap).collect(),
+            bindings: self.bindings.into_iter().map(Option::unwrap).collect(),
             functions: self.functions.into_iter().map(Option::unwrap).collect(),
         }
     }
@@ -123,10 +155,12 @@ impl Builder {
 pub(super) struct Frozen {
     value: FrozenValue,
     scopes: Vec<FrozenScope>,
+    bindings: Vec<FrozenValue>,
     functions: Vec<FrozenFunction>,
 }
 struct Restored {
     scopes: Vec<Env>,
+    bindings: Vec<Binding>,
     functions: Vec<FunctionValue>,
 }
 impl Restored {
@@ -174,6 +208,11 @@ impl Frozen {
                 .iter()
                 .map(|_| Rc::new(RefCell::new(Scope::default())))
                 .collect(),
+            bindings: self
+                .bindings
+                .iter()
+                .map(|_| Rc::new(RefCell::new(Value::Nil)))
+                .collect(),
             functions: Vec::new(),
         };
         // Scope placeholders allow functions to point to themselves through bindings.
@@ -195,11 +234,15 @@ impl Frozen {
         for (id, scope) in self.scopes.iter().enumerate() {
             let mut target = restored.scopes[id].borrow_mut();
             target.parent = scope.parent.map(|p| restored.scopes[p].clone());
+            target.fallback = scope.fallback.map(|p| restored.scopes[p].clone());
             target.variables = scope
                 .variables
                 .iter()
-                .map(|(k, v)| (k.clone(), restored.value(v)))
+                .map(|(k, id)| (k.clone(), restored.bindings[*id].clone()))
                 .collect();
+        }
+        for (id, value) in self.bindings.iter().enumerate() {
+            *restored.bindings[id].borrow_mut() = restored.value(value);
         }
         shell
             .scopes

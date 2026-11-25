@@ -477,7 +477,7 @@ mod tests {
         shell.reset_session().unwrap();
         assert!(matches!(shell.last_result, Value::Nil));
         assert_eq!(
-            shell.root.borrow().variables["args"],
+            shell.root.borrow().variables["args"].borrow().clone(),
             Value::List(vec![Value::Text("argument".into())])
         );
         let env = shell.root.clone();
