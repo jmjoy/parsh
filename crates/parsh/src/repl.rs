@@ -441,6 +441,11 @@ impl Session {
     }
 
     #[cfg(feature = "native")]
+    pub(crate) fn has_history(&self) -> bool {
+        !self.history.sources.borrow().sources.is_empty()
+    }
+
+    #[cfg(feature = "native")]
     pub(crate) fn open_history(&mut self, path: &std::path::Path) -> io::Result<()> {
         let (file, entries) = HistoryFile::open(path)?;
         *self.history.sources.borrow_mut() = entries;

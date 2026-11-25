@@ -122,7 +122,7 @@ Browser shortcuts apply while the terminal has focus. Some browser or operating-
 shortcuts cannot reach the page; use an Esc prefix when Alt conflicts. Copy and paste
 continue using the browser's shortcuts.
 
-Errors include the source, line, and column. Script execution recovers
+Errors include the source, line, and column, followed by the relevant source line and a caret. Script execution recovers
 unexpected top-level `)`, `]`, and `}` and continues with later expressions. Such errors give
 a script exit status of 2 unless a runtime failure or explicit `exit` supersedes
 it. Command failures keep their exit status; startup failures use 127 for a

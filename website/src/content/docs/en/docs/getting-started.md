@@ -96,6 +96,15 @@ Type `dump (str "hello, " "parsh")` at the `$ ()` prompt and press Enter. parsh 
 
 The first expression binds a value. The second explicitly prints text using `dump`. The third runs the native `echo` program and writes stdout. Neither interactive nor script mode automatically prints return values.
 
+Captured command output removes surrounding Unicode whitespace by default. Use `{trim #false}` when the exact output matters:
+
+```parsh
+(dump (<-out printf " hello\n"))
+(dump (<-out {trim #false} printf " hello\n"))
+```
+
+These calls display `"hello"` and `" hello\n"`.
+
 The [browser playground](/parsh/en/playground/) supports language expressions and coreutils commands. See its [capabilities](/parsh/en/docs/playground/) for the command list and temporary files.
 
 See [example scripts](/parsh/en/docs/examples/) for complete programs covering collections, functions, command results, and background tasks.

@@ -591,6 +591,16 @@ fn prompt_uses_effective_uid_despite_the_user_environment() {
 }
 
 #[test]
+fn fresh_repl_explains_silent_return_values() {
+    let mut terminal = Terminal::configured(|command| {
+        command.arg("--no-config").arg("--no-history");
+    });
+    let offset = terminal.expect(b"return values stay silent", 0);
+    terminal.expect(b"$ ()", offset);
+    terminal.exit(0);
+}
+
+#[test]
 fn enter_submits_and_typed_closers_remain_edits() {
     let mut terminal = Terminal::new();
     let offset = terminal.send(b"echo ENTER_TEST)");

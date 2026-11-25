@@ -3,10 +3,12 @@ title: "Errors & exit codes"
 description: "Source positions, error kinds, batch failures, and native exit statuses."
 ---
 
-Diagnostics include the source, line, and column:
+Diagnostics include the source, line, and column. The following source line and caret identify the reported location:
 
 ```text
-interactive:1:6: undefined variable $missing
+interactive:1:7: undefined variable $missing
+  (echo $missing)
+        ^
 ```
 
 ## Command failures and exit codes

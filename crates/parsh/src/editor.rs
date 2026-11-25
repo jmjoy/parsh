@@ -19,6 +19,9 @@ use crossterm::{
 };
 use nix::unistd::geteuid;
 
+const FRESH_SESSION_HINT: &str =
+    "parsh: return values stay silent; try `dump (str \"hello\")` to display one.";
+
 struct TerminalConsole {
     output: io::Stderr,
     prefix: &'static str,
@@ -173,6 +176,11 @@ pub fn run_with_history(shell: &mut Shell, path: Option<&Path>) -> io::Result<i3
         eprintln!("parsh: {}: {error}", path.display());
     }
     let mut console = TerminalConsole::new()?;
+    if !session.has_history() {
+        console.pause()?;
+        console.diagnostic(FRESH_SESSION_HINT)?;
+        console.resume()?;
+    }
     loop {
         session.draw(&mut console)?;
         let code = match event::read()? {

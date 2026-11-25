@@ -14,7 +14,7 @@ The prompt is `$ ()`. Type `str hello` and press Enter to evaluate `(str hello)`
 (dump (greet $name))
 ```
 
-The interactive result is `"hello, world"`. Scripts use exactly the same syntax; on Linux, expressions can also launch real programs, build pipelines, and redirect files.
+The `dump` call explicitly displays `"hello, world"`. Scripts use exactly the same syntax; on Linux, expressions can also launch real programs, build pipelines, and redirect files.
 
 ## Pick a starting point
 
@@ -34,11 +34,11 @@ Shell scripts often push their logic into `awk`, `sed`, or an inline interpreter
 (echo "rust files: $count; doubled: $(* $count #2)")
 ```
 
-One grammar and one set of rules to generate against and to check: that is what makes parsh scripts a good fit for AI-assisted work. Library imports are planned, so scripts will also reuse packaged code the way Python modules do.
+One grammar and one set of rules to generate against and to check: that is what makes parsh scripts a good fit for AI-assisted work. Source files can be reused with `(load path)`, and native interactive sessions can define persistent startup configuration in `config.parsh`. Packaged module imports remain future work.
 
 ## Current scope
 
-parsh is an early implementation, version 0.1.0. Native parsh supports Linux foreground jobs, interactive programs, pipelines, and isolated background tasks. Interactive Tab completion covers commands, paths, and variables. Library imports and persistent configuration remain future work. The browser playground offers the language core, 29 coreutils commands, temporary files, and command composition.
+parsh is an early implementation, version 0.1.0. Native parsh supports Linux foreground jobs, interactive programs, pipelines, isolated background tasks, source loading with `(load path)`, and startup configuration. Interactive Tab completion covers commands, paths, and variables. The browser playground offers the language core, 29 coreutils commands, temporary files, and command composition.
 
 ## License
 

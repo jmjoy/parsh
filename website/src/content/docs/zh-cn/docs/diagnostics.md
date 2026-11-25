@@ -3,10 +3,12 @@ title: "错误与退出码"
 description: "源码位置、错误分类、批次失败与原生退出状态。"
 ---
 
-诊断包含来源、行号与列号：
+诊断包含来源、行号与列号。下面的源码行与插入符会标出具体位置：
 
 ```text
-interactive:1:6: undefined variable $missing
+interactive:1:7: undefined variable $missing
+  (echo $missing)
+        ^
 ```
 
 ## 命令失败与退出码

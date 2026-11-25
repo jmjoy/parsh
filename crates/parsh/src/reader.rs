@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::number::Number;
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Expr {
@@ -97,7 +98,12 @@ fn escape_text(text: &str) -> String {
 impl Diagnostic {
     pub fn render(&self, name: &str, source: &str) -> String {
         let (line, column) = position(source, self.offset);
-        format!("{name}:{line}:{column}: {}", self.message)
+        let header = format!("{name}:{line}:{column}: {}", self.message);
+        if self.message.contains('\n') {
+            return header;
+        }
+        let (source_line, marker) = source_context(source, self.offset);
+        format!("{header}\n  {source_line}\n  {marker}")
     }
 }
 
@@ -112,6 +118,27 @@ pub fn position(source: &str, offset: usize) -> (usize, usize) {
     let line = prefix.bytes().filter(|&b| b == b'\n').count() + 1;
     let column = prefix.rsplit('\n').next().unwrap_or("").chars().count() + 1;
     (line, column)
+}
+
+fn source_context(source: &str, offset: usize) -> (String, String) {
+    let offset = offset.min(source.len());
+    let line_start = source[..offset].rfind('\n').map_or(0, |index| index + 1);
+    let line_end = source[offset..]
+        .find('\n')
+        .map_or(source.len(), |index| offset + index);
+    let source_line = source[line_start..line_end].trim_end_matches('\r');
+    let prefix = &source[line_start..offset];
+    let marker: String = prefix
+        .chars()
+        .map(|character| {
+            if character == '\t' {
+                "\t".to_owned()
+            } else {
+                " ".repeat(character.width().unwrap_or(0))
+            }
+        })
+        .collect();
+    (source_line.to_owned(), format!("{marker}^"))
 }
 
 #[derive(Debug, PartialEq)]
@@ -863,6 +890,19 @@ $(str """inner "quoted" $名字""" '''$missing\n''')!""""#;
     #[test]
     fn diagnostics_count_unicode_columns() {
         assert_eq!(position("甲\n乙)", "甲\n乙".len()), (2, 2));
+    }
+
+    #[test]
+    fn diagnostic_render_includes_the_source_line_and_marker() {
+        let source = "(echo\n  甲$missing)";
+        let diagnostic = Diagnostic {
+            offset: source.find("$missing").unwrap(),
+            message: "undefined variable $missing".into(),
+        };
+        assert_eq!(
+            diagnostic.render("script.parsh", source),
+            "script.parsh:2:4: undefined variable $missing\n    甲$missing)\n      ^"
+        );
     }
 
     #[test]
