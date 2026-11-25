@@ -1,9 +1,30 @@
 ---
 title: "快速开始"
-description: "在 Linux 上构建与运行 parsh。"
+description: "在 Linux 上安装、构建与运行 parsh。"
 ---
 
-原生 parsh 需要 Linux 和当前稳定版 Rust 工具链。先从仓库构建：
+原生 parsh 运行于 Linux，并需要当前稳定版 Rust 工具链。
+
+## 安装
+
+安装 crates.io 上的稳定版：
+
+```console
+cargo install parsh
+```
+
+如果想体验 GitHub 仓库中的当前开发版本，请运行：
+
+```console
+cargo install --git https://github.com/jmjoy/parsh
+```
+
+两种方式都会将 `parsh` 安装到 Cargo 的二进制目录。请确认该目录已加入
+`PATH`，然后运行 `parsh` 启动 Shell。
+
+## 从源码构建
+
+要从仓库构建最新源码：
 
 ```console
 git clone https://github.com/jmjoy/parsh.git
@@ -12,7 +33,7 @@ cargo build --locked --release
 ./target/release/parsh
 ```
 
-运行 `cargo install --path crates/parsh` 可将它安装到 PATH。
+要将本地检出的版本安装到 `PATH`，运行 `cargo install --path crates/parsh`。
 
 ## 运行方式
 

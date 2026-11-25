@@ -13,6 +13,23 @@ parsh（**parenthesis shell**）是一个交互命令与脚本共用同一种小
 [在线体验](https://jmjoy.github.io/parsh/zh-cn/playground/) ·
 [中文文档](https://jmjoy.github.io/parsh/zh-cn/docs/)
 
+## 安装
+
+原生 parsh 运行于 Linux。安装 crates.io 上发布的稳定版：
+
+```console
+cargo install parsh
+```
+
+如果想体验 GitHub 仓库中的当前开发版本，请运行：
+
+```console
+cargo install --git https://github.com/jmjoy/parsh
+```
+
+两种方式都会将 `parsh` 安装到 Cargo 的二进制目录。请确认该目录已加入
+`PATH`，然后运行 `parsh` 启动 Shell。
+
 ## 命令行与脚本，同一种语言
 
 在命令行中试好的表达式，可以直接放进脚本。变量、函数与控制流，始终遵循同一套规则。

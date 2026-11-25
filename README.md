@@ -15,6 +15,23 @@ The project is open source and in early development.
 [Playground](https://jmjoy.github.io/parsh/en/playground/) ·
 [Documentation](https://jmjoy.github.io/parsh/en/docs/)
 
+## Install
+
+Native parsh runs on Linux. Install the latest stable release from crates.io:
+
+```console
+cargo install parsh
+```
+
+To try the current development version from GitHub:
+
+```console
+cargo install --git https://github.com/jmjoy/parsh
+```
+
+Both commands install `parsh` to Cargo's binary directory. Make sure that
+directory is on your `PATH`, then run `parsh` to start the shell.
+
 ## One language for the prompt and scripts
 
 Take an expression from the prompt straight into a script. Variables, functions,

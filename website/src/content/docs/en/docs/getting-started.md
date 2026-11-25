@@ -1,9 +1,30 @@
 ---
 title: "Getting started"
-description: "Build and run parsh on Linux."
+description: "Install, build, and run parsh on Linux."
 ---
 
-Native parsh requires Linux and a current stable Rust toolchain. Build from the repository:
+Native parsh runs on Linux and requires a current stable Rust toolchain.
+
+## Install
+
+Install the latest stable release from crates.io:
+
+```console
+cargo install parsh
+```
+
+To try the current development version from GitHub:
+
+```console
+cargo install --git https://github.com/jmjoy/parsh
+```
+
+Both commands install `parsh` to Cargo's binary directory. Make sure that
+directory is on your `PATH`, then run `parsh` to start the shell.
+
+## Build from source
+
+To build the latest source from the repository:
 
 ```console
 git clone https://github.com/jmjoy/parsh.git
@@ -12,7 +33,7 @@ cargo build --locked --release
 ./target/release/parsh
 ```
 
-To install it on your PATH, run `cargo install --path crates/parsh`.
+To install a local checkout on your `PATH`, run `cargo install --path crates/parsh`.
 
 ## Ways to run
 
