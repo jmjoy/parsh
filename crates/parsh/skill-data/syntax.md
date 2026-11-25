@@ -1,0 +1,1 @@
+../../../website/src/content/docs/en/docs/syntax.md

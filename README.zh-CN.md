@@ -65,6 +65,22 @@ parsh（**parenthesis shell**）是一个交互命令与脚本共用同一种小
 [中文文档](https://jmjoy.github.io/parsh/zh-cn/docs/)包含语言参考和开发指南；
 [示例目录](examples/README.zh-CN.md)提供按主题整理的完整脚本。
 
+## AI 助手 Skill
+
+将 `parsh` 加入 PATH 后，可以用 skills.sh 的 CLI 安装 Skill。
+
+```console
+npx skills add jmjoy/parsh --skill parsh
+```
+
+Skill 引导助手从当前安装的 parsh 版本按需读取指南。
+
+```console
+parsh skills list
+parsh skills get syntax
+parsh skills get commands --full
+```
+
 ## 许可证
 
 本项目提供以下三种许可证，可任选其一：

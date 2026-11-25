@@ -71,6 +71,22 @@ The [documentation](https://jmjoy.github.io/parsh/en/docs/) covers the language
 reference and development guides; [examples](examples/README.md) provide complete
 scripts organized by topic.
 
+## AI agent skill
+
+With `parsh` on PATH, install the Skill with the skills.sh CLI.
+
+```console
+npx skills add jmjoy/parsh --skill parsh
+```
+
+The Skill directs your agent to guides bundled with the installed parsh version.
+
+```console
+parsh skills list
+parsh skills get syntax
+parsh skills get commands --full
+```
+
 ## License
 
 Licensed under your choice of:

@@ -1,19 +1,20 @@
 use clap::Parser;
 use parsh::{editor, run_source, shell::Shell};
 use std::{
-    fs,
+    env, fs,
     io::{self, IsTerminal, Read},
     path::PathBuf,
     process::ExitCode,
 };
 
+mod skills;
 mod startup;
 
 #[derive(Parser)]
 #[command(
     version,
     about,
-    after_help = "With no FILE or -c, start interactively on a terminal, otherwise read a script from stdin.\nInteractive: Enter evaluates complete input, supplying one outer ')' when needed; Ctrl+J inserts a newline."
+    after_help = "With no FILE or -c, start interactively on a terminal, otherwise read a script from stdin.\nInteractive: Enter evaluates complete input, supplying one outer ')' when needed; Ctrl+J inserts a newline.\n\nRun 'parsh skills' to discover guides bundled with this version."
 )]
 struct Cli {
     /// Load FILE as startup configuration in any mode
@@ -44,8 +45,16 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    match run(cli) {
+    let mut args = env::args_os().peekable();
+    let program = args.next();
+    // Only a literal first argument selects knowledge mode. Script arguments
+    // continue through the same parser, including names after '--' or '-c'.
+    let result = if args.peek().is_some_and(|arg| arg == "skills") {
+        skills::run(args)
+    } else {
+        run(Cli::parse_from(program.into_iter().chain(args)))
+    };
+    match result {
         Ok(code) => ExitCode::from(code as u8),
         Err(error) => {
             eprintln!("parsh: {error}");

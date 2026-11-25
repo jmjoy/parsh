@@ -22,6 +22,10 @@ source from child stdin.
 Run the [example scripts](/parsh/en/docs/examples/) when changing a documented
 language feature, for example `cargo run -- examples/execution.parsh`.
 
+`parsh skills` embeds the English guides and example scripts at build time.
+Update their original files when changing a documented feature. The CLI primer
+lives in `crates/parsh/skill-data/core.md`.
+
 ## Website and WASM
 
 Use Node.js 24+, pnpm 12.4.2, a current stable Rust toolchain, wasm-pack 0.13.1,

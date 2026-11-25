@@ -34,6 +34,24 @@ Options are parsed by clap. After the script path or `-c SOURCE`, every remainin
 argument is passed through unchanged, including `--help` and `--`.
 Use `parsh -- -script.parsh` for a script filename beginning with `-`.
 
+## Guides for AI agents
+
+The native binary serves English guides for its version. List the topics and
+load the ones relevant to your task.
+
+```console
+parsh skills
+parsh skills get syntax
+parsh skills get commands execution --full
+parsh skills get --all --json
+```
+
+`parsh skills` defaults to `list`. `get` prints Markdown, and `--full` adds
+related example sources where available. `path` prints logical resource IDs
+such as `embedded://parsh/skills/syntax`. Use `get` to read the guide.
+`list`, `get`, and `path` accept `--json` for structured output.
+Use `parsh ./skills` to execute a script file named `skills`.
+
 ## Startup configuration
 
 Interactive parsh runs `config.parsh` before the first prompt. It uses

@@ -1340,6 +1340,7 @@ fn cli_help_version_and_argument_errors() {
             "--help",
             "--version",
             "Enter",
+            "parsh skills",
         ] {
             assert!(help.contains(text), "missing {text:?}: {help}");
         }
@@ -1367,11 +1368,12 @@ fn cli_help_version_and_argument_errors() {
 
 #[test]
 fn cli_passes_all_arguments_after_source_or_script_unchanged() {
-    let source = r#"(if (eq $args ["--help" "-h" "--version" "-V" "--no-history" "-c" "--" "--unknown" "a b" ""]) (exit 0) (exit 1))"#;
+    let source = r#"(if (eq $args ["skills" "--help" "-h" "--version" "-V" "--no-history" "-c" "--" "--unknown" "a b" ""]) (exit 0) (exit 1))"#;
     let directory = tempfile::tempdir().unwrap();
     let script = directory.path().join("args.parsh");
     fs::write(&script, source).unwrap();
     let arguments = [
+        "skills",
         "--help",
         "-h",
         "--version",
@@ -1406,7 +1408,7 @@ fn cli_passes_all_arguments_after_source_or_script_unchanged() {
 #[test]
 fn cli_double_dash_allows_script_names_that_look_like_options() {
     let directory = tempfile::tempdir().unwrap();
-    for name in ["--help", "-c"] {
+    for name in ["--help", "-c", "skills"] {
         fs::write(
             directory.path().join(name),
             r#"(if (eq $args (list "--version")) (exit 0) (exit 1))"#,
@@ -1417,6 +1419,109 @@ fn cli_double_dash_allows_script_names_that_look_like_options() {
         assert!(output.stdout.is_empty());
         assert!(stderr(&output).is_empty());
     }
+}
+
+#[test]
+fn skills_lists_and_loads_bundled_guides_outside_the_repository() {
+    let directory = tempfile::tempdir().unwrap();
+    let skills = |args: &[&str]| invoke_in(args, "", Some(directory.path()));
+    let default = skills(&["skills"]);
+    let list = skills(&["skills", "list"]);
+    success(&default);
+    success(&list);
+    assert_eq!(default.stdout, list.stdout);
+    assert!(default.stderr.is_empty());
+    assert!(
+        stdout(&list)
+            .lines()
+            .any(|line| line.trim_start().starts_with("core "))
+    );
+
+    let syntax = skills(&["skills", "get", "syntax"]);
+    success(&syntax);
+    assert!(stdout(&syntax).contains("## Scalar literals"));
+    assert!(syntax.stderr.is_empty());
+
+    let catalog = skills(&["skills", "list", "--json"]);
+    let guides = skills(&["skills", "get", "--all", "--json"]);
+    success(&catalog);
+    success(&guides);
+    assert!(catalog.stderr.is_empty());
+    assert!(guides.stderr.is_empty());
+    let catalog: serde_json::Value = serde_json::from_slice(&catalog.stdout).unwrap();
+    let guides: serde_json::Value = serde_json::from_slice(&guides.stdout).unwrap();
+    assert_eq!(catalog["success"], true);
+    assert_eq!(guides["success"], true);
+    let catalog = catalog["data"].as_array().unwrap();
+    let guides = guides["data"].as_array().unwrap();
+    assert!(!catalog.is_empty());
+    assert_eq!(catalog.len(), guides.len());
+    for (topic, guide) in catalog.iter().zip(guides) {
+        assert_eq!(topic["name"], guide["name"]);
+        assert!(!topic["description"].as_str().unwrap().is_empty());
+        assert!(!guide["content"].as_str().unwrap().is_empty());
+        assert!(guide.get("files").is_none());
+    }
+}
+
+#[test]
+fn skills_supports_supplementary_examples_paths_and_help() {
+    let full = invoke(&["skills", "get", "syntax", "--full"], "");
+    success(&full);
+    assert!(stdout(&full).contains("### examples/literals.parsh\n\n~~~parsh"));
+
+    let root = invoke(&["skills", "path"], "");
+    let path = invoke(&["skills", "path", "core"], "");
+    success(&root);
+    success(&path);
+    assert_eq!(stdout(&root), "embedded://parsh/skills\n");
+    assert_eq!(stdout(&path), "embedded://parsh/skills/core\n");
+
+    let path = invoke(&["skills", "--json", "path", "core"], "");
+    success(&path);
+    let path: serde_json::Value = serde_json::from_slice(&path.stdout).unwrap();
+    assert_eq!(
+        path,
+        serde_json::json!({
+            "success": true,
+            "data": {"name": "core", "path": "embedded://parsh/skills/core"}
+        })
+    );
+
+    let help = invoke(&["skills", "--help"], "");
+    success(&help);
+    assert!(help.stderr.is_empty());
+    for text in ["parsh skills", "list", "get", "path", "--json"] {
+        assert!(stdout(&help).contains(text));
+    }
+}
+
+#[test]
+fn skills_rejects_invalid_requests_without_partial_output() {
+    let output = invoke(&["skills", "get", "core", "missing"], "");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert!(stderr(&output).contains("unknown topic \"missing\""));
+
+    for args in [
+        &["skills", "get", "--json"][..],
+        &["skills", "get", "core", "--all", "--json"],
+        &["skills", "not-a-command", "--json"],
+        &["skills", "list", "--full", "--json"],
+    ] {
+        let output = invoke(args, "");
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stderr.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(error["success"], false);
+        assert!(!error["error"].as_str().unwrap().is_empty());
+    }
+    let output = invoke(&["skills", "path", "missing", "--json"], "");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    let error: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(error["success"], false);
+    assert!(error["error"].as_str().unwrap().contains("unknown topic"));
 }
 
 #[test]

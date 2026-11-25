@@ -20,6 +20,9 @@ cargo clippy --locked --no-default-features --lib -- -D warnings
 修改文档涉及的语言功能时，也应运行对应的[示例脚本](/parsh/zh-cn/docs/examples/)，
 例如 `cargo run -- examples/execution.parsh`。
 
+`parsh skills` 在构建时嵌入英文文档和示例脚本。修改功能时直接更新对应的文档和脚本源文件。
+CLI 入门指南位于 `crates/parsh/skill-data/core.md`。
+
 ## 网站与 WASM
 
 需要 Node.js 24+、pnpm 12.4.2、当前稳定版 Rust、wasm-pack 0.13.1 和 agproc。

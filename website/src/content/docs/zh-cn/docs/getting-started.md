@@ -32,6 +32,22 @@ parsh - first < examples/hello.parsh
 命令行选项由 clap 解析。脚本路径或 `-c SOURCE` 之后的所有参数都会原样传入脚本，
 包括 `--help` 和 `--`。如果脚本文件名以 `-` 开头，可使用 `parsh -- -script.parsh`。
 
+## AI 助手指南
+
+原生二进制内置与当前版本对应的英文指南。可以先列出主题，再按任务需要读取。
+
+```console
+parsh skills
+parsh skills get syntax
+parsh skills get commands execution --full
+parsh skills get --all --json
+```
+
+`parsh skills` 默认执行 `list`。`get` 输出 Markdown，`--full` 会附带已有的相关示例源码。
+`path` 输出逻辑资源标识，例如 `embedded://parsh/skills/syntax`，用 `get` 读取对应指南。
+`list`、`get` 和 `path` 均支持 `--json`。
+要运行名为 `skills` 的脚本文件，请使用 `parsh ./skills`。
+
 ## 启动配置
 
 交互式 parsh 在显示第一个提示符前执行 `config.parsh`。优先使用绝对路径
