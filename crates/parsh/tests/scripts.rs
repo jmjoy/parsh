@@ -1151,7 +1151,7 @@ fn explicit_config_shares_session_state_and_preserves_batch_stdin() {
     let source = r#"
         (dump [(answer) $from_stdin $from_file $PARSH_TEST_SETTING])
         (dump (eq $startup_args $args))
-        (for arg $args (printf "<%s>\n" $arg))
+        (dump $args)
         (cat input.txt)
         (cat)
     "#;
@@ -1167,10 +1167,10 @@ fn explicit_config_shares_session_state_and_preserves_batch_stdin() {
         let mut args = vec!["--config", "startup files/config.parsh"];
         args.extend(entry);
         let arguments = if entry.is_empty() {
-            ""
+            "()\n"
         } else {
-            args.extend(["--no-config", "--config", "--", "a b"]);
-            "<--no-config>\n<--config>\n<-->\n<a b>\n"
+            args.extend(["--no-config", "--config", "--", "a b", ""]);
+            "(\"--no-config\" \"--config\" \"--\" \"a b\" \"\")\n"
         };
         let output = invoke_in(&args, input, Some(directory.path()));
         success(&output);
