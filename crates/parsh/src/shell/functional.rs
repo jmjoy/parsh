@@ -42,7 +42,7 @@ impl Shell {
         source: &str,
         bindings: Vec<(&str, Value)>,
         env: &Env,
-    ) -> Value {
+    ) -> FunctionValue {
         let Read::Form(Expr {
             kind: Kind::List(parts),
             ..
@@ -55,7 +55,7 @@ impl Shell {
             .borrow_mut()
             .variables
             .extend(bindings.into_iter().map(|(key, value)| (key.into(), value)));
-        Value::Function(FunctionValue::user(
+        FunctionValue::user(
             name,
             Function {
                 parameters: Parameters::parse(&parts[1], "function")
@@ -63,7 +63,22 @@ impl Shell {
                 body: parts[2..].to_vec(),
                 closure,
             },
-        ))
+        )
+    }
+
+    pub(super) fn partial_function(
+        &mut self,
+        name: &str,
+        callee: Value,
+        bound: Vec<Value>,
+        env: &Env,
+    ) -> FunctionValue {
+        self.adapter(
+            name,
+            "(fn (&rest args) (apply $callee (list/concat $bound $args)))",
+            vec![("callee", callee), ("bound", Value::List(bound))],
+            env,
+        )
     }
 
     pub(super) fn functional_builtin(
@@ -79,23 +94,20 @@ impl Shell {
         let ready = args.with_values(&values);
         match name {
             "identity" => Ok(values[0].clone()),
-            "constantly" => Ok(self.adapter(
+            "constantly" => Ok(Value::Function(self.adapter(
                 name,
                 "(fn (&rest ignored) $constant)",
                 vec![("constant", values[0].clone())],
                 env,
-            )),
+            ))),
             "partial" => {
                 let callee = self.resolve_callable(args.at(expr, 0), values[0].clone())?;
-                Ok(self.adapter(
+                Ok(Value::Function(self.partial_function(
                     name,
-                    "(fn (&rest args) (apply $callee (list/concat $bound $args)))",
-                    vec![
-                        ("callee", callee),
-                        ("bound", Value::List(values[1..].to_vec())),
-                    ],
+                    callee,
+                    values[1..].to_vec(),
                     env,
-                ))
+                )))
             }
             "compose" => {
                 if values.is_empty() {
@@ -106,7 +118,7 @@ impl Shell {
                     functions.push(self.resolve_callable(args.at(expr, index), value)?);
                 }
                 functions.reverse();
-                Ok(self.adapter(
+                Ok(Value::Function(self.adapter(
                     name,
                     r#"(fn (&rest args)
                     (let result (apply (list/first $functions) $args))
@@ -114,11 +126,11 @@ impl Shell {
                     $result)"#,
                     vec![("functions", Value::List(functions))],
                     env,
-                ))
+                )))
             }
             "complement" => {
                 let predicate = self.resolve_callable(args.at(expr, 0), values[0].clone())?;
-                Ok(self.adapter(
+                Ok(Value::Function(self.adapter(
                     name,
                     r#"(fn (&rest args)
                     (let result (apply $predicate $args))
@@ -126,7 +138,7 @@ impl Shell {
                         (throw "complement predicate must return bool")))"#,
                     vec![("predicate", predicate)],
                     env,
-                ))
+                )))
             }
             "even?" | "odd?" => {
                 let integer = ready.integer(self, expr, 0, env, io)?;

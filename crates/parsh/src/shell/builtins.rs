@@ -7,6 +7,7 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     ".",
     "get",
     "dump",
+    "history",
     "list",
     "map",
     "map/get",
@@ -325,6 +326,7 @@ fn arity(name: &str) -> (usize, usize) {
         "list/flat-map" | "list/sort-by" | "list/group-by" | "list/take-while"
         | "list/drop-while" | "list/partition" => (2, 2),
         "gensym" => (0, 1),
+        "history" => (0, 2),
         "-" | "/" | "min" | "max" | "list/append" => (1, usize::MAX),
         "apply" => (2, usize::MAX),
         "<-result" | "<-out" | "<-err" | "spawn" => (1, usize::MAX),
@@ -417,6 +419,44 @@ impl Shell {
                     );
                 };
                 Ok(self.variable(args.at(expr, 0), &name, env)?)
+            }
+            "history" => {
+                let history = self.history.upgrade().ok_or_else(|| Error {
+                    kind: "unsupported".into(),
+                    ..Error::new(expr, "history requires an interactive session")
+                })?;
+                let values = args.values(self, env, io)?;
+                let (query, count) = match values.as_slice() {
+                    [] => ("", i64::MAX),
+                    [Value::Text(query)] => (query.as_str(), i64::MAX),
+                    [Value::Number(Number::Int(count))] => ("", *count),
+                    [Value::Text(query), Value::Number(Number::Int(count))] => {
+                        (query.as_str(), *count)
+                    }
+                    _ => {
+                        return Err(Error::new(
+                            expr,
+                            "history expects optional text and an integer limit",
+                        )
+                        .into());
+                    }
+                };
+                if count < 0 {
+                    return Err(Error::new(expr, "history limit must be nonnegative").into());
+                }
+                let count = usize::try_from(count).unwrap_or(usize::MAX);
+                let entries = history.borrow();
+                Ok(Value::List(
+                    entries
+                        .sources
+                        .iter()
+                        .rev()
+                        .filter(|source| source.contains(query))
+                        .take(count)
+                        .cloned()
+                        .map(Value::Text)
+                        .collect(),
+                ))
             }
             "dump" => {
                 let value = args.value(self, 0, env, io)?;

@@ -1,6 +1,7 @@
 mod completion;
 #[cfg(feature = "native")]
 pub mod editor;
+mod history;
 pub mod host;
 #[cfg(feature = "native")]
 pub mod job;

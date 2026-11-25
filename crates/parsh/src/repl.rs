@@ -1,16 +1,29 @@
 //! Shared interactive editing and evaluation for native and browser terminals.
+#[cfg(feature = "native")]
+use crate::history::disk::HistoryFile;
 use crate::{
     completion::Completion,
+    history::Entries,
     host::{ExecutionHost, HostError, Stream},
     reader::{Diagnostic, Expr, Kind, Read, Reader, closing_delimiter},
     shell::{Shell, Value},
 };
-use std::{io, ops::Range, rc::Rc};
+use std::{
+    cell::{Ref, RefCell},
+    collections::VecDeque,
+    io,
+    ops::Range,
+    rc::Rc,
+};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 #[cfg(test)]
+mod alias_tests;
+#[cfg(test)]
 mod collection_tests;
+#[cfg(test)]
+mod command_history_tests;
 mod editing;
 #[cfg(test)]
 mod editing_tests;
@@ -174,22 +187,36 @@ impl Input {
 
 #[derive(Default)]
 struct History {
-    entries: Vec<String>,
+    sources: Rc<RefCell<Entries>>,
+    #[cfg(feature = "native")]
+    file: Option<HistoryFile>,
     index: Option<usize>,
     draft: Option<(String, bool)>,
 }
 
 impl History {
-    fn add(&mut self, source: String) {
-        if self.entries.last() != Some(&source) {
-            self.entries.push(source);
-        }
+    fn entries(&self) -> Ref<'_, VecDeque<String>> {
+        Ref::map(self.sources.borrow(), |entries| &entries.sources)
+    }
+
+    fn add(&mut self, source: &str) -> Option<String> {
+        self.sources.borrow_mut().push(source);
         self.index = None;
         self.draft = None;
+        #[cfg(feature = "native")]
+        if let Some(file) = &self.file
+            && let Err(error) = file.append(source)
+        {
+            let message = format!("parsh: {}: {error}", file.path().display());
+            self.file = None;
+            return Some(message);
+        }
+        None
     }
 
     fn recall(&self, index: usize, input: &mut Input) {
-        let source = &self.entries[index];
+        let entries = self.entries();
+        let source = &entries[index];
         input.body.clone_from(source);
         let mut reader = Reader::new(source);
         if let Read::Form(expr) = reader.read()
@@ -203,7 +230,8 @@ impl History {
     }
 
     fn previous(&mut self, input: &mut Input) {
-        if self.entries.is_empty() {
+        let count = self.entries().len();
+        if count == 0 {
             return;
         }
         let index = match self.index {
@@ -211,7 +239,7 @@ impl History {
             Some(index) => index - 1,
             None => {
                 self.draft = Some((input.body.clone(), input.explicit));
-                self.entries.len() - 1
+                count - 1
             }
         };
         self.index = Some(index);
@@ -222,7 +250,7 @@ impl History {
         let Some(index) = self.index else {
             return;
         };
-        if index + 1 < self.entries.len() {
+        if index + 1 < self.entries().len() {
             self.index = Some(index + 1);
             self.recall(index + 1, input);
         } else {
@@ -407,7 +435,17 @@ pub(crate) struct Session {
 impl Session {
     pub(crate) fn new(shell: &mut Shell) -> Self {
         shell.record_repl_value(Value::Nil);
-        Self::default()
+        let session = Self::default();
+        shell.history = Rc::downgrade(&session.history.sources);
+        session
+    }
+
+    #[cfg(feature = "native")]
+    pub(crate) fn open_history(&mut self, path: &std::path::Path) -> io::Result<()> {
+        let (file, entries) = HistoryFile::open(path)?;
+        *self.history.sources.borrow_mut() = entries;
+        self.history.file = Some(file);
+        Ok(())
     }
 
     fn complete(&mut self, shell: &mut Shell, console: &mut impl ConsoleBackend) -> io::Result<()> {
@@ -481,9 +519,13 @@ impl Session {
         )?;
         console.pause()?;
         for (expr, range) in forms {
-            self.history.add(source[range].to_owned());
             console.activity(true);
             let result = shell.execute(&expr);
+            if expr.kind != Kind::Comment
+                && let Some(message) = self.history.add(&source[range])
+            {
+                console.diagnostic(&message)?;
+            }
             for chunk in shell.take_output() {
                 console.output(chunk.stream, &chunk.bytes)?;
             }
@@ -585,7 +627,7 @@ mod tests {
             "()",
         ] {
             let mut history = History::default();
-            history.add(source.into());
+            assert!(history.add(source).is_none());
             let mut input = Input {
                 body: "str saved".into(),
                 cursor: 9,
@@ -600,7 +642,7 @@ mod tests {
             history.next(&mut input);
             assert_eq!(input.source(), "(str saved");
             assert!(!input.explicit);
-            assert_eq!(history.entries, [source]);
+            assert_eq!(*history.entries(), [source]);
         }
     }
 
@@ -1722,7 +1764,7 @@ mod syntax_tests {
                     .all(|event| matches!(event, Event::Render { .. }))
             );
             assert_eq!([enter_value(&mut repl)], ["\"hello\""]);
-            assert_eq!(repl.session.history.entries, ["(str hello)"]);
+            assert_eq!(*repl.session.history.entries(), ["(str hello)"]);
             assert!(
                 repl.input(Key::Enter)
                     .iter()
@@ -1760,7 +1802,7 @@ mod syntax_tests {
             );
             assert!(diagnostics(&events).is_empty());
             assert_eq!(repl.session.input.body, format!("{text}\n"));
-            assert!(repl.session.history.entries.is_empty());
+            assert!(repl.session.history.entries().is_empty());
         }
         let mut repl = Repl::new();
         repl.paste("str (str a");
@@ -1779,7 +1821,7 @@ mod syntax_tests {
                 .all(|event| matches!(event, Event::Render { .. }))
         );
         assert_eq!([enter_value(&mut repl)], ["\"x)y\""]);
-        assert_eq!(repl.session.history.entries, ["(str \"x)\" (str y)\n)"]);
+        assert_eq!(*repl.session.history.entries(), ["(str \"x)\" (str y)\n)"]);
     }
 
     #[test]
@@ -1791,11 +1833,11 @@ mod syntax_tests {
                 .iter()
                 .all(|event| matches!(event, Event::Render { .. }))
         );
-        assert!(repl.session.history.entries.is_empty());
+        assert!(repl.session.history.entries().is_empty());
         assert_eq!(repl.session.input.body, "(let name saved)\n(str $name)\n");
         assert_eq!([enter_value(&mut repl)], ["\"saved\""]);
         assert_eq!(
-            repl.session.history.entries,
+            *repl.session.history.entries(),
             ["(let name saved)", "\n(str $name)\n"]
         );
         assert_eq!(
@@ -1820,7 +1862,7 @@ mod syntax_tests {
                     .any(|event| matches!(event, Event::Output { .. }))
             );
             assert_eq!(repl.session.input.body, source);
-            assert!(repl.session.history.entries.is_empty());
+            assert!(repl.session.history.entries().is_empty());
             assert_eq!(repl.session.last_code, 2);
             repl.input(Key::Undo);
             assert!(repl.session.input.body.is_empty());
@@ -1842,7 +1884,7 @@ mod syntax_tests {
         );
         assert!(diagnostics(&events).is_empty());
         assert_eq!(repl.session.input.body, format!("{source}\n"));
-        assert!(repl.session.history.entries.is_empty());
+        assert!(repl.session.history.entries().is_empty());
         repl.input(Key::ClearInput);
         assert!(diagnostics(&execute(&mut repl, "(str $name)"))[0].contains("undefined variable"));
     }
@@ -1853,7 +1895,7 @@ mod syntax_tests {
         let events = execute(&mut repl, "(str before) (str $missing) (str skipped)");
         assert_eq!(previous(&mut repl).display(), "\"before\"");
         assert_eq!(diagnostics(&events).len(), 1);
-        assert_eq!(repl.session.history.entries.len(), 2);
+        assert_eq!(repl.session.history.entries().len(), 2);
         assert_eq!(
             values(&evaluate(&mut repl, "(str recovered)")),
             ["\"recovered\""]
@@ -1902,7 +1944,7 @@ mod syntax_tests {
             );
             assert!(diagnostics(&events).is_empty());
             assert_eq!(repl.session.last_code, 17);
-            assert!(repl.session.history.entries.is_empty());
+            assert!(repl.session.history.entries().is_empty());
         }
     }
 

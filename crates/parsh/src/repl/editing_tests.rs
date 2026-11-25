@@ -203,7 +203,7 @@ fn yanking_and_undoing_complete_source_never_submit() {
     repl.input(Key::Undo);
     edited(&repl.input(Key::Undo));
     assert_eq!(repl.session.input.source(), "(str safe)");
-    assert!(repl.session.history.entries.is_empty());
+    assert!(repl.session.history.entries().is_empty());
     assert_eq!(enter_value(&mut repl), "\"safe\"");
 }
 
@@ -294,7 +294,7 @@ fn search_paste_is_literal_and_empty_queries_and_failures_are_safe() {
     type_text(&mut repl, "str draft");
     repl.input(Key::SearchBackward);
     edited(&repl.paste("(exit 9)\n"));
-    assert_eq!(repl.session.history.entries.len(), 1);
+    assert_eq!(repl.session.history.entries().len(), 1);
     assert!(render(&repl.resize(80, 24)).contains("failed reverse-i-search"));
     repl.input(Key::Escape);
     assert_eq!(repl.session.input.source(), "(str draft");

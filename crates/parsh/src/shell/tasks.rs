@@ -266,7 +266,13 @@ impl Shell {
     }
 
     fn spawn_task(&mut self, expr: &Expr, mut values: Vec<Value>, io: &Io) -> EvalResult<Value> {
-        let callee = self.resolve_callable(expr, values.remove(0))?;
+        let mut callee = self.resolve_callable(expr, values.remove(0))?;
+        if let Value::Function(function) = &callee
+            && let Some(prefix) = function.external_argv()
+        {
+            values.splice(0..0, prefix[1..].iter().cloned().map(Value::Text));
+            callee = Value::Command(prefix[0].clone());
+        }
         let direct = matches!(callee, Value::Command(_));
         if let Value::Command(name) = &callee {
             Self::argv_values(expr, name, values.clone())?;

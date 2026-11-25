@@ -114,7 +114,7 @@ fn typed_and_pasted_collections_stay_inside_calls_and_keep_history() {
                 }
             }
             assert_eq!(enter_value(&mut repl), expected);
-            assert_eq!(repl.session.history.entries, [accepted]);
+            assert_eq!(*repl.session.history.entries(), [accepted]);
             repl.input(Key::Previous);
             assert_eq!(repl.session.input.source(), accepted);
             assert_eq!(repl.session.input.cursor, accepted.len() - 1);
@@ -141,7 +141,7 @@ fn collection_hints_and_incomplete_batches_follow_nested_delimiters() {
     let events = repl.input(Key::Enter);
     assert!(diagnostics(&events).is_empty());
     assert_eq!(previous(&mut repl), Value::Nil);
-    assert!(repl.session.history.entries.is_empty());
+    assert!(repl.session.history.entries().is_empty());
     assert_eq!(repl.session.input.source(), "(list [] {key [a\n");
     repl.paste("]})");
     assert_eq!(enter_value(&mut repl), r#"(() (map "key" ("a")))"#);

@@ -1230,6 +1230,100 @@ fn explicit_config_accepts_a_non_utf8_directory() {
 }
 
 #[test]
+fn aliases_from_config_keep_external_argument_boundaries_in_calls_and_pipelines() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("config.parsh"),
+        r#"
+        (alias printf (printf "<%s>\n" "bound arg"))
+        (alias short (printf more))
+        (alias printf (printf "[%s]\n" replaced))
+        (alias up (cd ..))
+        "#,
+    )
+    .unwrap();
+    let source = r#"
+        (type short)
+        (type -t printf)
+        (type -f -t printf)
+        (short "extra arg")
+        (dump (<-out short "captured arg"))
+        (| (short "named pipeline") (head -n 3))
+        (let saved (function short))
+        (unalias short)
+        (| ($saved pipeline) (head -n 3))
+        ((command printf) "explicit\n")
+        (mkdir children)
+        (let start $PWD)
+        (cd children)
+        (up)
+        (dump (eq $start $PWD))
+        "#;
+    let output = invoke_in(
+        &["--config", "config.parsh", "-c", source],
+        "",
+        Some(dir.path()),
+    );
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        concat!(
+            "short is an alias for (printf more)\nalias\nfile\n",
+            "<bound arg>\n<more>\n<extra arg>\n",
+            "\"<bound arg>\\n<more>\\n<captured arg>\"\n",
+            "<bound arg>\n<more>\n<named pipeline>\n",
+            "<bound arg>\n<more>\n<pipeline>\nexplicit\n#true\n"
+        )
+    );
+}
+
+#[test]
+fn aliases_resolve_external_paths_at_call_time_and_survive_task_snapshots() {
+    let dir = tempfile::tempdir().unwrap();
+    let program = dir.path().join("late-command");
+    fs::write(&program, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n").unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+    let source = r#"
+        (alias late (late-command ["one arg" two]))
+        (export PATH $PWD)
+        (let original (function late))
+        (dump (stdout-text (wait (spawn late three))))
+        (unalias late)
+        (dump (stdout-text (wait (spawn $original four))))
+        (alias af (list #5))
+        (defn in-task () (af #6))
+        (dump (. (wait (spawn in-task)) value))
+        "#;
+    let output = invoke_in(&["-c", source], "", Some(dir.path()));
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "\"one arg\\ntwo\\nthree\\n\"\n\"one arg\\ntwo\\nfour\\n\"\n(#5 #6)\n"
+    );
+    let output = run("(alias internal (list #1)) (| (internal) (cat))");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("pipeline stages must be external commands"));
+    let output = run("(alias missing (parsh-command-does-not-exist)) (spawn missing)");
+    assert_eq!(output.status.code(), Some(127), "{}", stderr(&output));
+}
+
+#[test]
+fn history_requires_an_interactive_session_and_batch_does_not_create_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    for (args, stdin) in [(&["-c", "(history)"][..], ""), (&[][..], "(history)")] {
+        let output = invoke_configured(args, stdin, |command| {
+            command
+                .env("XDG_STATE_HOME", &state)
+                .env("HOME", dir.path());
+        });
+        assert_eq!(output.status.code(), Some(2));
+        assert!(stderr(&output).contains("history requires an interactive session"));
+        assert!(!state.exists());
+    }
+}
+
+#[test]
 fn cli_help_version_and_argument_errors() {
     for flag in ["-h", "--help"] {
         let output = invoke(&[flag], "");
@@ -1242,6 +1336,7 @@ fn cli_help_version_and_argument_errors() {
             "FILE",
             "--config",
             "--no-config",
+            "--no-history",
             "--help",
             "--version",
             "Enter",
@@ -1272,7 +1367,7 @@ fn cli_help_version_and_argument_errors() {
 
 #[test]
 fn cli_passes_all_arguments_after_source_or_script_unchanged() {
-    let source = r#"(if (eq $args (list "--help" "-h" "--version" "-V" "-c" "--" "--unknown" "a b" "")) (exit 0) (exit 1))"#;
+    let source = r#"(if (eq $args ["--help" "-h" "--version" "-V" "--no-history" "-c" "--" "--unknown" "a b" ""]) (exit 0) (exit 1))"#;
     let directory = tempfile::tempdir().unwrap();
     let script = directory.path().join("args.parsh");
     fs::write(&script, source).unwrap();
@@ -1281,6 +1376,7 @@ fn cli_passes_all_arguments_after_source_or_script_unchanged() {
         "-h",
         "--version",
         "-V",
+        "--no-history",
         "-c",
         "--",
         "--unknown",

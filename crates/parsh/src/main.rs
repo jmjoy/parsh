@@ -24,6 +24,10 @@ struct Cli {
     #[arg(long)]
     no_config: bool,
 
+    /// Use memory-only history in the interactive shell
+    #[arg(long)]
+    no_history: bool,
+
     /// Execute SOURCE, with remaining arguments available as $args
     #[arg(
         short = 'c',
@@ -66,7 +70,12 @@ fn run(cli: Cli) -> io::Result<i32> {
         return Ok(code);
     }
     if interactive {
-        return editor::run(&mut shell);
+        let history = if cli.no_history {
+            None
+        } else {
+            startup::history_path()
+        };
+        return editor::run_with_history(&mut shell, history.as_deref());
     }
 
     match first.as_deref() {

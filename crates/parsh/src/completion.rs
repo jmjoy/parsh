@@ -66,6 +66,7 @@ impl Frame {
                             | "defn"
                             | "defmacro"
                             | "defstruct"
+                            | "alias"
                             | "catch"
                     )
                 ))

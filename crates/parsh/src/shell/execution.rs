@@ -327,9 +327,18 @@ impl Shell {
     pub(super) fn argv_values(
         expr: &Expr,
         command: &str,
-        args: Vec<Value>,
+        args: impl IntoIterator<Item = Value>,
     ) -> Result<Vec<String>, Error> {
         let mut result = vec![command.to_owned()];
+        Self::append_argv_values(expr, &mut result, args)?;
+        Ok(result)
+    }
+
+    pub(super) fn append_argv_values(
+        expr: &Expr,
+        result: &mut Vec<String>,
+        args: impl IntoIterator<Item = Value>,
+    ) -> Result<(), Error> {
         for value in args {
             match value {
                 Value::List(items) => {
@@ -340,7 +349,7 @@ impl Shell {
                 value => result.push(value.text().map_err(|m| Error::new(expr, m))?),
             }
         }
-        Ok(result)
+        Ok(())
     }
 
     pub(super) fn resolve_callable(&self, expr: &Expr, value: Value) -> Result<Value, Error> {

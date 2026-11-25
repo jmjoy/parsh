@@ -131,12 +131,12 @@ fn single_command_completes_without_running_or_changing_status_and_history() {
             .all(|event| matches!(event, Event::Render { .. }))
     );
     assert_eq!(repl.session.last_code, 17);
-    assert!(repl.session.history.entries.is_empty());
+    assert!(repl.session.history.entries().is_empty());
     assert_eq!(host.runs.get(), 0);
     type_text(&mut repl, "hello");
     repl.input(Key::Enter);
     assert_eq!(host.runs.get(), 1);
-    assert_eq!(repl.session.history.entries, ["(echo hello)"]);
+    assert_eq!(*repl.session.history.entries(), ["(echo hello)"]);
 }
 
 #[test]
@@ -199,7 +199,10 @@ fn map_commands_complete_value_arguments_without_evaluating() {
         }
     }
     assert_eq!(host.runs.get(), 0);
-    assert_eq!(repl.session.history.entries, ["(let config {key value})"]);
+    assert_eq!(
+        *repl.session.history.entries(),
+        ["(let config {key value})"]
+    );
 }
 
 #[test]
@@ -329,7 +332,7 @@ fn module_prefixes_list_members_in_commands_and_function_references() {
             repl.input(Key::Tab);
             assert_eq!(repl.session.input.body, old);
         }
-        assert!(repl.session.history.entries.is_empty());
+        assert!(repl.session.history.entries().is_empty());
     }
     assert_eq!(host.runs.get(), 0);
 }
@@ -410,7 +413,7 @@ fn loop_builtins_complete_in_commands_and_nested_expressions_without_running() {
         repl.paste(source);
         repl.input(Key::Tab);
         assert_eq!(repl.session.input.body, expected);
-        assert!(repl.session.history.entries.is_empty());
+        assert!(repl.session.history.entries().is_empty());
     }
 }
 

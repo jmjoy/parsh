@@ -16,6 +16,7 @@ pub struct FunctionValue(pub(super) Rc<Callable>);
 pub(super) enum Callable {
     User { name: String, definition: Function },
     Builtin(String),
+    ExternalAlias { name: String, prefix: Vec<String> },
 }
 
 impl PartialEq for FunctionValue {
@@ -41,9 +42,25 @@ impl FunctionValue {
         }))
     }
 
+    pub(super) fn external_argv(&self) -> Option<&[String]> {
+        match &*self.0 {
+            Callable::ExternalAlias { prefix, .. } => Some(prefix),
+            _ => None,
+        }
+    }
+
+    pub(super) fn external_alias(name: &str, prefix: Vec<String>) -> Self {
+        Self(Rc::new(Callable::ExternalAlias {
+            name: name.to_owned(),
+            prefix,
+        }))
+    }
+
     pub(super) fn display(&self) -> String {
         let name = match &*self.0 {
-            Callable::User { name, .. } | Callable::Builtin(name) => name,
+            Callable::User { name, .. }
+            | Callable::Builtin(name)
+            | Callable::ExternalAlias { name, .. } => name,
         };
         format!("<function {name}>")
     }
@@ -154,6 +171,9 @@ impl Shell {
         if let Some(function) = self.functions.get(name) {
             return Ok(function.clone());
         }
+        if let Some(alias) = self.aliases.get(name) {
+            return Ok(alias.function.clone());
+        }
         if VALUE_BUILTINS.contains(&name) || matches!(name, "glob" | "cd" | "type") {
             return Ok(FunctionValue(Rc::new(Callable::Builtin(name.into()))));
         }
@@ -173,6 +193,14 @@ impl Shell {
         io: &Io,
     ) -> EvalResult<Value> {
         match &*function.0 {
+            Callable::ExternalAlias { prefix, .. } => {
+                let mut argv = prefix.clone();
+                for index in 0..args.len() {
+                    let value = args.value(self, index, env, io)?;
+                    Self::append_argv_values(args.at(expr, index), &mut argv, [value])?;
+                }
+                Ok(self.commands(expr, &[argv], mode, io)?)
+            }
             Callable::User { name, definition } => {
                 definition.parameters.check_arity(expr, args.len())?;
                 let values = args.values(self, env, io)?;

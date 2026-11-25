@@ -210,18 +210,15 @@ impl Search {
             return;
         }
         let position = self.index.or(self.origin);
+        let entries = history.entries();
         let found = if self.backward {
-            let end = position.map_or(history.entries.len(), |index| {
-                index + usize::from(!repeated)
-            });
+            let end = position.map_or(entries.len(), |index| index + usize::from(!repeated));
             (0..end)
                 .rev()
-                .find(|&index| history.entries[index].contains(&self.query))
+                .find(|&index| entries[index].contains(&self.query))
         } else {
-            let start =
-                position.map_or(history.entries.len(), |index| index + usize::from(repeated));
-            (start..history.entries.len())
-                .find(|&index| history.entries[index].contains(&self.query))
+            let start = position.map_or(entries.len(), |index| index + usize::from(repeated));
+            (start..entries.len()).find(|&index| entries[index].contains(&self.query))
         };
         self.failed = found.is_none();
         if let Some(index) = found {

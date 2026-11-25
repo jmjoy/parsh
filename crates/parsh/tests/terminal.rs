@@ -14,7 +14,10 @@ use std::{
     io::{self, Read, Write},
     os::{
         fd::AsRawFd,
-        unix::{fs::symlink, process::CommandExt},
+        unix::{
+            fs::{PermissionsExt, symlink},
+            process::CommandExt,
+        },
     },
     process::{Child, Command, Stdio},
     thread,
@@ -59,6 +62,7 @@ impl Terminal {
             .env("TERM", "xterm-256color")
             .env_remove("HOME")
             .env_remove("XDG_CONFIG_HOME")
+            .env_remove("XDG_STATE_HOME")
             .stdin(Stdio::from(slave.try_clone().unwrap()))
             .stdout(Stdio::from(slave.try_clone().unwrap()))
             .stderr(Stdio::from(slave.try_clone().unwrap()));
@@ -241,6 +245,154 @@ impl Drop for Terminal {
 }
 
 #[test]
+fn history_survives_reopen_with_exact_multiline_source_and_search() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".local/state/parsh/history.jsonl");
+    let start = || {
+        Terminal::configured(|command| {
+            command
+                .env("HOME", dir.path())
+                .env("XDG_STATE_HOME", "relative-state")
+                .arg("--no-config");
+        })
+    };
+    let multiline = "(str\n  \"PAST-甲\")";
+    let mut first = start();
+    let offset = first.execute(multiline);
+    first.ready_after(offset);
+    let offset = first.execute(multiline);
+    first.ready_after(offset);
+    let offset = first.execute("(throw PAST-error) (str PAST-skipped)");
+    let end = first.expect(b"thrown:", offset);
+    first.ready_after(end);
+    first.exit(0);
+
+    let saved: Vec<String> = fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(saved, [multiline, "(throw PAST-error)", "(exit 0)"]);
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+
+    let mut second = start();
+    let offset = second.send(b"\x1b[A");
+    second.expect(b"(exit 0)", offset);
+    let offset = second.send(b"\x10\x10");
+    second.expect("  \"PAST-甲\")".as_bytes(), offset);
+    let offset = second.send(b"\x03");
+    second.ready_after(offset);
+    let offset = second.send(b"\x12PAST-");
+    let found = second.expect(b"(throw PAST-error)", offset);
+    let offset = second.send(b"\x12\r");
+    second.expect("  \"PAST-甲\")".as_bytes(), offset.max(found));
+    let offset = second.send(b"\x03");
+    second.ready_after(offset);
+    let offset = second.execute(r#"(dump (history "PAST-" #2))"#);
+    let end = second.expect(br#"("(throw PAST-error)" "(str\n  \"PAST-"#, offset);
+    second.expect("甲".as_bytes(), end);
+    second.ready_after(end);
+    second.exit(0);
+}
+
+#[test]
+fn no_history_starts_empty_and_leaves_disk_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("parsh/history.jsonl");
+    let start = || {
+        Terminal::configured(|command| {
+            command
+                .env("XDG_STATE_HOME", dir.path())
+                .arg("--no-config")
+                .arg("--no-history");
+        })
+    };
+    start().exit(0);
+    assert!(!path.parent().unwrap().exists());
+
+    fs::create_dir(path.parent().unwrap()).unwrap();
+    fs::write(&path, "\"(str DISK-ONLY)\"\n").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    let mut terminal = start();
+    let offset = terminal.execute("(dump (history))");
+    let end = terminal.expect(b"\r\n()\r\n", offset);
+    terminal.ready_after(end);
+    let offset = terminal.execute("(str PRIVATE-ONLY)");
+    terminal.ready_after(offset);
+    let offset = terminal.execute(r#"(dump (history "PRIVATE-ONLY" #1))"#);
+    let end = terminal.expect(b"\r\n(\"(str PRIVATE-ONLY)\")\r\n", offset);
+    terminal.ready_after(end);
+    terminal.exit(0);
+    assert_eq!(fs::read_to_string(&path).unwrap(), "\"(str DISK-ONLY)\"\n");
+    assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
+}
+
+#[test]
+fn concurrent_sessions_save_without_importing_into_open_editors() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.parsh");
+    fs::write(&config, "(alias saved (str))\n(str STARTUP-ONLY)\n").unwrap();
+    let start = || {
+        Terminal::configured(|command| {
+            command
+                .env("XDG_STATE_HOME", dir.path())
+                .arg("--config")
+                .arg(&config);
+        })
+    };
+    let mut first = start();
+    let mut second = start();
+    let first_source = "(saved SESSION-A)";
+    let second_source = "(saved SESSION-B)";
+    let a = first.execute(first_source);
+    let b = second.execute(second_source);
+    first.ready_after(a);
+    second.ready_after(b);
+    let offset = first.execute(r#"(dump (history "SESSION-B"))"#);
+    let end = first.expect(b"\r\n()\r\n", offset);
+    first.ready_after(end);
+
+    let mut third = start();
+    let offset = third.execute(
+        r#"(let entries (history))
+        (dump [(list/contains $entries "(saved SESSION-A)")
+               (list/contains $entries "(saved SESSION-B)")
+               (list/contains $entries "(str STARTUP-ONLY)")])"#,
+    );
+    let end = third.expect(b"\r\n(#true #true #false)\r\n", offset);
+    third.ready_after(end);
+    first.exit(0);
+    second.exit(0);
+    third.exit(0);
+}
+
+#[test]
+fn history_write_failure_warns_once_and_keeps_the_session_usable() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("parsh/history.jsonl");
+    let mut terminal = Terminal::configured(|command| {
+        command.env("XDG_STATE_HOME", dir.path()).arg("--no-config");
+    });
+    fs::create_dir(&path).unwrap();
+    let offset = terminal.execute("(str MEMORY-ONLY)");
+    let end = terminal.expect(b"history.jsonl:", offset);
+    terminal.ready_after(end);
+    let offset = terminal.execute(r#"(dump (history "MEMORY-ONLY"))"#);
+    let end = terminal.expect(b"\r\n(\"(str MEMORY-ONLY)\")\r\n", offset);
+    terminal.ready_after(end);
+    terminal.exit(0);
+    assert_eq!(
+        visible_text(&terminal.bytes)
+            .matches("history.jsonl:")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn first_repl_creates_a_template_using_home_when_xdg_is_relative() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join(".config/parsh/config.parsh");
@@ -248,7 +400,8 @@ fn first_repl_creates_a_template_using_home_when_xdg_is_relative() {
         Terminal::configured(|command| {
             command
                 .env("HOME", directory.path())
-                .env("XDG_CONFIG_HOME", "relative-config");
+                .env("XDG_CONFIG_HOME", "relative-config")
+                .arg("--no-history");
         })
     };
     let mut terminal = start();

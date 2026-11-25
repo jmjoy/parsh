@@ -60,6 +60,7 @@ impl Options {
 enum CommandType {
     Builtin,
     Macro,
+    Alias(String),
     Struct(StructKind),
     Function,
     #[cfg(feature = "native")]
@@ -72,17 +73,24 @@ impl CommandType {
         let text = match (format, self) {
             (Format::Kind, Self::Builtin) => "builtin\n".into(),
             (Format::Kind, Self::Macro) => "macro\n".into(),
+            (Format::Kind, Self::Alias(_)) => "alias\n".into(),
             (Format::Kind, Self::Struct(_)) => "struct\n".into(),
             (Format::Kind, Self::Function) => "function\n".into(),
             (Format::Kind, Self::Host) => "file\n".into(),
             #[cfg(feature = "native")]
             (Format::Kind, Self::File(_)) => "file\n".into(),
-            (Format::Path, Self::Builtin | Self::Macro | Self::Struct(_) | Self::Function) => {
+            (
+                Format::Path,
+                Self::Builtin | Self::Macro | Self::Struct(_) | Self::Function | Self::Alias(_),
+            ) => {
                 return Vec::new();
             }
             (Format::Path, Self::Host) => format!("{name}\n"),
             (Format::Description, Self::Builtin) => format!("{name} is a shell builtin\n"),
             (Format::Description, Self::Macro) => format!("{name} is a macro\n"),
+            (Format::Description, Self::Alias(definition)) => {
+                format!("{name} is an alias for {definition}\n")
+            }
             (Format::Description, Self::Struct(kind)) => {
                 format!("{name} is a struct{}\n", kind.role())
             }
@@ -136,6 +144,8 @@ impl Shell {
                 } else if !options.skip_functions {
                     if self.macros.contains_key(name) {
                         matches.push(CommandType::Macro);
+                    } else if let Some(alias) = self.aliases.get(name) {
+                        matches.push(CommandType::Alias(alias.definition.source()));
                     } else if let Some(kind) = self.struct_member_kind(name) {
                         matches.push(CommandType::Struct(kind));
                     } else if self.functions.contains_key(name) {

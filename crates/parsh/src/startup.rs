@@ -38,6 +38,12 @@ fn absolute_environment_path(name: &str) -> Option<PathBuf> {
         .filter(|path| path.is_absolute())
 }
 
+pub fn history_path() -> Option<PathBuf> {
+    let base = absolute_environment_path("XDG_STATE_HOME")
+        .or_else(|| absolute_environment_path("HOME").map(|home| home.join(".local/state")))?;
+    Some(base.join("parsh/history.jsonl"))
+}
+
 fn default_config() -> Option<PathBuf> {
     let base = absolute_environment_path("XDG_CONFIG_HOME")
         .or_else(|| absolute_environment_path("HOME").map(|home| home.join(".config")))?;

@@ -14,6 +14,7 @@ use indexmap::IndexMap;
 
 use crate::{
     completion::Candidate,
+    history::Entries,
     host::{
         CommandOutput, ExecutionHost, FileMode, HostError, HostStreams, MAX_OUTPUT_BYTES,
         OutputChunk, Stream,
@@ -31,6 +32,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod aliases;
 mod builtins;
 mod bytes;
 mod execution;
@@ -373,8 +375,10 @@ pub struct Shell {
     #[cfg(feature = "native")]
     initial_args: Vec<String>,
     pub environment: HashMap<OsString, OsString>,
+    pub(crate) history: Weak<RefCell<Entries>>,
     root: Env,
     functions: HashMap<String, FunctionValue>,
+    aliases: HashMap<String, aliases::Alias>,
     macros: HashMap<String, Function>,
     structs: HashMap<String, StructDef>,
     pub interrupted: Arc<AtomicBool>,
@@ -428,6 +432,8 @@ const BUILTINS: &[&str] = &[
     "function",
     "defmacro",
     "defstruct",
+    "alias",
+    "unalias",
     "quote",
     "quasiquote",
     "unquote",
@@ -489,9 +495,11 @@ impl Shell {
             #[cfg(feature = "native")]
             initial_args: Vec::new(),
             environment: HashMap::new(),
+            history: Weak::new(),
             scopes: vec![Rc::downgrade(&root)],
             root,
             functions: HashMap::new(),
+            aliases: HashMap::new(),
             macros: HashMap::new(),
             structs: HashMap::new(),
             interrupted: Arc::new(AtomicBool::new(false)),
@@ -576,6 +584,7 @@ impl Shell {
             .filter(|name| !self.syntax_only || !requires_host(name))
             .chain(self.functions.keys().map(String::as_str))
             .chain(self.macros.keys().map(String::as_str))
+            .chain(self.aliases.keys().map(String::as_str))
             .filter(|name| name.starts_with(prefix))
             .map(Candidate::word)
             .collect();
@@ -655,6 +664,7 @@ impl Shell {
             .chain(["glob", "cd", "type"])
             .filter(|name| !self.syntax_only || !requires_host(name))
             .chain(self.functions.keys().map(String::as_str))
+            .chain(self.aliases.keys().map(String::as_str))
             .filter(|name| name.starts_with(prefix))
             .map(Candidate::word)
             .collect()
@@ -1200,6 +1210,13 @@ impl Shell {
                 if builtin(function_name) || function_name == ";" || function_name.is_empty() {
                     return Err(Error::new(&args[0], "function name is reserved").into());
                 }
+                if self.aliases.contains_key(function_name) {
+                    return Err(Error::new(
+                        &args[0],
+                        format!("{function_name} is already an alias"),
+                    )
+                    .into());
+                }
                 if self.structs.contains_key(function_name) {
                     return Err(Error::new(
                         &args[0],
@@ -1243,6 +1260,8 @@ impl Shell {
                 self.defstruct(expr, args)?;
                 Ok(Value::Nil)
             }
+            "alias" => self.alias_builtin(expr, args, env, io),
+            "unalias" => self.unalias_builtin(expr, args),
             "quote" => {
                 Self::arity(expr, args, 1, 1)?;
                 Ok(Value::Form(Box::new(args[0].clone())))
@@ -1436,36 +1455,23 @@ impl Shell {
                     let Some(head) = call.first() else {
                         return Err(Error::new(stage, "pipeline stage needs a command name").into());
                     };
-                    let (command, explicit) =
-                        match &head.kind {
-                            Kind::Text(command) | Kind::Word(command) => (command.clone(), false),
-                            _ => match self.value(head, env, io)? {
-                                Value::Command(command) => (command, true),
-                                Value::Text(command) => (command, false),
-                                _ => return Err(Error::new(
-                                    stage,
-                                    "pipeline stage needs an external command name or reference",
-                                )
-                                .into()),
-                            },
-                        };
-                    if !explicit
-                        && (builtin(&command)
-                            || self.functions.contains_key(&command)
-                            || self.macros.contains_key(&command)
-                            || self.struct_member_kind(&command).is_some())
-                    {
-                        return Err(Error::new(
-                            stage,
-                            "v1 pipeline stages must be external commands",
-                        )
-                        .into());
-                    }
-                    stages.push(self.argv(&command, &call[1..], env, io)?);
+                    let callee = self.value(head, env, io)?;
+                    let prefix = self.pipeline_argv_prefix(stage, callee)?;
+                    stages.push(self.extend_argv(prefix, &call[1..], env, io)?);
                 }
                 Ok(self.commands(expr, &stages, mode, io)?)
             }
             _ => {
+                if let Some(function) = self.aliases.get(name).map(|alias| alias.function.clone()) {
+                    return self.call_function(
+                        expr,
+                        &function,
+                        Arguments::Expressions(args),
+                        env,
+                        mode,
+                        io,
+                    );
+                }
                 if let Some(definition) = self.macros.get(name).cloned() {
                     let call = MacroCall {
                         expr,
@@ -1546,6 +1552,9 @@ impl Shell {
         if builtin(name) || name == ";" || name.is_empty() {
             return Err(Error::new(&args[0], "macro name is reserved"));
         }
+        if self.aliases.contains_key(name) {
+            return Err(Error::new(&args[0], format!("{name} is already an alias")));
+        }
         if self.structs.contains_key(name) {
             return Err(Error::new(&args[0], format!("{name} is already a struct")));
         }
@@ -1605,6 +1614,14 @@ impl Shell {
         if self.macros.contains_key(name) {
             return Err(Error::new(&args[0], format!("{name} is already a macro")));
         }
+        for candidate in [name.clone(), format!("{name}?")] {
+            if self.aliases.contains_key(&candidate) {
+                return Err(Error::new(
+                    &args[0],
+                    format!("{candidate} is already an alias"),
+                ));
+            }
+        }
         let mut fields = Vec::new();
         let mut seen = HashSet::new();
         for item in &args[1..] {
@@ -1622,6 +1639,10 @@ impl Shell {
             }
             if !seen.insert(field.clone()) {
                 return Err(Error::new(item, format!("duplicate field {field}")));
+            }
+            let accessor = format!("{name}.{field}");
+            if self.aliases.contains_key(&accessor) {
+                return Err(Error::new(item, format!("{accessor} is already an alias")));
             }
             fields.push(field.clone());
         }
@@ -1809,19 +1830,56 @@ impl Shell {
         env: &Env,
         io: &Io,
     ) -> EvalResult<Vec<String>> {
-        let mut argv = vec![command.into()];
+        self.extend_argv(vec![command.into()], args, env, io)
+    }
+
+    fn extend_argv(
+        &mut self,
+        mut argv: Vec<String>,
+        args: &[Expr],
+        env: &Env,
+        io: &Io,
+    ) -> EvalResult<Vec<String>> {
         for arg in args {
             let value = self.value(arg, env, io)?;
-            match value {
-                Value::List(values) => {
-                    for value in values {
-                        argv.push(value.text().map_err(|m| Error::new(arg, m))?);
-                    }
-                }
-                value => argv.push(value.text().map_err(|m| Error::new(arg, m))?),
-            }
+            Self::append_argv_values(arg, &mut argv, std::iter::once(value))?;
         }
         Ok(argv)
+    }
+
+    fn pipeline_argv_prefix(&self, stage: &Expr, callee: Value) -> Result<Vec<String>, Error> {
+        let invalid = || Error::new(stage, "v1 pipeline stages must be external commands");
+        let missing_command = || {
+            Error::new(
+                stage,
+                "pipeline stage needs an external command name or reference",
+            )
+        };
+        match callee {
+            Value::Command(name) => Ok(vec![name]),
+            Value::Function(function) => function
+                .external_argv()
+                .map(<[String]>::to_vec)
+                .ok_or_else(missing_command),
+            Value::Text(name) => {
+                if let Some(alias) = self.aliases.get(&name) {
+                    return alias
+                        .function
+                        .external_argv()
+                        .map(<[String]>::to_vec)
+                        .ok_or_else(invalid);
+                }
+                if builtin(&name)
+                    || self.functions.contains_key(&name)
+                    || self.macros.contains_key(&name)
+                    || self.struct_member_kind(&name).is_some()
+                {
+                    return Err(invalid());
+                }
+                Ok(vec![name])
+            }
+            _ => Err(missing_command()),
+        }
     }
 
     fn host_error(expr: &Expr, error: HostError) -> Error {

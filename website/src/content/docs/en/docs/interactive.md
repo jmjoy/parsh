@@ -132,15 +132,43 @@ Native parsh supports interactive foreground programs and pipelines, plus isolat
 background tasks through `spawn`, `wait`, `job-status`, and `cancel`; see
 [execution results and tasks](/parsh/en/docs/execution/#native-background-tasks).
 There is no `bg`, `fg`, or suspend/resume support; children ignore Ctrl+Z.
-History is session-local.
 
 The browser playground shares this editor's input, completion, history, paste, and layout model. It completes only commands and temporary files available in its isolated host. It evaluates the language and runs a coreutils subset; pressing Ctrl+C during execution resets the browser session. Native foreground programs and terminal handoffs apply to Linux only.
+
+## History
+
+Use `(history)` to return command source from newest to oldest. The optional
+text filter matches case-sensitive substrings, just like Ctrl+R/S. A nonnegative
+integer limits the number of matches. Pass an integer alone to limit all
+entries. Use `dump` to display the list.
+
+```parsh
+(dump (history "git" #10))
+(dump (history #5))
+```
+
+Parsh records each executed top-level expression after it finishes, including
+failures and explicit exits. It keeps the original source, including newlines
+and alias names. Blank input, comments, invalid submissions, unexecuted
+expressions, and startup configuration stay out of history. Consecutive
+identical entries are folded together.
+
+Native parsh saves history in `$XDG_STATE_HOME/parsh/history.jsonl`. If
+`XDG_STATE_HOME` is unset, empty, or relative, it falls back to
+`$HOME/.local/state/parsh/history.jsonl` when `HOME` is absolute. New terminals
+load the latest saved history. An open terminal keeps the history it loaded at
+startup and adds its own submissions. The session retains up to 10,000 entries
+and 8 MiB of source, and the file is compacted automatically.
+
+Start with `parsh --no-history` for an empty, memory-only history. This option can
+be used with `--no-config`. The browser playground also keeps history in memory.
+The `history` command requires an interactive session.
 
 ## Configuration
 
 Native parsh executes its startup file in the current session before the first
-prompt. Bindings, functions, macros, environment variables, and directory changes
-are available to later commands. Startup expressions stay out of history.
+prompt. Bindings, functions, aliases, macros, environment variables, and directory
+changes are available to later commands. Startup expressions stay out of history.
 Use `(load helpers.parsh)` in the startup file to split up your configuration.
 Nested paths resolve relative to the loaded file's actual directory, including when
 the file is a symbolic link. See [script loading](/parsh/en/docs/lisp/#loading-scripts).

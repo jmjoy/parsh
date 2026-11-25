@@ -31,6 +31,7 @@ struct Definition {
 enum FrozenFunction {
     User(String, Definition),
     Builtin(String),
+    ExternalAlias(String, Vec<String>),
 }
 
 #[derive(Default)]
@@ -79,6 +80,9 @@ impl Builder {
                 FrozenFunction::User(name.clone(), self.definition(definition))
             }
             Callable::Builtin(name) => FrozenFunction::Builtin(name.clone()),
+            Callable::ExternalAlias { name, prefix } => {
+                FrozenFunction::ExternalAlias(name.clone(), prefix.clone())
+            }
         };
         self.functions[id] = Some(value);
         id
@@ -183,6 +187,9 @@ impl Frozen {
                 FrozenFunction::Builtin(name) => {
                     FunctionValue(Rc::new(Callable::Builtin(name.clone())))
                 }
+                FrozenFunction::ExternalAlias(name, prefix) => {
+                    FunctionValue::external_alias(name, prefix.clone())
+                }
             })
             .collect();
         for (id, scope) in self.scopes.iter().enumerate() {
@@ -208,6 +215,7 @@ pub(super) struct TaskSnapshot {
     graph: Frozen,
     root: usize,
     named: HashMap<String, usize>,
+    aliases: HashMap<String, (usize, Expr)>,
     macros: HashMap<String, Definition>,
     structs: HashMap<String, StructDef>,
     environment: HashMap<OsString, OsString>,
@@ -224,6 +232,16 @@ impl TaskSnapshot {
             .iter()
             .map(|(k, v)| (k.clone(), builder.function(v)))
             .collect();
+        let aliases = shell
+            .aliases
+            .iter()
+            .map(|(name, alias)| {
+                (
+                    name.clone(),
+                    (builder.function(&alias.function), alias.definition.clone()),
+                )
+            })
+            .collect();
         let macros = shell
             .macros
             .iter()
@@ -238,6 +256,7 @@ impl TaskSnapshot {
             graph: builder.finish(bundle),
             root,
             named,
+            aliases,
             macros,
             structs: shell.structs.clone(),
             environment: shell.environment.clone(),
@@ -253,6 +272,19 @@ impl TaskSnapshot {
             .named
             .into_iter()
             .map(|(k, id)| (k, nodes.functions[id].clone()))
+            .collect();
+        shell.aliases = self
+            .aliases
+            .into_iter()
+            .map(|(name, (id, definition))| {
+                (
+                    name,
+                    aliases::Alias {
+                        function: nodes.functions[id].clone(),
+                        definition,
+                    },
+                )
+            })
             .collect();
         shell.macros = self
             .macros

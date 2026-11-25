@@ -7,9 +7,8 @@ description: "Native commands, pipelines, output capture, and file redirection."
 This page covers command composition in parsh. The browser playground supports a coreutils subset, temporary files, and buffered pipelines; see its [capabilities](/parsh/en/docs/playground/). Other Linux programs require native parsh.
 :::
 
-Command lookup checks built-ins, macros, struct constructors and members, named
-functions, then PATH. External programs
-are started directly, without passing the expression through another shell.
+Command lookup checks built-ins, aliases, macros, struct constructors and members,
+named functions, then PATH. Parsh starts external programs directly.
 The command name may also come from a text variable, as in `($EDITOR file.txt)`;
 its value is one program name, without implicit splitting into flags.
 
@@ -29,16 +28,52 @@ Use `type` to inspect command lookup without executing the command:
 `type` accepts multiple names, including list arguments, and supports these Bash-style options:
 
 - `-a`: show every match, including all executable paths in PATH order.
-- `-t`: print `builtin`, `macro`, `struct`, `function`, or `file` for each match.
-- `-p`: print the external command path, or nothing for a built-in, macro, struct, or function.
-- `-P`: search PATH even when a built-in or function has the same name.
-- `-f`: skip function, macro, and struct lookup.
+- `-t` prints `builtin`, `macro`, `struct`, `function`, `alias`, or `file` for each match.
+- `-p` prints the path of each external match and skips other matches.
+- `-P` searches PATH even when a language command has the same name.
+- `-f` skips function, alias, macro, and struct lookup.
 
 Options can be combined; `--` ends option parsing. No arguments succeeds silently.
 An unknown name gives status `1`; an invalid option gives status `2`.
 Output supports capture and redirection. In the browser playground, external
 commands are reported by the host's available command names; `-p` and `-P`
 return those names.
+
+## Aliases
+
+Use `alias` to name a single command call with preset arguments. Additional
+arguments go after the preset arguments.
+
+```parsh
+(alias ll (ls -lh))
+(ll /tmp)
+(| (ll /tmp) (head -n 5))
+(alias up (cd ..))
+(dump (alias))
+(type ll)
+(unalias ll)
+```
+
+An alias can target an external program, an ordinary built-in such as `cd`, a
+user-defined function, or another alias. Parsh resolves the target and evaluates
+preset arguments once when defining the alias. External program lookup uses the
+current `PATH` when the alias runs. The preset values for a function or built-in
+retain their types.
+
+You can redefine an alias and share its name with an external program. A
+self-named definition like `(alias ls (ls --color=auto))` targets the external
+`ls`. Use `((command ls) /tmp)` to call the external program directly. Alias names
+must be distinct from built-ins, functions, macros, and struct commands. Alias
+targets must be ordinary callables.
+
+`(alias)` returns a map from names to the original call forms, sorted by name.
+`(unalias NAME)` removes an alias from the session. `type` shows the definition,
+and Tab completes alias names. Aliases support `function`, `apply`, capture, and
+background jobs. External aliases also work as pipeline stages. Put your aliases
+in `config.parsh` to define them whenever the file is loaded.
+[Startup configuration](/parsh/en/docs/getting-started/#startup-configuration)
+
+## Pipelines and redirection
 
 ```parsh
 (echo (<-out pwd))
@@ -61,8 +96,8 @@ The operators are:
 
 Redirection always takes the path first and an expression second. Wrappers can
 nest and can enclose an entire pipeline. Pipeline stages must call external
-commands. Their heads can be text names, text variables, or `command` references;
-user functions, macros, struct members, and builtins cannot run as stages.
+commands. Stage heads accept text names, text variables, `command` references,
+and aliases bound to external programs.
 Use an explicit reference to bypass a same-named language command:
 
 ```parsh

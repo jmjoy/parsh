@@ -1,4 +1,7 @@
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    path::Path,
+};
 
 use crate::{
     repl::{ConsoleBackend, Input, Key, Session, completion_lines, view_layout},
@@ -159,8 +162,17 @@ impl ConsoleBackend for TerminalConsole {
 }
 
 pub fn run(shell: &mut Shell) -> io::Result<i32> {
-    let mut console = TerminalConsole::new()?;
+    run_with_history(shell, None)
+}
+
+pub fn run_with_history(shell: &mut Shell, path: Option<&Path>) -> io::Result<i32> {
     let mut session = Session::new(shell);
+    if let Some(path) = path
+        && let Err(error) = session.open_history(path)
+    {
+        eprintln!("parsh: {}: {error}", path.display());
+    }
+    let mut console = TerminalConsole::new()?;
     loop {
         session.draw(&mut console)?;
         let code = match event::read()? {
