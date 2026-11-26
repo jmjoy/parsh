@@ -320,7 +320,7 @@ large JSON integers can lose precision. JSON failures have `Error.kind` equal to
 
 ## Bytes
 
-`bytes/` functions operate on raw bytes returned by captures using `{bytes #true}` and by HTTP:
+`bytes/` functions operate on raw bytes from captures using `&bytes #true` and from HTTP.
 
 | Call | Result |
 | --- | --- |

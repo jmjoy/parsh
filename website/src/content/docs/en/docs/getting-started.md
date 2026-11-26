@@ -117,11 +117,11 @@ Type `dump (str "hello, " "parsh")` at the `$ ()` prompt and press Enter. parsh 
 
 The first expression binds a value. The second explicitly prints text using `dump`. The third runs the native `echo` program and writes stdout. Neither interactive nor script mode automatically prints return values.
 
-Captured command output removes surrounding Unicode whitespace by default. Use `{trim #false}` when the exact output matters:
+Capturing command output removes surrounding Unicode whitespace by default. Add `&trim #false` after the capture body to preserve the exact text.
 
 ```parsh
 (dump (<-out (printf " hello\n")))
-(dump (<-out {trim #false} (printf " hello\n")))
+(dump (<-out (printf " hello\n") &trim #false))
 ```
 
 These calls display `"hello"` and `" hello\n"`.

@@ -41,7 +41,7 @@ description: "在浏览器中运行 parsh、coreutils 和命令管道。"
 (cd ..)
 ```
 
-嵌套命令同样输出并返回 `CallResult`。通过 `<-out` 或 `<-err` 显式捕获文本，默认裁剪首尾空白；前置 `{trim #false}` 保留原文，`{bytes #true}` 返回原始字节。显式文件重定向优先于捕获，文件与管道保留原始二进制字节。
+嵌套命令同样输出并返回 `CallResult`。通过 `<-out` 或 `<-err` 显式捕获文本，默认裁剪首尾空白。在捕获主体后传入 `&trim #false` 可保留原文，传入 `&bytes #true` 则返回原始字节。显式文件重定向优先于捕获，文件与管道保留原始二进制字节。
 
 浏览器管道逐阶段缓冲执行，返回最右侧非零状态，终端 stdout/stderr 在写入时立即发送。阶段之间仍使用缓冲，尚未并发执行，SIGPIPE 行为与原生不同。未提供文件或上游管道时，标准输入为 EOF。单次命令输出和每段管道缓冲上限为 8 MiB，虚拟文件总量上限为 32 MiB。首版不包含 `grep`、`sed`、`find` 或交互程序。
 
@@ -60,7 +60,7 @@ description: "在浏览器中运行 parsh、coreutils 和命令管道。"
 | 信号与后台任务 | 不支持 | 支持 |
 | `http/request`、`http/get`、`http/post` | 不支持 | 支持 |
 
-`<-result`、`<-out` 和 `<-err` 默认返回裁剪后的 UTF-8 文本，前置 `{trim #false}` 保留空白，`{bytes #true}` 返回不裁剪的原始字节。
+`<-result`、`<-out` 和 `<-err` 默认捕获裁剪后的 UTF-8 文本。在主体后传入 `&trim #false` 可保留空白，传入 `&bytes #true` 则捕获原始字节。
 REPL 上次返回值 `$_` 与上次执行结果 `$?` 的更新规则不同，详见[变量与作用域](/parsh/zh-cn/docs/variables/)。
 
 [示例指南](/parsh/zh-cn/docs/examples/)标注了可在浏览器中执行的脚本；运行独立脚本前重置会话，避免重复的顶层绑定。

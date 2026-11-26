@@ -47,38 +47,38 @@ destination. Empty or whitespace-only output returns empty text; an uncaptured
 or explicitly redirected stream returns nil. Command failures throw with the
 captured result attached.
 
-The capture forms `<-out`, `<-err`, and `<-result` each take one parenthesized
-expression, optionally preceded by an **options map**. Parsh evaluates the options
-in the surrounding I/O context, then sets up capture before evaluating the body.
-This includes any output produced while evaluating the body's command name and
-arguments. Use `(do ...)` to group multiple expressions in one capture.
+The capture forms `<-out`, `<-err`, and `<-result` take a parenthesized expression
+followed by two optional boolean arguments. Pass them in the order `trim`, `bytes`
+or by name with `&trim` and `&bytes`. Put positional arguments before keywords.
+Parsh evaluates the supplied options once in written order in the surrounding
+I/O context, then captures the body, including output from evaluating its command
+name and arguments. Use `(do ...)` to group multiple expressions in one capture.
 
 | Option | Default | Behavior |
 | --- | --- | --- |
-| `trim` | `#true` | Remove surrounding Unicode whitespace from captured text; `#false` preserves it |
-| `bytes` | `#false` | Return raw bytes; `#true` skips UTF-8 decoding and ignores trim |
+| `trim` | `#true` | Remove surrounding Unicode whitespace from captured text. `#false` preserves it. |
+| `bytes` | `#false` | Set `#true` to return raw bytes without UTF-8 decoding or trimming. |
 
-Option values must be booleans. Unknown keys are errors. `<-result` applies the
+Unknown keywords and duplicate arguments are errors. `<-result` applies the same
 options to both streams, including in results with a nonzero exit code.
 
 ```parsh
 (dump (<-out (printf " hello\n")))
-(dump (<-out {trim #false} (printf " hello\n")))
-(dump (bytes/hex-encode (<-out {bytes #true} (printf " hello\n"))))
-(let options {trim #false})
-(dump (<-out $options (printf " hello\n")))
+(dump (<-out (printf " hello\n") &trim #false))
+(dump (bytes/hex-encode (<-out (printf " hello\n") &bytes #true)))
+(dump (<-out (printf " hello\n") #false))
 ```
 
 Results are `"hello"`, `" hello\n"`, `"2068656c6c6f0a"`, and `" hello\n"`.
-`{bytes #true trim #true}` still returns every original byte.
+Passing `&bytes #true &trim #true` preserves every original byte.
 
 | Call | Arguments and result |
 | --- | --- |
 | `(command name)` | One nonempty text program name; returns `<command name>` |
 | `(apply callee fixed... args [&name value ...])` | Expands the last positional list and forwards keyword pairs for targets that accept them |
-| `(<-out [options] (command args...))` | Captured stdout, with trimmed text by default or raw bytes |
-| `(<-err [options] (command args...))` | Captured stderr, with trimmed text by default or raw bytes |
-| `(<-result [options] (command args...))` | Complete synchronous `CallResult` with both streams |
+| `(<-out (command args...) [trim [bytes]])` | Captured stdout, with trimmed text by default or raw bytes |
+| `(<-err (command args...) [trim [bytes]])` | Captured stderr, with trimmed text by default or raw bytes |
+| `(<-result (command args...) [trim [bytes]])` | Complete synchronous `CallResult` with both streams |
 | `(spawn callee args...)` | Flat arguments; returns a native `Job` |
 
 `spawn` takes a function value, command reference, or text name, followed by its
@@ -101,7 +101,7 @@ command calls expand lists one level when building argv. Pass a closure such as
 | --- | --- |
 | `value` | Language return value; nil for an external command |
 | `termination` | `(Exited code)`, `(Signaled signal core_dumped)`, or nil |
-| `stdout`, `stderr` | Trimmed text by default; raw bytes with `{bytes #true}`; nil when redirected or not captured |
+| `stdout`, `stderr` | Trimmed text by default, raw bytes with `&bytes #true`, or nil when redirected or uncaptured |
 | `error` | `Error` summary with a nil `result` field, or nil |
 | `stages` | `StageResult` records containing argv, termination, and error for pipeline stages |
 
@@ -164,7 +164,7 @@ external commands. Pass a pipeline expression directly to a capture form.
 Select bytes explicitly to capture binary output without decoding or trimming:
 
 ```parsh
-(let binary (<-result {bytes #true} (printf "\\377\\000\\101")))
+(let binary (<-result (printf "\\377\\000\\101") &bytes #true))
 (dump (bytes/hex-encode (. $binary stdout)))
 ```
 

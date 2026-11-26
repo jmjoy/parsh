@@ -730,7 +730,7 @@ test("dot reads struct fields with dynamic names, functions, and runtime results
                 (. $segment end x) ($getter $point y)
                 (apply "." [$point x]) (apply $getter [$point y])
                 (eq (. $point x) (Point.x $point))))
-    (let result (<-result {bytes #true} (printf hello)))
+    (let result (<-result (printf hello) &bytes #true))
     (let saved $?)
     (dump (list (bytes/to-text (. $result stdout))
                 (eq (. $result stdout) (CallResult.stdout $result))
@@ -1158,8 +1158,8 @@ test("complete execution results, special variable, bytes, and exceptions share 
     (let failed (<-result (cat missing-result-file)))
     (dump (list (exit-code $failed) (str/contains (stderr-text $failed) missing-result-file)))
     (let sorter (command sort))
-    (dump (stdout-text (<-result {trim #false} (| (printf "b\na\n") ($sorter)))))
-    (let binary (<-result {bytes #true} (printf "\\377")))
+    (dump (stdout-text (<-result (| (printf "b\na\n") ($sorter)) &trim #false)))
+    (let binary (<-result (printf "\\377") &bytes #true))
     (dump (list (typeof (CallResult.stdout $binary)) (exit-code $binary)))
     (let trace "")
     (dump (try (check $failed)
@@ -1178,7 +1178,7 @@ test("complete execution results, special variable, bytes, and exceptions share 
   await expect(terminal(page)).toContainText('"invalid-utf8"');
   await expect(terminal(page)).toContainText('"payload"');
   await expect(terminal(page)).toContainText('"code=0"');
-  await execute(page, "(dump (try (<-result {bytes #true} (seq 1 2000000)) (catch err (list (Error.kind $err) (bytes? (CallResult.stdout (Error.result $err)))))))");
+  await execute(page, "(dump (try (<-result (seq 1 2000000) &bytes #true) (catch err (list (Error.kind $err) (bytes? (CallResult.stdout (Error.result $err)))))))");
   await expect(terminal(page)).toContainText('("output-limit" #true)');
   await execute(page, "(dump (spawn echo unavailable-background))");
   await expect(terminal(page)).toContainText('requires native background-task support');
@@ -1202,7 +1202,7 @@ test("evaluation is silent and ordinary command results do not capture output", 
 test("explicit text capture preserves newlines and carries failed captured output", async ({ page }) => {
   await playground(page);
   await execute(page, String.raw`
-    (let text (<-out {trim #false} (printf "a\n\n")))
+    (let text (<-out (printf "a\n\n") &trim #false))
     (let saved $?)
     (dump (list $text (stdout-text $saved) (nil? (CallResult.stderr $saved))))
     (try (<-err (cat missing-text-capture))
@@ -1236,7 +1236,7 @@ test("captures trim by default and publish matching text results", async ({ page
     (let saved $?)
     (dump (list $trimmed (eq (stdout-text $saved) (str/trim $raw))
       (nil? (CallResult.stderr $saved))
-      (eq $trimmed (str/trim (<-out {trim #false} (printf "%s" $raw))))))
+      (eq $trimmed (str/trim (<-out (printf "%s" $raw) &trim #false)))))
     (dump (list (<-out (true))
       (<-out (printf " \t\r\n　"))
       (<-out ((command printf) " referenced\n"))
@@ -1246,7 +1246,7 @@ test("captures trim by default and publish matching text results", async ({ page
     (let error_result $?)
     (dump (list $trimmed_error
       (eq (stderr-text $error_result) "type: __trim_missing__: not found")
-      (eq $trimmed_error (str/trim (<-err {trim #false} (emit-error __trim_missing__))))
+      (eq $trimmed_error (str/trim (<-err (emit-error __trim_missing__) &trim #false)))
       (<-err ((function emit-error) __trim_reference__))
       (<-err (apply emit-error [__trim_applied__]))))
   `);
@@ -1267,7 +1267,7 @@ test("captures format failure output and return nil for explicit redirection", a
     (let stdout_redirected (out-> trimmed-out.txt (<-out (printf " raw\n"))))
     (let stderr_redirected (err-> trimmed-err.txt (<-err (if (type __trim_redirected__) #nil))))
     (dump (list (nil? $stdout_redirected) (nil? $stderr_redirected)))
-    (dump (<-out {trim #false} (cat trimmed-out.txt)))
+    (dump (<-out (cat trimmed-out.txt) &trim #false))
     (dump (<-out (cat trimmed-err.txt)))
   `);
   await expect(terminal(page)).toContainText('("command-failed" #true #true)');
@@ -1283,19 +1283,19 @@ test("capture options choose text whitespace or unmodified bytes for either stre
     (let text (<-result (printf " \t中文\n\n　")))
     (let saved $?)
     (dump (list (. $text stdout) (. $text stderr) (eq $text $saved)))
-    (let untrimmed (<-result {trim #false} (printf " raw\n\n")))
+    (let untrimmed (<-result (printf " raw\n\n") &trim #false))
     (dump (. $untrimmed stdout))
-    (let raw (<-result {bytes #true trim #true} (printf " \\377\\000\n")))
+    (let raw (<-result (printf " \\377\\000\n") &bytes #true &trim #true))
     (dump (list (bytes/hex-encode (. $raw stdout)) (bytes/len (. $raw stderr))))
-    (dump (bytes/hex-encode (<-out {bytes #true} (printf " \\377\n"))))
-    (let options {trim #false})
-    (dump (<-out $options (printf " applied\n")))
-    (dump (bytes/to-text (<-err {bytes #true trim #true} (if (type __options_missing__) #nil))))
+    (dump (bytes/hex-encode (<-out (printf " \\377\n") &bytes #true)))
+    (let trim #false)
+    (dump (<-out (printf " applied\n") $trim))
+    (dump (bytes/to-text (<-err (if (type __options_missing__) #nil) &bytes #true &trim #true)))
     (try (<-result (printf "\\377"))
       (catch e (dump (list (Error.kind $e) (bytes/hex-encode (. (Error.result $e) stdout))))))
     (let called #0)
     (defn target () (set called (+ $called #1)))
-    (try (<-out {trim yes} (target)) (catch e (dump $called)))
+    (try (<-out (target) &trim yes) (catch e (dump $called)))
   `);
   await expect(terminal(page)).toContainText('("中文" "" #true)');
   await expect(terminal(page)).toContainText('" raw\\n\\n"');

@@ -290,7 +290,7 @@ JSON 错误的 `Error.kind` 为 `json`。
 
 ## Bytes
 
-`bytes/` 函数操作 `{bytes #true}` 命令捕获和 HTTP 返回的原始 bytes：
+`bytes/` 函数操作通过 `&bytes #true` 捕获的原始字节，也可以处理 HTTP 返回的原始字节。
 
 | 调用 | 返回值 |
 | --- | --- |

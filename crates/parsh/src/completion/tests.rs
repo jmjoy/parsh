@@ -475,8 +475,8 @@ fn hash_literals_complete_without_becoming_quoted_paths() {
 fn invocation_helpers_and_special_result_complete_without_evaluation() {
     for source in [
         "(<-result (ec",
-        "(<-out {trim #false} (ec",
-        "(<-err {bytes #true} (ec",
+        "(<-out (echo) &trim (ec",
+        "(<-err (echo) &bytes (ec",
         "(<-out (| (ec",
         "(<-err (ec",
         "(spawn ec",

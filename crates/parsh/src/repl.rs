@@ -2250,7 +2250,7 @@ mod host_tests {
         let mut repl = Repl::with_host(TestHost).unwrap();
         let events = execute(
             &mut repl,
-            "(let text (<-out {trim #false} (both))) (dump $text)",
+            "(let text (<-out (both) &trim #false)) (dump $text)",
         );
         assert_eq!(outputs(&events), "\"out\\n\\n\"\n");
         assert!(events.contains(&Event::Output {
@@ -2259,7 +2259,7 @@ mod host_tests {
         }));
         let events = execute(
             &mut repl,
-            "(set text (<-err {trim #false} (both))) (dump $text)",
+            "(set text (<-err (both) &trim #false)) (dump $text)",
         );
         assert_eq!(outputs(&events), "out\n\n\"err\\n\"\n");
         assert!(!events.iter().any(|event| matches!(
@@ -2330,14 +2330,14 @@ mod host_tests {
             (let normal (<-result (both)))
             (let saved $?)
             (list (. $normal stdout) (. $normal stderr) (eq $normal $saved))
-            (let untrimmed (<-result {trim #false} (both)))
+            (let untrimmed (<-result (both) &trim #false))
             (list (. $untrimmed stdout) (. $untrimmed stderr))
-            (let binary (<-result {bytes #true trim #true} (both)))
+            (let binary (<-result (both) &bytes #true &trim #true))
             (list (bytes/to-text (. $binary stdout)) (bytes/to-text (. $binary stderr)))
-            (list (bytes/hex-encode (<-out {bytes #true} (binary)))
-                  (<-out {bytes #false trim #false} (both)))
-            (<-out {trim #false} ((command both)))
-            (<-err {bytes #true} (apply (command both) []))
+            (list (bytes/hex-encode (<-out (binary) &bytes #true))
+                  (<-out (both) &bytes #false &trim #false))
+            (<-out ((command both)) &trim #false)
+            (<-err (apply (command both) []) &bytes #true)
         "#,
         );
         assert!(
@@ -2361,15 +2361,38 @@ mod host_tests {
 
     #[test]
     fn invalid_capture_forms_do_not_evaluate_the_body() {
-        for source in [
-            "(<-out {bytes yes} (called))",
-            "(<-err {trim #1} (called))",
-            "(<-result {unknown #true} (called))",
-            "(<-out {})",
-            "(<-out (called) extra)",
-            "(<-out called (called))",
-            "(<-err (called) (called) extra)",
-            "(<-result [(called)])",
+        for (source, message) in [
+            ("(<-out (called) &bytes yes)", "bytes must be a boolean"),
+            ("(<-err (called) &trim #nil)", "trim must be a boolean"),
+            (
+                "(<-result (called) &trim (called) &unknown #true)",
+                "unexpected keyword argument &unknown",
+            ),
+            (
+                "(<-result (called) &trim (called) &trim #true)",
+                "duplicate keyword argument &trim",
+            ),
+            (
+                "(<-out (called) #false &trim (called))",
+                "multiple values for parameter trim",
+            ),
+            (
+                "(<-err (called) &bytes)",
+                "keyword argument &bytes is missing a value",
+            ),
+            (
+                "(<-out (called) &trim #false (called))",
+                "positional argument follows a keyword argument",
+            ),
+            (
+                "(<-err (called) (called) #false extra)",
+                "expected 0..2 arguments",
+            ),
+            ("(<-out {trim #false} (called))", "expects"),
+            ("(<-out &trim (called))", "expects"),
+            ("(<-out (called) extra)", "trim must be a boolean"),
+            ("(<-out called (called))", "expects"),
+            ("(<-result [(called)])", "expects"),
         ] {
             let mut repl = Repl::new();
             evaluate(
@@ -2378,10 +2401,10 @@ mod host_tests {
             );
             let result = evaluate(&mut repl, source);
             assert!(
-                result
-                    .iter()
-                    .any(|event| matches!(event, Event::Diagnostic(_))),
-                "{result:?}"
+                result.iter().any(
+                    |event| matches!(event, Event::Diagnostic(text) if text.contains(message))
+                ),
+                "{source}: {result:?}"
             );
             assert_eq!(values(&evaluate(&mut repl, "(+ $calls)")), ["#0"]);
         }

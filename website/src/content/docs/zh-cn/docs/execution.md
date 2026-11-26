@@ -37,36 +37,35 @@ description: "可调用命令、完整结果、$?、异常处理和原生后台�
 空输出或全空白输出返回空文本，未捕获或已显式重定向的流返回 nil。
 命令失败会抛错，错误附带捕获结果。
 
-`<-out`、`<-err` 和 `<-result` 都接收一个括号表达式作为主体，主体前可以加**选项映射**。
-parsh 先在外围 I/O 中求值选项，再设置捕获并求值主体。求值主体的命令名和参数时产生的输出
-也会被捕获。用 `(do ...)` 可以把多个表达式放在同一次捕获中。
+`<-out`、`<-err` 和 `<-result` 都接收一个括号表达式作为主体，后面可以传两个可选的布尔参数。
+按位置传值时顺序为 `trim`、`bytes`，也可以用 `&trim` 和 `&bytes` 按名传值。混用时先写位置参数。
+Parsh 在外围 I/O 中按书写顺序对选项各求值一次，然后开始捕获主体，包括求值主体的命令名和参数时产生的输出。
+用 `(do ...)` 可以把多个表达式放在同一次捕获中。
 
 | 选项 | 默认值 | 行为 |
 | --- | --- | --- |
-| `trim` | `#true` | 裁剪文本首尾 Unicode 空白；`#false` 保留原文 |
+| `trim` | `#true` | 裁剪文本首尾 Unicode 空白，`#false` 保留原文 |
 | `bytes` | `#false` | `#true` 返回原始 bytes，跳过 UTF-8 解码，并忽略 trim |
 
-选项值必须为布尔值，未知键会报错。`<-result` 的两个流字段使用相同选项，
-包括非零退出的结果。
+未知关键字或重复传参会报错。`<-result` 对两个流字段使用相同选项，包括非零退出的结果。
 
 ```parsh
 (dump (<-out (printf " hello\n")))
-(dump (<-out {trim #false} (printf " hello\n")))
-(dump (bytes/hex-encode (<-out {bytes #true} (printf " hello\n"))))
-(let options {trim #false})
-(dump (<-out $options (printf " hello\n")))
+(dump (<-out (printf " hello\n") &trim #false))
+(dump (bytes/hex-encode (<-out (printf " hello\n") &bytes #true)))
+(dump (<-out (printf " hello\n") #false))
 ```
 
 结果依次为 `"hello"`、`" hello\n"`、`"2068656c6c6f0a"` 和 `" hello\n"`。
-`{bytes #true trim #true}` 仍会保留每个原始字节。
+传入 `&bytes #true &trim #true` 会保留每个原始字节。
 
 | 调用 | 参数与返回值 |
 | --- | --- |
 | `(command name)` | 非空文本程序名，返回 `<command name>` |
 | `(apply callee fixed... args [&name value ...])` | 展开最后一个位置列表，并向支持关键字的目标转发后续关键字参数 |
-| `(<-out [options] (command args...))` | 捕获 stdout，默认裁剪文本，也可选择原始 bytes |
-| `(<-err [options] (command args...))` | 捕获 stderr，默认裁剪文本，也可选择原始 bytes |
-| `(<-result [options] (command args...))` | 返回包含两路输出的完整同步 `CallResult` |
+| `(<-out (command args...) [trim [bytes]])` | 捕获 stdout，默认裁剪文本，也可选择原始 bytes |
+| `(<-err (command args...) [trim [bytes]])` | 捕获 stderr，默认裁剪文本，也可选择原始 bytes |
+| `(<-result (command args...) [trim [bytes]])` | 返回包含两路输出的完整同步 `CallResult` |
 | `(spawn callee args...)` | 实参直接排列，返回原生 `Job` |
 
 `spawn` 接收函数值、命令引用或文本名称，以及要传给它的参数。列表作为一个参数传入，
@@ -87,7 +86,7 @@ parsh 先在外围 I/O 中求值选项，再设置捕获并求值主体。求值
 | --- | --- |
 | `value` | 语言返回值；外部命令为 nil |
 | `termination` | `(Exited code)`、`(Signaled signal core_dumped)` 或 nil |
-| `stdout`、`stderr` | 默认裁剪后的文本；`{bytes #true}` 时为原始 bytes；显式重定向或未捕获时为 nil |
+| `stdout`、`stderr` | 默认是裁剪后的文本，`&bytes #true` 时为原始 bytes，显式重定向或未捕获时为 nil |
 | `error` | `result` 字段为 nil 的 `Error` 摘要，或 nil |
 | `stages` | 管道阶段的 `StageResult`，包含 argv、终止信息和错误 |
 
@@ -142,7 +141,7 @@ bytes 显示为 `<bytes N>`，不能隐式转成文本、命令参数或环境�
 显式选择 bytes 可以捕获二进制输出，不解码，也不裁剪：
 
 ```parsh
-(let binary (<-result {bytes #true} (printf "\\377\\000\\101")))
+(let binary (<-result (printf "\\377\\000\\101") &bytes #true))
 (dump (bytes/hex-encode (. $binary stdout)))
 ```
 

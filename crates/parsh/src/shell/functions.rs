@@ -3,6 +3,7 @@ use std::{collections::HashSet, fmt, rc::Rc};
 use super::{
     Arguments, Env, Error, EvalResult, Function, Mode, Scope, Shell, Signal, Value,
     builtins::{VALUE_BUILTINS, parameter_names},
+    execution::CAPTURE_OPTION_NAMES,
 };
 use crate::{
     completion::Candidate,
@@ -454,7 +455,7 @@ impl Shell {
         positional: usize,
         used: &[String],
     ) -> Option<Vec<Candidate>> {
-        let collect = |names: &mut dyn Iterator<Item = &str>| {
+        let collect = |names: &mut dyn Iterator<Item = &str>, positional| {
             names
                 .skip(positional)
                 .filter(|name| variable_name(name) && !used.iter().any(|used| used == name))
@@ -464,15 +465,23 @@ impl Shell {
         if let Some(function) = self.functions.get(name)
             && let Callable::User { definition, .. } = &*function.0
         {
-            return Some(collect(&mut definition.parameters.names()));
+            return Some(collect(&mut definition.parameters.names(), positional));
         }
         if let Some(definition) = self.macros.get(name) {
-            return Some(collect(&mut definition.parameters.names()));
+            return Some(collect(&mut definition.parameters.names(), positional));
         }
         if let Some(definition) = self.structs.get(name) {
-            return Some(collect(&mut definition.fields.iter().map(String::as_str)));
+            return Some(collect(
+                &mut definition.fields.iter().map(String::as_str),
+                positional,
+            ));
         }
-        parameter_names(name).map(|names| collect(&mut names.iter().copied()))
+        if matches!(name, "<-out" | "<-err" | "<-result") {
+            return Some(positional.checked_sub(1).map_or_else(Vec::new, |options| {
+                collect(&mut CAPTURE_OPTION_NAMES.into_iter(), options)
+            }));
+        }
+        parameter_names(name).map(|names| collect(&mut names.iter().copied(), positional))
     }
 }
 

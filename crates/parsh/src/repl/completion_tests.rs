@@ -831,7 +831,7 @@ fn narrow_candidate_lists_wrap_safely_and_restore_the_current_input() {
 }
 
 #[test]
-fn capture_forms_and_their_bodies_complete_without_running() {
+fn capture_forms_bodies_and_options_complete_without_running() {
     for (prefix, name) in [("<-re", "<-result"), ("<-ou", "<-out"), ("<-er", "<-err")] {
         let host = TestHost::default();
         let mut repl = Repl::with_host(host.clone()).unwrap();
@@ -845,13 +845,20 @@ fn capture_forms_and_their_bodies_complete_without_running() {
         type_text(&mut repl, &format!("function {prefix}"));
         repl.input(Key::Tab);
         assert_eq!(repl.session.input.body, format!("function {prefix}"));
-        repl.input(Key::ClearInput);
-        type_text(&mut repl, &format!("{name} {{bytes #true}} (host-alph"));
-        repl.input(Key::Tab);
-        assert_eq!(
-            repl.session.input.body,
-            format!("{name} {{bytes #true}} (host-alpha)")
-        );
+        for (source, completed) in [
+            ("(host-alpha) &tr", "(host-alpha) &trim "),
+            ("(host-alpha) #false &", "(host-alpha) #false &bytes "),
+            (
+                "(host-alpha) &bytes #true &",
+                "(host-alpha) &bytes #true &trim ",
+            ),
+            ("&tr", "&tr"),
+        ] {
+            repl.input(Key::ClearInput);
+            repl.paste(&format!("{name} {source}"));
+            repl.input(Key::Tab);
+            assert_eq!(repl.session.input.body, format!("{name} {completed}"));
+        }
         assert_eq!(host.runs.get(), 0);
     }
 }

@@ -108,11 +108,11 @@ parsh --config ./settings.parsh -c '(hello)'
 
 第一个表达式绑定变量。第二个通过 `dump` 显式打印文本。第三个调用原生 `echo` 程序并输出到 stdout。交互与脚本模式都不会自动打印返回值。
 
-捕获命令输出时，默认会去掉首尾 Unicode 空白。如果需要保留精确输出，请使用 `{trim #false}`：
+捕获命令输出时，默认会去掉首尾 Unicode 空白。在捕获主体后传入 `&trim #false` 可保留原文。
 
 ```parsh
 (dump (<-out (printf " hello\n")))
-(dump (<-out {trim #false} (printf " hello\n")))
+(dump (<-out (printf " hello\n") &trim #false))
 ```
 
 这两次调用分别显示 `"hello"` 和 `" hello\n"`。

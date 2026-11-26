@@ -92,44 +92,46 @@ enum Capture {
     Stream(Stream),
 }
 
+pub(super) const CAPTURE_OPTION_NAMES: [&str; 2] = ["trim", "bytes"];
+
 #[derive(Clone, Copy)]
 struct CaptureOptions {
-    bytes: bool,
     trim: bool,
-}
-
-impl Default for CaptureOptions {
-    fn default() -> Self {
-        Self {
-            bytes: false,
-            trim: true,
-        }
-    }
+    bytes: bool,
 }
 
 impl CaptureOptions {
-    fn parse(expr: &Expr, value: Value) -> Result<Self, Error> {
-        let Value::Map(map) = value else {
-            return Err(Error::new(expr, "capture options must be a map"));
+    fn parse(
+        shell: &mut Shell,
+        call: &Expr,
+        args: &[Expr],
+        env: &Env,
+        io: &Io,
+    ) -> EvalResult<Self> {
+        let binding = ArgumentBinding::new(
+            call,
+            Arguments::Expressions(args),
+            CAPTURE_OPTION_NAMES.into_iter(),
+            0,
+            CAPTURE_OPTION_NAMES.len(),
+        )?;
+        let values = binding.collect(|index| {
+            let source = &args[index];
+            Ok::<_, Signal>((source, shell.value(source, env, io)?))
+        })?;
+        let mut values = values.into_iter();
+        let mut boolean = |name, default| match values.next().flatten() {
+            Some((_, Value::Bool(value))) => Ok(value),
+            Some((source, _)) => Err(Error::new(
+                source,
+                format!("capture option {name} must be a boolean"),
+            )),
+            None => Ok(default),
         };
-        let mut options = Self::default();
-        for (key, value) in map {
-            let option = match key.as_str() {
-                "bytes" => &mut options.bytes,
-                "trim" => &mut options.trim,
-                _ => {
-                    return Err(Error::new(expr, format!("unknown capture option: {key}")));
-                }
-            };
-            let Value::Bool(value) = value else {
-                return Err(Error::new(
-                    expr,
-                    format!("capture option {key} must be a boolean"),
-                ));
-            };
-            *option = value;
-        }
-        Ok(options)
+        Ok(Self {
+            trim: boolean("trim", true)?,
+            bytes: boolean("bytes", false)?,
+        })
     }
 
     fn format(self, expr: &Expr, result: &Value, capture: Capture) -> Result<Value, Error> {
@@ -148,7 +150,7 @@ impl CaptureOptions {
                         result: Some(Box::new(result.clone())),
                         ..Error::new(
                             expr,
-                            format!("{key} is not UTF-8; use {{bytes #true}} to capture raw bytes"),
+                            format!("{key} is not UTF-8; use &bytes #true to capture raw bytes"),
                         )
                     })?;
                     Value::Text(if self.trim { text.trim() } else { text }.into())
@@ -502,21 +504,17 @@ impl Shell {
         env: &Env,
         io: &Io,
     ) -> EvalResult<Value> {
-        let body = match args {
-            [body] | [_, body] if body.is_parenthesized_call() => body,
-            _ => {
-                return Err(Error::new(
-                    expr,
-                    format!("{name} expects ({name} [options] (expression ...))"),
-                )
-                .into());
-            }
+        let Some((body, options)) = args
+            .split_first()
+            .filter(|(body, _)| body.is_parenthesized_call())
+        else {
+            return Err(Error::new(
+                args.first().unwrap_or(expr),
+                format!("{name} expects ({name} (expression ...) [trim [bytes]])"),
+            )
+            .into());
         };
-        let options = if let [options, _] = args {
-            CaptureOptions::parse(options, self.value(options, env, io)?)?
-        } else {
-            CaptureOptions::default()
-        };
+        let options = CaptureOptions::parse(self, expr, options, env, io)?;
         let capture = match name {
             "<-out" => Capture::Stream(Stream::Stdout),
             "<-err" => Capture::Stream(Stream::Stderr),

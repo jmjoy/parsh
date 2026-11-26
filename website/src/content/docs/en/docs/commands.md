@@ -120,8 +120,8 @@ Ordinary commands write to their current destinations and return `CallResult` in
 all positions, including assignments, arguments, and interpolation. Their stdout
 and stderr fields are `#nil` by default. Use `<-out` or `<-err`
 for one stream, or `<-result` for both streams and a complete result.
-Captured text is trimmed by default; a leading `{trim #false}` keeps whitespace,
-and `{bytes #true}` returns original bytes without trimming.
+Captured text is trimmed by default. Pass `&trim #false` after the capture body
+to keep whitespace or `&bytes #true` to return original bytes.
 Explicit file redirection takes precedence over capture; pipelines and
 files preserve binary bytes.
 

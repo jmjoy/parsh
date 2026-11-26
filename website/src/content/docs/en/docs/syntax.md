@@ -153,7 +153,7 @@ booleans become text and nil becomes empty text. Collections, structs, forms, fu
 command references and bytes cannot implicitly become text. External
 commands stream both outputs and return `CallResult`; use `<-out` or
 `<-err` explicitly for text. Captures trim surrounding whitespace by default;
-pass a leading `{trim #false}` to preserve it. Errors stop the current batch. The resulting text stays one
+pass `&trim #false` after the capture body to preserve it. Errors stop the current batch. The resulting text stays one
 argument, and inserted values are never parsed or interpolated again.
 
 Ordinary single quotes preserve everything until the next single quote, including
