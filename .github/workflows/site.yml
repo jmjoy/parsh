@@ -25,7 +25,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown, wasm32-wasip1
-          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2.9.3
       - uses: pnpm/action-setup@v6.1.0
         with:
@@ -36,15 +35,6 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - name: Check native and portable Rust
-        run: |
-          cargo fmt --all --check
-          cargo test --locked
-          cargo test --locked --no-default-features --lib
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo clippy --locked --no-default-features --lib -- -D warnings
-          cargo clippy --locked -p parsh-coreutils --target wasm32-wasip1 -- -D warnings
-          cargo clippy --locked -p parsh-wasm --target wasm32-unknown-unknown -- -D warnings
       - name: Cache wasm-pack
         id: wasm-pack
         uses: actions/cache@v6.1.0

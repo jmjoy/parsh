@@ -7,10 +7,12 @@ description: "原生与可移植版本测试、WASM 构建和 agproc 网站预�
 
 ```console
 cargo fmt --all --check
-cargo test --locked
-cargo test --locked --no-default-features --lib
-cargo clippy --locked --all-targets -- -D warnings
-cargo clippy --locked --no-default-features --lib -- -D warnings
+cargo test --workspace --locked
+cargo test -p parsh --locked --no-default-features --lib
+cargo clippy --locked -p parsh --all-targets -- -D warnings
+cargo clippy --locked -p parsh --no-default-features --lib -- -D warnings
+cargo clippy --locked -p parsh-coreutils --target wasm32-wasip1 -- -D warnings
+cargo clippy --locked -p parsh-wasm --target wasm32-unknown-unknown -- -D warnings
 ```
 
 测试覆盖真实子进程、大输出管道、重定向、词法函数、集合、JSON、本地 HTTP 服务、
@@ -58,15 +60,9 @@ Playwright 在本地复用已经运行的预览服务；没有服务时，其配
 测试不会构建网站。只需构建静态生产产物时使用 `pnpm build`；
 `pnpm wasm:build` 仅重新构建浏览器解释器和 coreutils 资源。
 
-工作流还会按目标平台检查 Rust 包：
-
-```console
-cargo clippy --locked -p parsh-coreutils --target wasm32-wasip1 -- -D warnings
-cargo clippy --locked -p parsh-wasm --target wasm32-unknown-unknown -- -D warnings
-```
-
-生成的 WASM、依赖、构建目录和测试产物不提交到 Git。GitHub Actions 在 PR 上执行这些检查，
-在 `master` 推送或手动触发后部署通过检查的构建。CI 优先使用已安装的 Chrome/Chromium，
+生成的 WASM、依赖、构建目录和测试产物不提交到 Git。`Tests` 工作流在 PR 和 `master` 推送时执行
+Rust 检查。`Website` 工作流构建网站、运行浏览器测试，并在 `master` 推送或手动触发后部署通过
+检查的构建。CI 优先使用已安装的 Chrome/Chromium，
 没有可用浏览器时安装 Playwright headless shell。首次部署需将仓库 Pages 来源设置为 **GitHub Actions**。
 
 浏览器包关闭 `parsh` 库默认的 `native` feature。解析、求值、编辑、历史和布局与 Linux 共用；

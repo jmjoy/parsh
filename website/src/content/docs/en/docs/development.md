@@ -7,10 +7,12 @@ Run the native and portable checks from the repository root:
 
 ```console
 cargo fmt --all --check
-cargo test --locked
-cargo test --locked --no-default-features --lib
-cargo clippy --locked --all-targets -- -D warnings
-cargo clippy --locked --no-default-features --lib -- -D warnings
+cargo test --workspace --locked
+cargo test -p parsh --locked --no-default-features --lib
+cargo clippy --locked -p parsh --all-targets -- -D warnings
+cargo clippy --locked -p parsh --no-default-features --lib -- -D warnings
+cargo clippy --locked -p parsh-coreutils --target wasm32-wasip1 -- -D warnings
+cargo clippy --locked -p parsh-wasm --target wasm32-unknown-unknown -- -D warnings
 ```
 
 Tests cover subprocesses, large pipelines, redirection, lexical functions,
@@ -64,15 +66,9 @@ preview if none is running, including in CI; it does not build the site. Use
 `pnpm build` when only a static production build is needed. `pnpm wasm:build`
 rebuilds just the browser interpreter and coreutils assets.
 
-The workflow also checks the target-specific Rust crates:
-
-```console
-cargo clippy --locked -p parsh-coreutils --target wasm32-wasip1 -- -D warnings
-cargo clippy --locked -p parsh-wasm --target wasm32-unknown-unknown -- -D warnings
-```
-
 Generated WASM, dependencies, build output, and browser test artifacts are ignored
-by Git. GitHub Actions runs these checks on pull requests and deploys successful
+by Git. The `Tests` workflow runs Rust checks on pull requests and pushes to `master`.
+The `Website` workflow builds the site, runs browser tests, and deploys successful
 builds on `master` or manual dispatch. CI uses a preinstalled Chrome/Chromium when
 available and installs Playwright's headless shell otherwise. Set the repository's
 Pages source to **GitHub Actions** for the first deployment.

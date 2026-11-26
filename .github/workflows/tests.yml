@@ -1,0 +1,40 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, wasm32-wasip1
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2.9.3
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Run native tests
+        run: cargo test --workspace --locked
+      - name: Run portable tests
+        run: cargo test -p parsh --locked --no-default-features --lib
+      - name: Check native lint
+        run: cargo clippy --locked -p parsh --all-targets -- -D warnings
+      - name: Check portable lint
+        run: cargo clippy --locked -p parsh --no-default-features --lib -- -D warnings
+      - name: Check WASM lint
+        run: |
+          cargo clippy --locked -p parsh-coreutils --target wasm32-wasip1 -- -D warnings
+          cargo clippy --locked -p parsh-wasm --target wasm32-unknown-unknown -- -D warnings
