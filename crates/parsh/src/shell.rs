@@ -516,6 +516,9 @@ const BUILTINS: &[&str] = &[
     "in<-",
     "err->",
     "err->>",
+    "<-out",
+    "<-err",
+    "<-result",
 ];
 
 fn builtin(name: &str) -> bool {
@@ -1457,6 +1460,7 @@ impl Shell {
                 }
                 .into())
             }
+            "<-out" | "<-err" | "<-result" => self.capture_expression(expr, name, args, env, io),
             "out->" | "out->>" | "in<-" | "err->" | "err->>" => {
                 if self.host.is_some() {
                     Self::arity(expr, args, 2, 2)?;

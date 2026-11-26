@@ -99,9 +99,6 @@ Every session starts with these ordinary, redefinable macros:
 | `(cond (condition body...) ... (else body...))` | Run the first matching clause; an optional else must be last |
 | `(-> value steps...)` | Insert the preceding expression as the first argument of each step |
 | `(->> value steps...)` | Insert the preceding expression as the last argument of each step |
-| `(<-\|out stages...)` | Capture pipeline stdout, equivalent to passing a zero-argument function to `<-out` |
-| `(<-\|err stages...)` | Capture pipeline stderr, equivalent to passing a zero-argument function to `<-err` |
-| `(<-\|result stages...)` | Capture a complete pipeline result, equivalent to passing a zero-argument function to `<-result` |
 
 Conditions use the existing boolean or `CallResult` rules. Bodies run only when
 selected and return their last value. If no body is selected, the result is nil. Each `cond`
@@ -154,12 +151,15 @@ should be resolved during evaluation:
 (dump (macroexpand-1 (quote (when #true (+ #1 #2)))))
 ```
 
-Results are `#12` and `(if #true (do (+ #1 #2)))`. `eval` accepts a form, so parsing
-text stays explicit. Declarations and control flow follow the same expression
-scope rules as handwritten code; a standalone top-level `eval` can introduce
-bindings visible to subsequent expressions. Errors point to the `eval` call.
-`macroexpand-1` executes the macro body, including any side effects, but leaves
-the resulting form unevaluated. Non-macro forms are returned unchanged.
+The results are `#12` and `(if #true (do (+ #1 #2)))`. `eval` takes a `Form`, and
+`read` reads a form from source text. Function calls, external commands, macros,
+and special forms follow the same rules as handwritten code. A standalone
+top-level `eval` can introduce bindings visible to subsequent expressions.
+Evaluation errors point to the `eval` call. [Calls and evaluation](/parsh/en/docs/syntax/#calls-and-evaluation)
+
+`macroexpand-1` executes the outer macro body, including any side effects, and
+returns the expansion as an unevaluated form. Non-macro forms are returned
+unchanged.
 
 `gensym` preserves identity when copied or spliced into syntax. `form/word` and
 `form/variable` preserve that identity when converting between a binding name

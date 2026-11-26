@@ -21,7 +21,7 @@ Use `type` to inspect command lookup without executing the command:
 (defn greet (name) (echo hello $name))
 (type greet)
 (type -a echo)
-(let kind (<-out type -t greet))
+(let kind (<-out (type -t greet)))
 (dump (if (type -t optional-tool) (optional-tool)))
 ```
 
@@ -76,7 +76,7 @@ in `config.parsh` to define them whenever the file is loaded.
 ## Pipelines and redirection
 
 ```parsh
-(echo (<-out pwd))
+(echo (<-out (pwd)))
 (| (find . -name "*.rs") (sort))
 (out-> files.txt (| (find . -name "*.rs") (sort)))
 (out->> log.txt (echo another entry))
@@ -122,16 +122,10 @@ and `{bytes #true}` returns original bytes without trimming.
 Explicit file redirection takes precedence over capture; pipelines and
 files preserve binary bytes.
 
-Use `<-|out`, `<-|err`, or `<-|result` to capture a single pipeline without an
-outer zero-argument function:
+Pass a pipeline expression directly to a capture form.
 
 ```parsh
-(let count (int (<-|out
-  (find . -name "*.rs")
-  (wc -l))))
+(let count (int (<-out (| (find . -name "*.rs") (wc -l)))))
 ```
-
-They are equivalent to wrapping `(| ...)` in `(fn () ...)` and passing it to
-`<-out`, `<-err`, or `<-result`.
 
 For complete results, raw-byte capture, `$?`, exceptions, and background execution, see [execution results and tasks](/parsh/en/docs/execution/).

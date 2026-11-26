@@ -11,7 +11,7 @@ description: "在浏览器中运行 parsh、coreutils 和命令管道。"
 
 ```parsh
 (echo "hello, parsh")
-(let here (<-out pwd))
+(let here (<-out (pwd)))
 (echo (str "working in " $here))
 (| (sort fruits.txt) (uniq -c))
 (out-> results.txt (in<- numbers.txt (sort -n)))

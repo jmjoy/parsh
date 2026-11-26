@@ -418,21 +418,9 @@ fn loop_builtins_complete_in_commands_and_nested_expressions_without_running() {
 }
 
 #[test]
-fn comparison_prefixes_list_the_operators_and_capture_helpers() {
+fn comparison_prefixes_list_the_operators_and_capture_forms() {
     for (prefix, expected) in [
-        (
-            "<",
-            vec![
-                "<",
-                "<-err",
-                "<-out",
-                "<-result",
-                "<-|err",
-                "<-|out",
-                "<-|result",
-                "<=",
-            ],
-        ),
+        ("<", vec!["<", "<-err", "<-out", "<-result", "<="]),
         (">", vec![">", ">="]),
     ] {
         let mut repl = Repl::new();
@@ -454,9 +442,6 @@ fn comparison_prefixes_list_the_operators_and_capture_helpers() {
             "<-err".to_owned(),
             "<-out".to_owned(),
             "<-result".to_owned(),
-            "<-|err".to_owned(),
-            "<-|out".to_owned(),
-            "<-|result".to_owned(),
             "<=".to_owned(),
         ]]
     );
@@ -824,26 +809,26 @@ fn narrow_candidate_lists_wrap_safely_and_restore_the_current_input() {
 }
 
 #[test]
-fn capture_helpers_and_their_callees_complete_without_running() {
+fn capture_forms_and_their_bodies_complete_without_running() {
     for (prefix, name) in [("<-re", "<-result"), ("<-ou", "<-out"), ("<-er", "<-err")] {
         let host = TestHost::default();
         let mut repl = Repl::with_host(host.clone()).unwrap();
         type_text(&mut repl, prefix);
         repl.input(Key::Tab);
         assert_eq!(repl.session.input.body, format!("{name} "));
-        type_text(&mut repl, "host-alph");
+        type_text(&mut repl, "(host-alph");
         repl.input(Key::Tab);
-        assert_eq!(repl.session.input.body, format!("{name} host-alpha "));
+        assert_eq!(repl.session.input.body, format!("{name} (host-alpha)"));
         repl.input(Key::ClearInput);
         type_text(&mut repl, &format!("function {prefix}"));
         repl.input(Key::Tab);
-        assert_eq!(repl.session.input.body, format!("function {name} "));
+        assert_eq!(repl.session.input.body, format!("function {prefix}"));
         repl.input(Key::ClearInput);
-        type_text(&mut repl, &format!("{name} {{bytes #true}} host-alph"));
+        type_text(&mut repl, &format!("{name} {{bytes #true}} (host-alph"));
         repl.input(Key::Tab);
         assert_eq!(
             repl.session.input.body,
-            format!("{name} {{bytes #true}} host-alpha ")
+            format!("{name} {{bytes #true}} (host-alpha)")
         );
         assert_eq!(host.runs.get(), 0);
     }

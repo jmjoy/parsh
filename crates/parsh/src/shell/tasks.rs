@@ -297,27 +297,27 @@ impl Shell {
                     let (callee, values) = snapshot.restore(&mut shell);
                     let env = shell.root.clone();
                     let streams = streams.streams();
-                    let result =
-                        match shell.capture_call(&source, callee, &values, &env, &streams, true) {
-                            Ok(result) => result,
-                            Err(signal) => {
-                                let error = signal.into_error(&source);
-                                result_record(
-                                    Value::Nil,
-                                    if error.exit {
-                                        exited(error.code)
-                                    } else {
-                                        Value::Nil
-                                    },
-                                    if error.exit {
-                                        Value::Nil
-                                    } else {
-                                        error.as_value(false)
-                                    },
-                                    Value::List(Vec::new()),
-                                )
-                            }
-                        };
+                    let result = match shell.capture_call(&source, callee, &values, &env, &streams)
+                    {
+                        Ok(result) => result,
+                        Err(signal) => {
+                            let error = signal.into_error(&source);
+                            result_record(
+                                Value::Nil,
+                                if error.exit {
+                                    exited(error.code)
+                                } else {
+                                    Value::Nil
+                                },
+                                if error.exit {
+                                    Value::Nil
+                                } else {
+                                    error.as_value(false)
+                                },
+                                Value::List(Vec::new()),
+                            )
+                        }
+                    };
                     // Startup failures before process::run must also release spawn's handshake.
                     let startup = match field(&result, "error") {
                         Some(error) if !matches!(error, Value::Nil) => Err(process::ProcessError {

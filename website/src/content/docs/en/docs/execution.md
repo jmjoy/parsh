@@ -40,31 +40,33 @@ pipelines, `type`, `cd`, and `export` share this result type. Arithmetic and dat
 builtins retain their types; user functions return their body value, including a
 command's `CallResult` when it is the final expression.
 
-Use `(<-out pwd)` or `(<-err callee args...)` for text. These
+Use `(<-out (pwd))` or `(<-err (callee args...))` for text. These
 capture only the selected stream, decode UTF-8 strictly, and remove leading and
 trailing Unicode whitespace by default. The other stream keeps its current
 destination. Empty or whitespace-only output returns empty text; an uncaptured
 or explicitly redirected stream returns nil. Command failures throw with the
 captured result attached.
 
-The three capture functions, `<-out`, `<-err`, and `<-result`, accept an optional
-**leading options map**, before the callee. These are ordinary builtins supporting
-`function` and `apply`.
+The capture forms `<-out`, `<-err`, and `<-result` each take one parenthesized
+expression, optionally preceded by an **options map**. Parsh evaluates the options
+in the surrounding I/O context, then sets up capture before evaluating the body.
+This includes any output produced while evaluating the body's command name and
+arguments. Use `(do ...)` to group multiple expressions in one capture.
 
 | Option | Default | Behavior |
 | --- | --- | --- |
 | `trim` | `#true` | Remove surrounding Unicode whitespace from captured text; `#false` preserves it |
 | `bytes` | `#false` | Return raw bytes; `#true` skips UTF-8 decoding and ignores trim |
 
-Option values must be booleans; unknown keys are errors. The options affect both
-stream fields in `<-result`, including its nonzero-exit results. A map
-passed after the callee remains an ordinary argument.
+Option values must be booleans. Unknown keys are errors. `<-result` applies the
+options to both streams, including in results with a nonzero exit code.
 
 ```parsh
-(dump (<-out printf " hello\n"))
-(dump (<-out {trim #false} printf " hello\n"))
-(dump (bytes/hex-encode (<-out {bytes #true} printf " hello\n")))
-(dump (apply <-out [{trim #false} printf " hello\n"]))
+(dump (<-out (printf " hello\n")))
+(dump (<-out {trim #false} (printf " hello\n")))
+(dump (bytes/hex-encode (<-out {bytes #true} (printf " hello\n"))))
+(let options {trim #false})
+(dump (<-out $options (printf " hello\n")))
 ```
 
 Results are `"hello"`, `" hello\n"`, `"2068656c6c6f0a"`, and `" hello\n"`.
@@ -74,26 +76,24 @@ Results are `"hello"`, `" hello\n"`, `"2068656c6c6f0a"`, and `" hello\n"`.
 | --- | --- |
 | `(command name)` | One nonempty text program name; returns `<command name>` |
 | `(apply callee fixed... args)` | Expands only the final list into call arguments |
-| `(<-out [options] callee args...)` | Captured stdout; trimmed text by default, or raw bytes |
-| `(<-err [options] callee args...)` | Captured stderr; trimmed text by default, or raw bytes |
-| `(<-result [options] callee args...)` | Complete synchronous `CallResult`; captured fields use the same options |
+| `(<-out [options] (command args...))` | Captured stdout, with trimmed text by default or raw bytes |
+| `(<-err [options] (command args...))` | Captured stderr, with trimmed text by default or raw bytes |
+| `(<-result [options] (command args...))` | Complete synchronous `CallResult` with both streams |
 | `(spawn callee args...)` | Flat arguments; returns a native `Job` |
 
-Lists passed to capture helpers and `spawn` remain one language argument; external
-command calls then apply the usual one-level list expansion to argv. Pass a
-function value, command reference, or text name as the callee. Use `(fn () ...)`
-to group multiple expressions or to pass a pipeline to `spawn`.
-Arguments evaluate once from left to right before capture starts.
+`spawn` takes a function value, command reference, or text name, followed by its
+arguments. A list passed to `spawn` remains one language argument. External
+command calls expand lists one level when building argv. Pass a closure such as
+`(fn () (| ...))` to run a pipeline as a background task.
 
 ## Complete results
 
-`<-result` takes an optional leading options map, the callee, and its
-arguments. It returns a `CallResult`, capturing stdout and stderr independently:
+`<-result` captures stdout and stderr separately and returns a `CallResult`.
 
 ```parsh
-(let result (<-result printf "hello\n"))
+(let result (<-result (printf "hello\n")))
 (dump [(stdout-text $result) (exit-code $result) (signal $result)])
-(let sum (<-result + #2 #3))
+(let sum (<-result (+ #2 #3)))
 (dump (. $sum value))
 ```
 
@@ -148,23 +148,23 @@ function stops that body; capture does not run the remaining expressions. Use
 
 ```parsh
 (try
-  (check (<-result cat missing.txt))
+  (check (<-result (cat missing.txt)))
   (catch err (echo "read failed: $(Error.message $err)")))
 ```
 
 Explicit file redirection takes precedence over capture. Captured streams share an
 8 MiB limit; overflow stops execution and retains partial output in the error's
 result. Uncaptured foreground commands keep streaming. Pipeline stages must call
-external commands. Use `<-|out`, `<-|err`, or `<-|result` to capture a pipeline.
+external commands. Pass a pipeline expression directly to a capture form.
 
 ```parsh
-(dump (<-|result (printf "b\na\n") (sort)))
+(dump (<-result (| (printf "b\na\n") (sort))))
 ```
 
 Select bytes explicitly to capture binary output without decoding or trimming:
 
 ```parsh
-(let binary (<-result {bytes #true} printf "\\377\\000\\101"))
+(let binary (<-result {bytes #true} (printf "\\377\\000\\101")))
 (dump (bytes/hex-encode (. $binary stdout)))
 ```
 
@@ -177,7 +177,7 @@ for slicing, concatenation, and explicit text conversion.
 same value. It is a complete structure, so obtain the numeric exit code explicitly:
 
 ```parsh
-(let here (<-out pwd))
+(let here (<-out (pwd)))
 (let saved $?)
 (dump [$here (exit-code $saved) (signal $saved)])
 (echo "exit=$(exit-code $?)")

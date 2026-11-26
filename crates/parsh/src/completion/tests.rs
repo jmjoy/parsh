@@ -474,11 +474,11 @@ fn hash_literals_complete_without_becoming_quoted_paths() {
 #[test]
 fn invocation_helpers_and_special_result_complete_without_evaluation() {
     for source in [
-        "(<-result ec",
-        "(<-out {trim #false} ec",
-        "(<-err {bytes #true} ec",
-        "(<-out ec",
-        "(<-err ec",
+        "(<-result (ec",
+        "(<-out {trim #false} (ec",
+        "(<-err {bytes #true} (ec",
+        "(<-out (| (ec",
+        "(<-err (ec",
         "(spawn ec",
         "(command ec",
         "(apply ec",

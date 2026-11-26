@@ -26,7 +26,7 @@
 (defn banner (name)
   (printf "hello, ")
   (printf "%s\n" $name))
-(printf "captured function output: <%s>\n" (<-out banner parsh))
+(printf "captured function output: <%s>\n" (<-out (banner parsh)))
 
 (; Closures retain captured bindings; optional defaults run only when omitted. )
 (defn accumulator (initial)

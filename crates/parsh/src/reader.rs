@@ -42,6 +42,22 @@ impl Expr {
         )
     }
 
+    pub(crate) fn is_parenthesized_call(&self) -> bool {
+        let Kind::List(items) = &self.kind else {
+            return false;
+        };
+        // The reader gives the synthetic head of collection and quasiquote sugar
+        // the same offset as its opening token.
+        items.first().is_some_and(|head| {
+            head.offset != self.offset
+                || !matches!(
+                    &head.kind,
+                    Kind::Word(name)
+                        if matches!(name.as_str(), "list" | "map" | "quasiquote" | "unquote" | "unquote-splicing")
+                )
+        })
+    }
+
     /// Render an expression back to source. Quoted forms are printed with it.
     pub fn source(&self) -> String {
         match &self.kind {

@@ -3,12 +3,31 @@ title: "语法与值"
 description: "裸词、字符串、值的类型与结构化注释。"
 ---
 
-每次调用都是括号包裹的表达式。内层调用先求值，再作为参数传入：
+## 调用与求值
+
+括号里的第一项叫**调用头**。parsh 根据它解析目标，并按目标的规则求值。
+
+| 形式 | 示例 | 求值方式 |
+| --- | --- | --- |
+| 函数调用 | `(+ #2 #3)` | 先求值实参，再调用函数。这个例子返回 `#5`。内置函数和用 `defn` 定义的函数都遵循这个顺序。 |
+| 外部命令调用 | `(echo hello world)` | 先求值实参并组装命令行参数，再运行 `echo`。程序向 stdout 写入 `hello world`，表达式返回 `CallResult`。 |
+| 宏调用 | `(when #true (str ready))` | `when` 接收尚未求值的实参，把它们展开成一个 `if` 表单。parsh 在调用处求值展开结果，返回 `"ready"`。 |
+| 特殊形式（special form） | `(<-out (echo hello world))` | 求值器按该形式规定的顺序处理子表达式。`<-out` 先设置 stdout 捕获，再运行 `echo`，返回 `"hello world"`。 |
+
+结构体的构造器、访问器和谓词也按普通调用的规则对实参求值。
+
+`eval` 接收一个 `Form`，在调用处按同样的规则求值。`quote` 可以把表达式引用为表单，
+`read` 可以从源码文本读取表单。上表的四种形式都能这样求值，字面量、变量引用和集合表达式也可以。
 
 ```parsh
-(dump (str "hello, " (str "a " "friend")))
-(dump [one "two words" #true])
+(dump (eval (quote (<-out (echo hello world)))))
+(dump (eval (quote #42)))
 ```
+
+这两次 `dump` 依次打印 `"hello world"` 和 `#42`。
+[表单、读取与求值](/parsh/zh-cn/docs/lisp/#表单读取与求值)
+
+## 文本与变量
 
 在值的位置，裸词表示文本：`123`、`true`、`false` 和 `nil` 都没有特殊的字面量含义。
 双引号字符串支持 `$name` 和 `$(...)` 插值，以及 `\"`、`\\`、`\n`、`\r`、`\t` 和 `\$` 转义。
@@ -94,7 +113,7 @@ reader 读取文本、标量字面值、变量引用、插值字符串和表达�
 (dump (str "$(get name)_suffix"))
 (dump (str "sum=$(+ #1 #2)"))
 (dump (str "nested=$(str "a" 'b')"))
-(dump (str "cwd=$(<-out pwd)"))
+(dump (str "cwd=$(<-out (pwd))"))
 (dump (str '$name $(+ 1 2)\n'))
 (dump (str "\$name \$(+ 1 2)"))
 ```

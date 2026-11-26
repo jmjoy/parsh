@@ -458,7 +458,7 @@ fn repl_loads_linked_configuration_before_prompt_and_keeps_its_definitions() {
     let source = r#"
 (load lib.parsh)
 (export PARSH_STARTUP ready)
-(let startup_input (<-out sh -c 'printf "STARTUP-INPUT\n" >&2; IFS= read -r line; printf "%s" "$line"'))
+(let startup_input (<-out (sh -c 'printf "STARTUP-INPUT\n" >&2; IFS= read -r line; printf "%s" "$line"')))
 (printf 'STARTUP-DONE\n')
 #42
 "#;
@@ -610,7 +610,7 @@ fn enter_submits_and_typed_closers_remain_edits() {
     terminal.send(b"\r");
     let end = terminal.expect(b"\r\nENTER_TEST\r\n", offset);
     terminal.ready_after(end);
-    let offset = terminal.send(b"echo \"x)\" (<-out printf y)\r");
+    let offset = terminal.send(b"echo \"x)\" (<-out (printf y))\r");
     let end = terminal.expect(b"\r\nx) y\r\n", offset);
     terminal.ready_after(end);
     terminal.exit(0);

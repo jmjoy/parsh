@@ -11,7 +11,7 @@ The `$ ()` prompt supplies the outer parentheses. Type `echo hello` and press En
 
 ```parsh
 (echo "hello, parsh")
-(let here (<-out pwd))
+(let here (<-out (pwd)))
 (echo (str "working in " $here))
 (| (sort fruits.txt) (uniq -c))
 (out-> results.txt (in<- numbers.txt (sort -n)))

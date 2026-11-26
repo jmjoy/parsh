@@ -21,7 +21,7 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 (defn greet (name) (echo hello $name))
 (type greet)
 (type -a echo)
-(let kind (<-out type -t greet))
+(let kind (<-out (type -t greet)))
 (dump (if (type -t optional-tool) (optional-tool)))
 ```
 
@@ -68,7 +68,7 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 ## 管道与重定向
 
 ```parsh
-(echo (<-out pwd))
+(echo (<-out (pwd)))
 (| (find . -name "*.rs") (sort))
 (out-> files.txt (| (find . -name "*.rs") (sort)))
 (out->> log.txt (echo another entry))
@@ -110,14 +110,10 @@ description: "原生命令、管道、输出捕获与文件重定向。"
 前置 `{trim #false}` 保留原文，`{bytes #true}` 返回不裁剪的原始 bytes。
 显式文件重定向优先于捕获，管道和文件保留二进制字节。
 
-捕获单个管道时可以使用 `<-|out`、`<-|err` 或 `<-|result`，省略外围的零参数函数：
+捕获运算符可以直接包裹管道表达式。
 
 ```parsh
-(let count (int (<-|out
-  (find . -name "*.rs")
-  (wc -l))))
+(let count (int (<-out (| (find . -name "*.rs") (wc -l)))))
 ```
-
-它们分别等价于 `<-out`、`<-err` 或 `<-result` 包裹 `(fn () (| ...))`。
 
 完整结果、原始字节捕获、`$?`、异常和后台执行见[执行结果与后台任务](/parsh/zh-cn/docs/execution/)。

@@ -120,8 +120,8 @@ The first expression binds a value. The second explicitly prints text using `dum
 Captured command output removes surrounding Unicode whitespace by default. Use `{trim #false}` when the exact output matters:
 
 ```parsh
-(dump (<-out printf " hello\n"))
-(dump (<-out {trim #false} printf " hello\n"))
+(dump (<-out (printf " hello\n")))
+(dump (<-out {trim #false} (printf " hello\n")))
 ```
 
 These calls display `"hello"` and `" hello\n"`.

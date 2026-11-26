@@ -401,7 +401,10 @@ fn map_names_are_reserved_and_recognized_by_type() {
         "map", "map/get", "map/set", "map/del", "map/has", "map/keys", "map/vals", "map/len",
     ] {
         let mut repl = Repl::new();
-        let events = evaluate(&mut repl, &format!("(str/trim (<-out type -t {command}))"));
+        let events = evaluate(
+            &mut repl,
+            &format!("(str/trim (<-out (type -t {command})))"),
+        );
         assert!(diagnostics(&events).is_empty(), "{events:?}");
         assert_eq!(values(&events), [r#""builtin""#]);
         let events = evaluate(&mut repl, &format!("(defn {command} () (exit 9))"));

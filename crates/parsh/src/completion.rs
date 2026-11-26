@@ -48,7 +48,6 @@ struct Frame {
     parameters: bool,
     optional_section: bool,
     optional_pair: bool,
-    capture_options: bool,
 }
 
 impl Frame {
@@ -118,21 +117,7 @@ impl Context {
             Kind::Variable
         } else if frame.items == 0
             || (frame.items == 1
-                && matches!(
-                    frame.head.as_deref(),
-                    Some(
-                        "command"
-                            | "<-result"
-                            | "<-out"
-                            | "<-err"
-                            | "<-|out"
-                            | "<-|err"
-                            | "<-|result"
-                            | "spawn"
-                            | "apply",
-                    )
-                ))
-            || (frame.items == 2 && frame.capture_options)
+                && matches!(frame.head.as_deref(), Some("command" | "spawn" | "apply")))
         {
             Kind::Command
         } else if frame.head.as_deref() == Some("function") && frame.items == 1 {
@@ -251,22 +236,6 @@ impl Scanner<'_> {
                         && !frame.comment
                         && let Some(parent) = self.frames.last_mut()
                     {
-                        if parent.items == 1
-                            && frame.head.as_deref() == Some("map")
-                            && matches!(
-                                parent.head.as_deref(),
-                                Some(
-                                    "<-result"
-                                        | "<-out"
-                                        | "<-err"
-                                        | "<-|out"
-                                        | "<-|err"
-                                        | "<-|result",
-                                )
-                            )
-                        {
-                            parent.capture_options = true;
-                        }
                         parent.items += 1;
                     }
                     self.offset += 1;

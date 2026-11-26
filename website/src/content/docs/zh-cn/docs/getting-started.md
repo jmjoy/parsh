@@ -111,8 +111,8 @@ parsh --config ./settings.parsh -c '(hello)'
 捕获命令输出时，默认会去掉首尾 Unicode 空白。如果需要保留精确输出，请使用 `{trim #false}`：
 
 ```parsh
-(dump (<-out printf " hello\n"))
-(dump (<-out {trim #false} printf " hello\n"))
+(dump (<-out (printf " hello\n")))
+(dump (<-out {trim #false} (printf " hello\n")))
 ```
 
 这两次调用分别显示 `"hello"` 和 `" hello\n"`。

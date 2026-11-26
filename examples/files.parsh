@@ -3,7 +3,7 @@
    Native only: mktemp is not included in the browser coreutils subset. )
 
 (let original_directory $PWD)
-(let temporary_directory (<-out mktemp -d))
+(let temporary_directory (<-out (mktemp -d)))
 (try
   (cd $temporary_directory)
   (export LC_ALL C)

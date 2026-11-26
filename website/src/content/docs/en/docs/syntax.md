@@ -3,12 +3,34 @@ title: "Syntax & values"
 description: "Words, strings, value types, and structured comments."
 ---
 
-Every call is a parenthesized expression. Inner calls are evaluated as arguments:
+## Calls and evaluation
+
+The first item inside the parentheses is the **call head**. Parsh resolves it
+and evaluates the form according to the target's rules.
+
+| Form | Example | Evaluation |
+| --- | --- | --- |
+| Function call | `(+ #2 #3)` | Evaluate the arguments, then call the function. This example returns `#5`. Builtin functions and functions defined with `defn` follow this order. |
+| External command | `(echo hello world)` | Evaluate the arguments and assemble the command line, then run `echo`. The program writes `hello world` to stdout and the expression returns a `CallResult`. |
+| Macro call | `(when #true (str ready))` | `when` receives unevaluated arguments and expands to an `if` form. Parsh evaluates the expansion at the call site, returning `"ready"`. |
+| Special form | `(<-out (echo hello world))` | The evaluator follows the form's own rules for its subexpressions. `<-out` sets up stdout capture, runs `echo`, and returns `"hello world"`. |
+
+Struct constructors, accessors, and predicates use ordinary argument evaluation.
+
+`eval` takes a `Form` and evaluates it at the call site using the same rules.
+Use `quote` to quote an expression or `read` to read a form from source text.
+All four forms above work with `eval`, as do literals, variable references,
+and collection expressions.
 
 ```parsh
-(dump (str "hello, " (str "a " "friend")))
-(dump [one "two words" #true])
+(dump (eval (quote (<-out (echo hello world)))))
+(dump (eval (quote #42)))
 ```
+
+The two `dump` calls print `"hello world"` and `#42`, respectively.
+[Forms, reading, and evaluation](/parsh/en/docs/lisp/#forms-reading-and-evaluation)
+
+## Text and variables
 
 In value positions, bare words are text: `123`, `true`, `false`, and `nil` have no
 special literal meaning. Double-quoted strings interpolate `$name` and `$(...)`,
@@ -109,7 +131,7 @@ whole input, otherwise it inserts a newline.
 (dump (str "$(get name)_suffix"))
 (dump (str "sum=$(+ #1 #2)"))
 (dump (str "nested=$(str "a" 'b')"))
-(dump (str "cwd=$(<-out pwd)"))
+(dump (str "cwd=$(<-out (pwd))"))
 (dump (str '$name $(+ 1 2)\n'))
 (dump (str "\$name \$(+ 1 2)"))
 ```

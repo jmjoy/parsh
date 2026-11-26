@@ -108,34 +108,26 @@ impl Default for CaptureOptions {
 }
 
 impl CaptureOptions {
-    fn take(expr: &Expr, values: &mut Vec<Value>) -> Result<Self, Error> {
+    fn parse(expr: &Expr, value: Value) -> Result<Self, Error> {
+        let Value::Map(map) = value else {
+            return Err(Error::new(expr, "capture options must be a map"));
+        };
         let mut options = Self::default();
-        if matches!(values.first(), Some(Value::Map(_))) {
-            let Value::Map(map) = values.remove(0) else {
-                unreachable!()
-            };
-            for (key, value) in map {
-                if !matches!(key.as_str(), "bytes" | "trim") {
+        for (key, value) in map {
+            let option = match key.as_str() {
+                "bytes" => &mut options.bytes,
+                "trim" => &mut options.trim,
+                _ => {
                     return Err(Error::new(expr, format!("unknown capture option: {key}")));
                 }
-                let Value::Bool(value) = value else {
-                    return Err(Error::new(
-                        expr,
-                        format!("capture option {key} must be a boolean"),
-                    ));
-                };
-                match key.as_str() {
-                    "bytes" => options.bytes = value,
-                    "trim" => options.trim = value,
-                    _ => unreachable!(),
-                }
-            }
-        }
-        if values.is_empty() {
-            return Err(Error::new(
-                expr,
-                "capture expects a callable after its options",
-            ));
+            };
+            let Value::Bool(value) = value else {
+                return Err(Error::new(
+                    expr,
+                    format!("capture option {key} must be a boolean"),
+                ));
+            };
+            *option = value;
         }
         Ok(options)
     }
@@ -422,6 +414,7 @@ impl Shell {
         outcome
     }
 
+    #[cfg(feature = "native")]
     pub(super) fn capture_call(
         &mut self,
         expr: &Expr,
@@ -429,26 +422,23 @@ impl Shell {
         values: &[Value],
         env: &Env,
         io: &Io,
-        all_errors: bool,
     ) -> EvalResult<Value> {
-        self.capture_invocation(
+        self.capture_with(
             expr,
-            callee,
-            values,
-            env,
             io,
-            Capture::Result { all_errors },
+            Capture::Result { all_errors: true },
+            |shell, mode, io| {
+                shell.call_value(expr, callee, Arguments::Values(values), env, mode, io)
+            },
         )
     }
 
-    fn capture_invocation(
+    fn capture_with(
         &mut self,
         expr: &Expr,
-        callee: Value,
-        values: &[Value],
-        env: &Env,
         io: &Io,
         capture: Capture,
+        evaluate: impl FnOnce(&mut Self, Mode, &Io) -> EvalResult<Value>,
     ) -> EvalResult<Value> {
         // Explicit nested captures allocate buffers and keep a full invocation frame alive.
         // Bound them independently of ordinary evaluation, as with macro expansion.
@@ -477,18 +467,12 @@ impl Shell {
                 Capture::Result { .. } => Arc::new(crate::streams::CaptureBudget::default()),
             });
             let positions = Self::capture_positions(&nested);
-            let mut outcome = self.call_value(
-                expr,
-                callee,
-                Arguments::Values(values),
-                env,
-                if matches!(capture, Capture::Result { .. }) {
-                    Mode::Condition
-                } else {
-                    Mode::Normal
-                },
-                &nested,
-            );
+            let mode = if matches!(capture, Capture::Result { .. }) {
+                Mode::Condition
+            } else {
+                Mode::Normal
+            };
+            let mut outcome = evaluate(self, mode, &nested);
             self.publish_invocation(expr, &mut outcome, &nested, positions);
             match outcome {
                 Ok(_) => Ok(self.last_result.clone()),
@@ -505,6 +489,71 @@ impl Shell {
         };
         self.capture_depth -= 1;
         result
+    }
+
+    pub(super) fn capture_expression(
+        &mut self,
+        expr: &Expr,
+        name: &str,
+        args: &[Expr],
+        env: &Env,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        let body = match args {
+            [body] | [_, body] if body.is_parenthesized_call() => body,
+            _ => {
+                return Err(Error::new(
+                    expr,
+                    format!("{name} expects ({name} [options] (expression ...))"),
+                )
+                .into());
+            }
+        };
+        let options = if let [options, _] = args {
+            CaptureOptions::parse(options, self.value(options, env, io)?)?
+        } else {
+            CaptureOptions::default()
+        };
+        let capture = match name {
+            "<-out" => Capture::Stream(Stream::Stdout),
+            "<-err" => Capture::Stream(Stream::Stderr),
+            "<-result" => Capture::Result { all_errors: false },
+            _ => unreachable!("capture operator checked before dispatch"),
+        };
+        let raw = match self.capture_with(expr, io, capture, |shell, mode, io| {
+            shell.eval(body, env, mode, io)
+        }) {
+            Ok(result) => result,
+            Err(Signal::Error(mut error)) => {
+                if let Some(raw) = error.result.as_deref() {
+                    // Preserve the original failure if its partial output is invalid UTF-8.
+                    let result = options
+                        .format(expr, raw, capture)
+                        .unwrap_or_else(|_| raw.clone());
+                    self.publish(result.clone());
+                    error.result = Some(Box::new(result));
+                }
+                return Err(Signal::Error(error));
+            }
+            Err(signal) => return Err(signal),
+        };
+        let result = match options.format(expr, &raw, capture) {
+            Ok(result) => result,
+            Err(mut error) => {
+                let mut result = raw;
+                set_field(&mut result, "error", error.as_value(false));
+                self.publish(result.clone());
+                error.result = Some(Box::new(result));
+                return Err(error.into());
+            }
+        };
+        self.publish(result.clone());
+        let field_name = match capture {
+            Capture::Result { .. } => return Ok(result),
+            Capture::Stream(Stream::Stdout) => "stdout",
+            Capture::Stream(Stream::Stderr) => "stderr",
+        };
+        Ok(field(&result, field_name).cloned().unwrap_or(Value::Nil))
     }
 
     pub(super) fn execution_builtin(
@@ -532,63 +581,6 @@ impl Shell {
                 values[0],
                 Value::Function(_) | Value::Command(_)
             ))),
-            "<-result" | "<-out" | "<-err" => {
-                let options = CaptureOptions::take(expr, &mut values)?;
-                let callee = values.remove(0);
-                let capture = match name {
-                    "<-result" => Capture::Result { all_errors: false },
-                    "<-out" => Capture::Stream(Stream::Stdout),
-                    _ => Capture::Stream(Stream::Stderr),
-                };
-                let outcome = match capture {
-                    Capture::Result { .. } => {
-                        self.capture_call(expr, callee, &values, env, io, false)
-                    }
-                    Capture::Stream(_) => {
-                        self.capture_invocation(expr, callee, &values, env, io, capture)
-                    }
-                };
-                let raw = match outcome {
-                    Ok(result) => result,
-                    Err(Signal::Error(mut error)) => {
-                        if let Some(raw) = error.result.as_deref() {
-                            // Keep the original command/transport failure if partial output
-                            // cannot be decoded. Its raw bytes remain inspectable.
-                            let result = options
-                                .format(expr, raw, capture)
-                                .unwrap_or_else(|_| raw.clone());
-                            self.publish(result.clone());
-                            error.result = Some(Box::new(result));
-                        }
-                        return Err(Signal::Error(error));
-                    }
-                    Err(signal) => return Err(signal),
-                };
-                let result = match options.format(expr, &raw, capture) {
-                    Ok(result) => result,
-                    Err(mut error) => {
-                        let mut result = raw;
-                        set_field(&mut result, "error", error.as_value(false));
-                        self.publish(result.clone());
-                        error.result = Some(Box::new(result));
-                        return Err(error.into());
-                    }
-                };
-                self.publish(result.clone());
-                match capture {
-                    Capture::Result { .. } => Ok(result),
-                    Capture::Stream(stream) => Ok(field(
-                        &result,
-                        if stream == Stream::Stdout {
-                            "stdout"
-                        } else {
-                            "stderr"
-                        },
-                    )
-                    .cloned()
-                    .unwrap_or(Value::Nil)),
-                }
-            }
             "spawn" | "wait" | "job-status" | "cancel" => {
                 #[cfg(feature = "native")]
                 if !self.syntax_only && self.host.is_none() {

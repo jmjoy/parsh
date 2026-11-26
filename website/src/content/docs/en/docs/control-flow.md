@@ -67,7 +67,7 @@ scope and return the last expression's value. Argument expressions are evaluated
 before parameters are bound. Functions can return numbers, lists, maps, booleans, and `CallResult`.
 Commands inside functions write to their current destinations in every calling
 position. A final command returns its `CallResult` directly. Capture function
-output explicitly with `(<-out function-name args...)`.
+output explicitly with `(<-out (function-name args...))`.
 
 ## Function values and parameters
 

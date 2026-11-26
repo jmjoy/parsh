@@ -147,9 +147,6 @@ pub(super) const VALUE_BUILTINS: &[&str] = &[
     "command?",
     "callable?",
     "bytes?",
-    "<-result",
-    "<-out",
-    "<-err",
     "spawn",
     "wait",
     "job-status",
@@ -329,7 +326,7 @@ fn arity(name: &str) -> (usize, usize) {
         "history" => (0, 2),
         "-" | "/" | "min" | "max" | "list/append" => (1, usize::MAX),
         "apply" => (2, usize::MAX),
-        "<-result" | "<-out" | "<-err" | "spawn" => (1, usize::MAX),
+        "spawn" => (1, usize::MAX),
         "map/get" | "list/get" | "str/get" | "list/slice" | "str/slice" => (2, 3),
         "map/set" | "list/set" | "list/insert" | "str/replace" => (3, 3),
         "list/range" => (1, 3),
@@ -392,11 +389,9 @@ impl Shell {
             "http/request" | "http/get" | "http/post" | "http/body-text" => {
                 http::call(self, expr, name, args, env, mode, io)
             }
-            "command" | "command?" | "callable?" | "bytes?" | "<-result" | "<-out" | "<-err"
-            | "spawn" | "wait" | "job-status" | "cancel" | "check" | "stdout-text"
-            | "stderr-text" | "exit-code" | "signal" | "throw" => {
-                self.execution_builtin(expr, name, args, env, mode, io)
-            }
+            "command" | "command?" | "callable?" | "bytes?" | "spawn" | "wait" | "job-status"
+            | "cancel" | "check" | "stdout-text" | "stderr-text" | "exit-code" | "signal"
+            | "throw" => self.execution_builtin(expr, name, args, env, mode, io),
             "." => {
                 let mut value = args.value(self, 0, env, io)?;
                 for index in 1..args.len() {

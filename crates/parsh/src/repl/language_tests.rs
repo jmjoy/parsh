@@ -275,6 +275,9 @@ fn function_references_retain_definitions_and_can_recurse() {
         "fn",
         "quote",
         "exit",
+        "<-out",
+        "<-err",
+        "<-result",
         "no-such-command",
     ] {
         fails(&format!("(function {name})"), "is not a function");
@@ -387,7 +390,7 @@ fn module_members_are_reserved_and_legacy_names_can_be_redefined() {
     ] {
         assert_eq!(
             evaluated(&format!(
-                "(function {name}) (str/trim (<-out type -t {name}))"
+                "(function {name}) (str/trim (<-out (type -t {name})))"
             )),
             [format!("<function {name}>"), r#""builtin""#.into()],
         );
@@ -702,7 +705,7 @@ fn callable_names_and_explicit_command_references_are_first_class() {
         (apply + #1 [#2 #3])
         (apply "str/join" [[a b] ","])
         (apply "map/get" [{name parsh} name])
-        (let r (<-result + #1 #2))
+        (let r (<-result (+ #1 #2)))
         (list (CallResult.value $r) (CallResult.termination $r)
               (text? (CallResult.stdout $r)) (stdout-text $r))
         "#
@@ -822,7 +825,15 @@ fn result_interpolation_and_background_capability_are_explicit() {
 }
 
 #[test]
-fn higher_order_capture_calls_have_a_bounded_stack() {
-    let source = format!("({} + #1)", "<-result ".repeat(256));
+fn nested_capture_forms_have_a_bounded_stack() {
+    let source = format!("{}(+ #1){}", "(<-result ".repeat(33), ")".repeat(33));
     fails(&source, "capture nesting exceeds 32 levels");
+}
+
+#[test]
+fn capture_forms_require_a_body_and_reject_apply() {
+    for name in ["<-out", "<-err", "<-result"] {
+        fails(&format!("({name} echo hello world)"), "expects");
+        fails(&format!("(apply {name} [])"), "is not an ordinary callable");
+    }
 }

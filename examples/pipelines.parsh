@@ -10,15 +10,13 @@
 
 (; Explicitly capture pipeline stdout and keep it as one argument. )
 (let unique
-  (<-|out
-    (printf "%s\n" $fruits)
-    (sort)
-    (uniq)))
+  (<-out (| (printf "%s\n" $fruits)
+            (sort)
+            (uniq))))
 (printf "captured as one argument:\n<%s>\n" $unique)
 
 (; Convert the numeric text produced by an external command before arithmetic. )
 (let lines
-  (int (<-|out
-    (printf "%s\n" $fruits)
-    (wc -l))))
+  (int (<-out (| (printf "%s\n" $fruits)
+                 (wc -l)))))
 (echo "lines=$lines double=$(* $lines #2)")

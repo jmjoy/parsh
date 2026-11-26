@@ -16,7 +16,7 @@ const examples: Record<string, string> = {
   files:
     "(mkdir -p demo)\n(out-> demo/greeting.txt (echo hello))\n(out->> demo/greeting.txt (echo parsh))\n(cat demo/greeting.txt)\n(in<- numbers.txt (sort -n))",
   capture:
-    "(let here (<-out pwd))\n(echo (str \"working in \" $here))\n(if (test -f fruits.txt) (echo \"found fruits.txt\") (echo missing))",
+    "(let here (<-out (pwd)))\n(echo (str \"working in \" $here))\n(if (test -f fruits.txt) (echo \"found fruits.txt\") (echo missing))",
   hello: "(dump (str \"hello, \" \"parsh\"))\n(dump [text \"a value with spaces\" #true])",
   variables:
     "(let name world)\n(dump (str \"hello, \" $name))\n(set name parsh)\n(dump (str \"hello, \" $name))",
