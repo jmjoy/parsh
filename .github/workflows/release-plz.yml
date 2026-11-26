@@ -1,0 +1,47 @@
+name: Release-plz
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  release-pr:
+    name: Prepare release PR
+    if: github.repository == 'jmjoy/parsh'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-pr-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - &rust
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    name: Publish to crates.io
+    if: github.repository == 'jmjoy/parsh'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    steps:
+      - *checkout
+      - *rust
+      - uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
