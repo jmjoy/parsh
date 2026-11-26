@@ -554,6 +554,10 @@ pub(crate) fn variable_name(name: &str) -> bool {
     chars.next().is_some_and(variable_start) && chars.all(variable_continue)
 }
 
+pub(crate) fn keyword_name(word: &str) -> Option<&str> {
+    word.strip_prefix('&').filter(|name| variable_name(name))
+}
+
 pub(crate) fn string_escape(ch: char) -> Option<char> {
     match ch {
         'n' => Some('\n'),

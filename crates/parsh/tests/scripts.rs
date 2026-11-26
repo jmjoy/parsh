@@ -359,6 +359,34 @@ fn maps_capture_commands_and_expand_only_explicit_key_and_value_lists() {
 }
 
 #[test]
+fn keyword_syntax_stays_literal_in_external_command_arguments() {
+    let output = run(r#"
+        (printf "<%s>\n" --addr :8080 &name value)
+        ((command printf) "<%s>\n" &reference)
+        (apply (command printf) "<%s>\n" &fixed [&list])
+        (alias literal (printf "<%s>\n" &preset))
+        (| (literal &argument) (cat))
+    "#);
+    success(&output);
+    assert_eq!(
+        stdout(&output),
+        "<--addr>\n<:8080>\n<&name>\n<value>\n<&reference>\n<&fixed>\n<&list>\n<&preset>\n<&argument>\n"
+    );
+}
+
+#[test]
+fn alias_keyword_presets_survive_background_task_snapshots() {
+    let output = run(r#"
+        (defn show (name &opt suffix) (printf "%s%s" $name $suffix))
+        (alias excited (show &suffix "!"))
+        (let j (spawn excited parsh))
+        (echo (stdout-text (wait $j)))
+    "#);
+    success(&output);
+    assert_eq!(stdout(&output), "parsh!\n");
+}
+
+#[test]
 fn collection_sugar_captures_commands_and_expands_list_arguments() {
     let output = run(r#"
         []{}
@@ -1637,7 +1665,7 @@ fn logical_functions_handle_command_status_and_preserve_fail_fast_bodies() {
         (if (or (false) (true)) (printf or-ok))
         (let invert (function not))
         (if ($invert (false)) (printf ref-ok))
-        (defn optional (&optional (x (false))) $x)
+        (defn optional (&opt (x (false))) $x)
         (if (and (false) (optional)) (printf unreachable))
         (if (or (true) (optional)) (printf skipped))
     "#);

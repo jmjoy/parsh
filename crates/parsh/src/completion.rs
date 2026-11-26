@@ -26,9 +26,19 @@ enum Kind {
     Command,
     Function,
     ParameterMarker,
+    Keyword,
     Path { directories_only: bool },
     Variable,
     Literal,
+}
+
+impl Kind {
+    fn is_syntax(self) -> bool {
+        matches!(
+            self,
+            Self::Variable | Self::Literal | Self::Keyword | Self::ParameterMarker
+        )
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -38,6 +48,14 @@ struct Context {
     kind: Kind,
     quote: Quote,
     closed: bool,
+    call: Option<CallContext>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct CallContext {
+    head: String,
+    positional: usize,
+    keywords: Vec<String>,
 }
 
 #[derive(Default)]
@@ -48,6 +66,8 @@ struct Frame {
     parameters: bool,
     optional_section: bool,
     optional_pair: bool,
+    keywords: Vec<String>,
+    keyword_start: Option<usize>,
 }
 
 impl Frame {
@@ -72,14 +92,33 @@ impl Frame {
     }
 
     fn word(&mut self, text: String, quoted: bool) {
-        if self.parameters && !quoted && text == "&optional" {
+        if self.parameters && !quoted && text == "&opt" {
             self.optional_section = true;
         }
         if self.items == 0 {
             self.comment = !quoted && text == ";";
             self.head = Some(text);
+        } else if !quoted && let Some(name) = reader::keyword_name(&text) {
+            self.keyword_start.get_or_insert(self.items);
+            self.keywords.push(name.to_owned());
         }
         self.items += 1;
+    }
+
+    fn keyword_context(&self) -> Option<CallContext> {
+        let head = self.head.as_ref()?;
+        if self.items == 0 || head.is_empty() {
+            return None;
+        }
+        let keyword_start = self.keyword_start.unwrap_or(self.items);
+        if !(self.items - keyword_start).is_multiple_of(2) {
+            return None;
+        }
+        Some(CallContext {
+            head: head.clone(),
+            positional: keyword_start - 1,
+            keywords: self.keywords.clone(),
+        })
     }
 }
 
@@ -103,6 +142,7 @@ impl Context {
                 kind: Kind::Literal,
                 quote,
                 closed,
+                call: None,
             });
         }
         let frame = frames.last()?;
@@ -127,12 +167,21 @@ impl Context {
                 directories_only: frame.head.as_deref() == Some("cd") && frame.items == 1,
             }
         };
+        let call = if quote == Quote::None
+            && (prefix == "&" || reader::keyword_name(&prefix).is_some())
+            && matches!(kind, Kind::Path { .. })
+        {
+            frame.keyword_context()
+        } else {
+            None
+        };
         Some(Self {
             range,
             prefix,
             kind,
             quote,
             closed,
+            call,
         })
     }
 
@@ -383,6 +432,7 @@ fn needs_quotes(text: &str) -> bool {
     text.is_empty()
         || text.starts_with('$')
         || text.starts_with('#')
+        || reader::keyword_name(text).is_some()
         || text == ";"
         || text.chars().any(|ch| !reader::word_character(ch))
 }
@@ -423,14 +473,18 @@ pub(crate) struct Edit {
 
 impl Completion {
     pub(crate) fn query(shell: &mut Shell, source: &str, cursor: usize) -> Option<Self> {
-        let context = Context::parse(source, cursor)?;
+        let mut context = Context::parse(source, cursor)?;
+        let keyword_candidates = context.call.as_ref().and_then(|call| {
+            shell.completion_keywords(&call.head, call.positional, &call.keywords)
+        });
+        if keyword_candidates.is_some() {
+            context.kind = Kind::Keyword;
+        }
         let mut candidates = match context.kind {
             Kind::Command => shell.completion_commands(&context.prefix),
             Kind::Function => shell.completion_functions(&context.prefix),
-            Kind::ParameterMarker => ["&optional", "&rest"]
-                .into_iter()
-                .map(Candidate::word)
-                .collect(),
+            Kind::ParameterMarker => ["&opt", "&rest"].into_iter().map(Candidate::word).collect(),
+            Kind::Keyword => keyword_candidates.unwrap(),
             Kind::Path { directories_only } => {
                 shell.completion_paths(&context.prefix, directories_only, false)
             }
@@ -467,7 +521,7 @@ impl Completion {
         self.candidates
             .iter()
             .map(|candidate| {
-                if matches!(self.context.kind, Kind::Variable | Kind::Literal) {
+                if self.context.kind.is_syntax() {
                     candidate.text.clone()
                 } else {
                     literal(&candidate.text)
@@ -502,7 +556,7 @@ impl Completion {
         let embedded_variable =
             self.context.kind == Kind::Variable && self.context.quote.interpolates();
         let finished = unique && !first.directory && !embedded_variable;
-        let quote = if matches!(self.context.kind, Kind::Variable | Kind::Literal) {
+        let quote = if self.context.kind.is_syntax() {
             Quote::None
         } else if self.context.quote == Quote::Single && !text.contains('\'') {
             Quote::Single

@@ -233,7 +233,7 @@ fn independent_closures_can_be_returned_passed_and_stored() {
         evaluated(
             r#"
         (defn counter (start)
-          (fn (&optional (step #1)) (set start (+ $start $step)) $start))
+          (fn (&opt (step #1)) (set start (+ $start $step)) $start))
         (let first (counter #0))
         (let second (counter #10))
         (defn invoke (f x) ($f $x))
@@ -426,7 +426,7 @@ fn optional_defaults_are_per_call_and_rest_keeps_each_argument_whole() {
         evaluated(
             r#"
         (let calls #0)
-        (defn collect (x &optional y (z (do (set calls (+ $calls #1)) $x)) &rest tail)
+        (defn collect (x &opt y (z (do (set calls (+ $calls #1)) $x)) &rest tail)
           (list $x $y $z $tail))
         (collect first)
         (collect first second)
@@ -435,7 +435,7 @@ fn optional_defaults_are_per_call_and_rest_keeps_each_argument_whole() {
         ((fn (&rest xs) $xs) [a b] c)
         (let order (str))
         (defn mark (part) (set order (str $order $part)) $part)
-        (defn defaults (x &optional (y (mark d)) (z $y)) (list $x $y $z))
+        (defn defaults (x &opt (y (mark d)) (z $y)) (list $x $y $z))
         (list (defaults (mark a)) $order)
     "#
         ),
@@ -448,18 +448,19 @@ fn optional_defaults_are_per_call_and_rest_keeps_each_argument_whole() {
             r#"(("a" "d" "d") "ad")"#,
         ]
     );
-    fails("(defn f (x &optional y) $x) (f)", "expected 1..2 arguments");
+    fails("(defn f (x &opt y) $x) (f)", "expected 1..2 arguments");
     fails(
-        "(defn f (x &optional y) $x) (f 1 2 3)",
+        "(defn f (x &opt y) $x) (f 1 2 3)",
         "expected 1..2 arguments",
     );
     for parameters in [
         "(x &rest)",
         "(&rest x y)",
-        "(&optional x &optional y)",
+        "(&opt x &opt y)",
+        "(&optional x)",
         "(x &rest x)",
-        "(&optional (x))",
-        "(&optional (x 1 2))",
+        "(&opt (x))",
+        "(&opt (x 1 2))",
         "(&rest (x 1))",
     ] {
         let events = evaluate(&mut Repl::new(), &format!("(fn {parameters} #nil)"));
@@ -473,19 +474,149 @@ fn optional_defaults_are_per_call_and_rest_keeps_each_argument_whole() {
 }
 
 #[test]
+fn functions_and_macros_accept_keyword_arguments_by_parameter_name() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (defn describe (name value &opt (suffix end))
+          (list $name $value $suffix))
+        (describe &value second &name first)
+        (describe first &value second)
+        (describe &name first &value second &suffix final)
+        ((function describe) &value second &name first &suffix #nil)
+        ((fn (name &rest tail) (list $name $tail)) &name first)
+        (defmacro pair (left right) `(list ,$left ,$right))
+        (pair &right (+ #1 #2) &left first)
+        (defmacro first-of (wanted ignored) $wanted)
+        (first-of &ignored $undefined &wanted (+ #1 #2))
+        (macroexpand-1 (quote (first-of &ignored $undefined &wanted (+ #1 #2))))
+    "#
+        ),
+        [
+            r#"("first" "second" "end")"#,
+            r#"("first" "second" "end")"#,
+            r#"("first" "second" "final")"#,
+            r#"("first" "second" #nil)"#,
+            r#"("first" ())"#,
+            r#"("first" #3)"#,
+            "#3",
+            "(+ #1 #2)",
+        ]
+    );
+    assert_eq!(
+        evaluated(
+            r#"
+        (defn literal (value) $value)
+        (let name "&value")
+        [(literal "&value") (literal $name) (literal &value &) (literal &bad-name)]
+        "#
+        ),
+        [r#"("&value" "&value" "&" "&bad-name")"#]
+    );
+    for (source, message) in [
+        ("(defn f (value) $value) (f &value)", "missing a value"),
+        (
+            "(defn f (value) $value) (f &value one &value two)",
+            "duplicate keyword argument",
+        ),
+        (
+            "(defn f (value) $value) (f one &value two)",
+            "multiple values for parameter value",
+        ),
+        (
+            "(defn f (value) $value) (f &missing one)",
+            "unexpected keyword argument",
+        ),
+        (
+            "(defn f (value) $value) (f &value one two)",
+            "positional argument follows a keyword argument",
+        ),
+        (
+            "(defn f (a b) $a) (f &b one)",
+            "missing required argument a",
+        ),
+        (
+            "(defn f (&rest a) $a) (f &a one)",
+            "unexpected keyword argument &a",
+        ),
+        ("(defn f (a b) $a) (f &a &b one)", "&a is missing a value"),
+    ] {
+        fails(source, message);
+    }
+}
+
+#[test]
+fn keyword_expressions_run_in_source_order_and_invalid_calls_skip_evaluation() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (let order "")
+        (defn mark (part) (set order (str $order $part)) $part)
+        (defn f (first &opt (middle (mark d)) last) [$first $middle $last])
+        [(f &last (mark c) &first (mark a)) $order]
+        (try (f (mark x) &first (mark y)) (catch e #nil))
+        (try (f (mark x) &unknown (mark y)) (catch e #nil))
+        (try (f (mark x) (mark y) (mark z) (mark z)) (catch e #nil))
+        (str $order)
+        "#,
+        ),
+        [r#"(("a" "d" "c") "cad")"#, r#""cad""#]
+    );
+}
+
+#[test]
+fn keyword_arguments_work_with_apply_presets_and_named_builtins() {
+    assert_eq!(
+        evaluated(
+            r#"
+        (defn contact (name &opt greeting punctuation) [$name $greeting $punctuation])
+        (let f (function contact))
+        (apply $f ["&greeting"] &punctuation "!")
+        (apply contact kim [] &greeting hello)
+        (let p (partial $f &punctuation "!"))
+        ($p &name lee &greeting hi)
+        (alias greet (contact &greeting welcome))
+        (greet "sam" &punctuation ".")
+        (apply greet [alex])
+        (defstruct Point x y)
+        (Point &y #2 &x #1)
+        (apply Point [] &x #3 &y #4)
+        ((function map/get) &key absent &default yes &map {})
+        (apply str/join [] &separator "-" &texts [a b])
+        "#,
+        ),
+        [
+            r#"("&greeting" #nil "!")"#,
+            r#"("kim" "hello" #nil)"#,
+            r#"("lee" "hi" "!")"#,
+            r#"("sam" "welcome" ".")"#,
+            r#"("alex" "welcome" #nil)"#,
+            "(Point #1 #2)",
+            "(Point #3 #4)",
+            r#""yes""#,
+            r#""a-b""#,
+        ]
+    );
+    fails(
+        "(defn f (a b) $a) (alias aa (f &b old)) (aa one &b new)",
+        "duplicate keyword argument &b",
+    );
+}
+
+#[test]
 fn macros_bind_optional_and_rest_forms_without_evaluating_arguments() {
     assert_eq!(
         evaluated(
             r#"
         (defmacro block (&rest body) `(do ,@$body))
         (block (+ #1) (+ #2))
-        (defmacro choose (condition &optional (yes (quote (+ #7))) &rest no)
+        (defmacro choose (condition &opt (yes (quote (+ #7))) &rest no)
           `(if ,$condition ,$yes (do ,@$no)))
         (choose (eq a a))
         (choose (eq a b) $undefined (+ #2) (+ #3))
-        (defmacro same (x &optional (y $x)) $y)
+        (defmacro same (x &opt (y $x)) $y)
         (same (+ #9))
-        (defmacro absent (&optional x)
+        (defmacro absent (&opt x)
           (if (nil? $x) (quote (str absent)) $x))
         (absent)
         (absent (str present))
@@ -509,7 +640,7 @@ fn return_unwinds_loops_and_arguments_but_stops_at_the_current_function() {
         (defn caller () (take (return [from argument])) $undefined)
         (caller)
         ((fn () (return (do))))
-        (defn default_return (&optional (x (return early))) $undefined)
+        (defn default_return (&opt (x (return early))) $undefined)
         (default_return)
         (defn applied () (apply (fn (x) (return $x)) [returned]))
         (applied)

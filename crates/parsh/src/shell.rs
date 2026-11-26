@@ -50,7 +50,7 @@ mod type_command;
 
 use builtins::{Arguments, VALUE_BUILTINS};
 pub use functions::FunctionValue;
-use functions::Parameters;
+use functions::{ArgumentBinding, Parameters};
 
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -1554,16 +1554,14 @@ impl Shell {
                     return self.expand_macro(&call, env, mode, io);
                 }
                 if let Some(fields) = self.structs.get(name).map(|def| def.fields.clone()) {
-                    Self::arity(expr, args, fields.len(), fields.len())?;
-                    let mut values = IndexMap::new();
-                    for (field, arg) in fields.into_iter().zip(args) {
-                        let value = self.value(arg, env, io)?;
-                        values.insert(field, value);
-                    }
-                    return Ok(Value::Struct {
-                        name: name.into(),
-                        fields: values,
-                    });
+                    return self.construct_struct(
+                        expr,
+                        name,
+                        fields,
+                        Arguments::Expressions(args),
+                        env,
+                        io,
+                    );
                 }
                 if let Some((struct_name, field)) = name.split_once('.')
                     && self.structs.contains_key(struct_name)
@@ -1611,6 +1609,32 @@ impl Shell {
                 }
             }
         }
+    }
+
+    fn construct_struct(
+        &mut self,
+        expr: &Expr,
+        name: &str,
+        fields: Vec<String>,
+        args: Arguments<'_>,
+        env: &Env,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        let binding = ArgumentBinding::new(
+            expr,
+            args,
+            fields.iter().map(String::as_str),
+            fields.len(),
+            fields.len(),
+        )?;
+        let values = binding.collect(|index| args.value(self, index, env, io))?;
+        Ok(Value::Struct {
+            name: name.into(),
+            fields: fields
+                .into_iter()
+                .zip(values.into_iter().flatten())
+                .collect(),
+        })
     }
 
     fn defmacro(&mut self, expr: &Expr, args: &[Expr], env: &Env) -> Result<(), Error> {
@@ -1755,16 +1779,12 @@ impl Shell {
             definition,
             args,
         } = *call;
-        definition.parameters.check_arity(expr, args.len())?;
-        let values = args
-            .iter()
-            .map(|arg| Value::Form(Box::new(arg.clone())))
-            .collect();
+        let arguments = Self::macro_arguments(expr, definition, args)?;
         let expansion = self.function_body(
             expr,
             &format!("macro {name}"),
             definition,
-            values,
+            arguments,
             Mode::Normal,
             io,
         )?;
@@ -1782,6 +1802,17 @@ impl Shell {
         let result = self.eval(&form, env, mode, io);
         self.macro_depth -= 1;
         result.map_err(|signal| Self::macro_signal(signal, expr, name))
+    }
+
+    fn macro_arguments(
+        expr: &Expr,
+        definition: &Function,
+        args: &[Expr],
+    ) -> Result<Vec<Option<Value>>, Error> {
+        definition
+            .parameters
+            .bind(expr, Arguments::Expressions(args))?
+            .collect(|index| Ok(Value::Form(Box::new(args[index].clone()))))
     }
 
     fn macro_signal(signal: Signal, expr: &Expr, name: &str) -> Signal {

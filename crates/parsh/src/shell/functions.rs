@@ -2,10 +2,11 @@ use std::{collections::HashSet, fmt, rc::Rc};
 
 use super::{
     Arguments, Env, Error, EvalResult, Function, Mode, Scope, Shell, Signal, Value,
-    builtins::VALUE_BUILTINS,
+    builtins::{VALUE_BUILTINS, parameter_names},
 };
 use crate::{
-    reader::{Expr, Kind},
+    completion::Candidate,
+    reader::{Expr, Kind, keyword_name, variable_name},
     streams::Io,
 };
 
@@ -16,7 +17,124 @@ pub struct FunctionValue(pub(super) Rc<Callable>);
 pub(super) enum Callable {
     User { name: String, definition: Function },
     Builtin(String),
+    Partial(PartialCall),
     ExternalAlias { name: String, prefix: Vec<String> },
+}
+
+pub(super) struct PartialCall {
+    pub(super) name: String,
+    pub(super) closure: Env,
+    // A target with keyword parameters can accept more markers at call time.
+    pub(super) preset_markers: Option<Vec<(usize, String)>>,
+}
+
+pub(super) fn keyword_marker(expr: &Expr) -> Option<&str> {
+    match &expr.kind {
+        Kind::Word(word) => keyword_name(word),
+        _ => None,
+    }
+}
+
+/// Maps arguments in source order to their parameter slots.
+pub(super) struct ArgumentBinding {
+    positional: usize,
+    keywords: Vec<usize>,
+    len: usize,
+}
+
+impl ArgumentBinding {
+    pub(super) fn new<'a>(
+        call: &Expr,
+        args: Arguments<'_>,
+        names: impl Iterator<Item = &'a str> + Clone,
+        min: usize,
+        max: usize,
+    ) -> Result<Self, Error> {
+        let source = args.source().unwrap_or_default();
+        let Some(positional) = source.iter().position(|arg| keyword_marker(arg).is_some()) else {
+            Shell::arity_count(call, args.len(), min, max)?;
+            return Ok(Self {
+                positional: args.len(),
+                keywords: Vec::new(),
+                len: args.len(),
+            });
+        };
+        if positional > max {
+            return Err(Error::new(
+                &source[max],
+                format!("expected at most {max} positional arguments, got {positional}"),
+            ));
+        }
+
+        let mut len = positional;
+        let mut keywords = Vec::new();
+        let mut supplied = HashSet::new();
+        let mut tail = &source[positional..];
+        while let Some((marker, rest)) = tail.split_first() {
+            let name = keyword_marker(marker).ok_or_else(|| {
+                Error::new(marker, "positional argument follows a keyword argument")
+            })?;
+            let (_, rest) = rest
+                .split_first()
+                .filter(|(value, _)| keyword_marker(value).is_none())
+                .ok_or_else(|| {
+                    Error::new(
+                        marker,
+                        format!("keyword argument &{name} is missing a value"),
+                    )
+                })?;
+            let index = names
+                .clone()
+                .position(|parameter| parameter == name)
+                .ok_or_else(|| {
+                    Error::new(marker, format!("unexpected keyword argument &{name}"))
+                })?;
+            if index < positional {
+                return Err(Error::new(
+                    marker,
+                    format!("multiple values for parameter {name}"),
+                ));
+            }
+            if !supplied.insert(index) {
+                return Err(Error::new(
+                    marker,
+                    format!("duplicate keyword argument &{name}"),
+                ));
+            }
+            len = len.max(index + 1);
+            keywords.push(index);
+            tail = rest;
+        }
+
+        for (index, name) in names.take(min).enumerate().skip(positional) {
+            if !supplied.contains(&index) {
+                return Err(Error::new(
+                    call,
+                    format!("missing required argument {name}"),
+                ));
+            }
+        }
+        Ok(Self {
+            positional,
+            keywords,
+            len,
+        })
+    }
+
+    pub(super) fn collect<T, E>(
+        self,
+        mut value: impl FnMut(usize) -> Result<T, E>,
+    ) -> Result<Vec<Option<T>>, E> {
+        let mut bound = Vec::with_capacity(self.len);
+        for index in 0..self.positional {
+            bound.push(Some(value(index)?));
+        }
+        bound.resize_with(self.len, || None);
+        for (index, slot) in self.keywords.into_iter().enumerate() {
+            bound[slot] = Some(value(self.positional + index * 2 + 1)?);
+        }
+        Ok(bound)
+    }
 }
 
 impl PartialEq for FunctionValue {
@@ -60,6 +178,7 @@ impl FunctionValue {
         let name = match &*self.0 {
             Callable::User { name, .. }
             | Callable::Builtin(name)
+            | Callable::Partial(PartialCall { name, .. })
             | Callable::ExternalAlias { name, .. } => name,
         };
         format!("<function {name}>")
@@ -88,9 +207,9 @@ impl Parameters {
         while index < items.len() {
             let item = &items[index];
             if let Kind::Word(marker) = &item.kind {
-                if marker == "&optional" {
+                if marker == "&opt" {
                     if optional {
-                        return Err(Error::new(item, "duplicate &optional marker"));
+                        return Err(Error::new(item, "duplicate &opt marker"));
                     }
                     optional = true;
                     index += 1;
@@ -143,10 +262,18 @@ impl Parameters {
         Ok(result)
     }
 
-    pub(super) fn check_arity(&self, expr: &Expr, count: usize) -> Result<(), Error> {
-        Shell::arity_count(
+    pub(super) fn names(&self) -> impl Iterator<Item = &str> + Clone {
+        self.required
+            .iter()
+            .map(String::as_str)
+            .chain(self.optional.iter().map(|(name, _)| name.as_str()))
+    }
+
+    pub(super) fn bind(&self, expr: &Expr, args: Arguments<'_>) -> Result<ArgumentBinding, Error> {
+        ArgumentBinding::new(
             expr,
-            count,
+            args,
+            self.names(),
             self.required.len(),
             if self.rest.is_some() {
                 usize::MAX
@@ -202,13 +329,14 @@ impl Shell {
                 Ok(self.commands(expr, &[argv], mode, io)?)
             }
             Callable::User { name, definition } => {
-                definition.parameters.check_arity(expr, args.len())?;
-                let values = args.values(self, env, io)?;
+                let binding = definition.parameters.bind(expr, args)?;
+                let arguments = binding.collect(|index| args.value(self, index, env, io))?;
                 let positions = Self::capture_positions(io);
-                let mut result = self.function_body(expr, name, definition, values, mode, io);
+                let mut result = self.function_body(expr, name, definition, arguments, mode, io);
                 self.publish_invocation(expr, &mut result, io, positions);
                 result
             }
+            Callable::Partial(partial) => self.call_partial(expr, partial, args, env, mode, io),
             Callable::Builtin(name) if VALUE_BUILTINS.contains(&name.as_str()) => {
                 self.call_builtin(expr, name, args, env, mode, io)
             }
@@ -250,35 +378,47 @@ impl Shell {
         expr: &Expr,
         name: &str,
         definition: &Function,
-        values: Vec<Value>,
+        arguments: Vec<Option<Value>>,
         mode: Mode,
         io: &Io,
     ) -> EvalResult<Value> {
-        definition.parameters.check_arity(expr, values.len())?;
         let local = self.child_scope(&definition.closure);
-        let caller_loop_depth = std::mem::take(&mut self.loop_depth);
-        let caller_finally_depth = std::mem::take(&mut self.finally_depth);
-        self.return_depth += 1;
-        let result = (|| {
-            let mut supplied = values.into_iter();
+        self.function_boundary(expr, name, |shell| {
+            let mut arguments = arguments.into_iter();
             for parameter in &definition.parameters.required {
-                Scope::bind(&local, parameter, supplied.next().unwrap());
+                Scope::bind(&local, parameter, arguments.next().flatten().unwrap());
             }
             for (parameter, default) in &definition.parameters.optional {
-                let value = if let Some(value) = supplied.next() {
+                let value = if let Some(value) = arguments.next().flatten() {
                     value
                 } else if let Some(default) = default {
-                    self.value(default, &local, io)?
+                    shell.value(default, &local, io)?
                 } else {
                     Value::Nil
                 };
                 Scope::bind(&local, parameter, value);
             }
             if let Some(parameter) = &definition.parameters.rest {
-                Scope::bind(&local, parameter, Value::List(supplied.collect()));
+                Scope::bind(
+                    &local,
+                    parameter,
+                    Value::List(arguments.flatten().collect()),
+                );
             }
-            self.sequence(&definition.body, &local, mode, io)
-        })();
+            shell.sequence(&definition.body, &local, mode, io)
+        })
+    }
+
+    pub(super) fn function_boundary(
+        &mut self,
+        expr: &Expr,
+        name: &str,
+        evaluate: impl FnOnce(&mut Self) -> EvalResult<Value>,
+    ) -> EvalResult<Value> {
+        let caller_loop_depth = std::mem::take(&mut self.loop_depth);
+        let caller_finally_depth = std::mem::take(&mut self.finally_depth);
+        self.return_depth += 1;
+        let result = evaluate(self);
         self.return_depth -= 1;
         self.loop_depth = caller_loop_depth;
         self.finally_depth = caller_finally_depth;
@@ -293,6 +433,46 @@ impl Shell {
                 Err(error.into())
             }
         }
+    }
+
+    pub(super) fn accepts_keyword_arguments(&self, expr: &Expr, callee: &Value) -> bool {
+        match self.resolve_callable(expr, callee.clone()) {
+            Ok(Value::Function(function)) => match &*function.0 {
+                Callable::User { .. } => true,
+                Callable::Builtin(name) => parameter_names(name).is_some(),
+                Callable::Partial(partial) => partial.preset_markers.is_some(),
+                Callable::ExternalAlias { .. } => false,
+            },
+            Ok(Value::Text(name)) => self.structs.contains_key(&name),
+            _ => false,
+        }
+    }
+
+    pub(crate) fn completion_keywords(
+        &self,
+        name: &str,
+        positional: usize,
+        used: &[String],
+    ) -> Option<Vec<Candidate>> {
+        let collect = |names: &mut dyn Iterator<Item = &str>| {
+            names
+                .skip(positional)
+                .filter(|name| variable_name(name) && !used.iter().any(|used| used == name))
+                .map(|name| Candidate::word(format!("&{name}")))
+                .collect()
+        };
+        if let Some(function) = self.functions.get(name)
+            && let Callable::User { definition, .. } = &*function.0
+        {
+            return Some(collect(&mut definition.parameters.names()));
+        }
+        if let Some(definition) = self.macros.get(name) {
+            return Some(collect(&mut definition.parameters.names()));
+        }
+        if let Some(definition) = self.structs.get(name) {
+            return Some(collect(&mut definition.fields.iter().map(String::as_str)));
+        }
+        parameter_names(name).map(|names| collect(&mut names.iter().copied()))
     }
 }
 

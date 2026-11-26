@@ -7,6 +7,17 @@ description: "不可变集合、JSON、原生 HTTP 请求、类型判断和数�
 HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要更新绑定时显式使用 `set`。
 签名中的方括号表示可选参数，并非列表字面值；`...` 表示可重复参数。
 
+标量转换函数、`map/get`、`map/set`、`map/del`、`map/has`、`map/get-in`、
+`map/set-in`、`list/first`、`list/get`、`list/slice`、`str/get`、`str/slice`、
+`str/split`、`str/join`、`str/replace`、`bytes/slice`、`http/request`、
+`http/get` 和 `http/post` 支持关键字参数。名称与文档中的签名一致。
+`map/get`、`map/set`、`map/del` 和 `map/has` 的第一个参数名为 `map`。
+
+```parsh
+(dump (map/get {name parsh} missing &default unknown))
+(dump (str/replace "a-b" &to "/" &from "-"))
+```
+
 ## 模块命名空间
 
 字符串、列表和映射操作使用 `模块/成员` 名称，例如 `str/join`、`list/append` 和 `map/get`。
@@ -258,7 +269,7 @@ HTTP 请求和后台任务要求原生能力。集合更新返回新值，需要
 ```
 
 结果为 `"parsh"` 和 `(#1)`。已有 nil 值的键仍然命中，返回 nil；默认值仍被求值。
-此规则也适用于函数引用和 `apply`。函数声明中的 `&optional` 默认表达式则只在缺参时求值。
+此规则也适用于函数引用和 `apply`。函数声明中的 `&opt` 默认表达式则只在缺参时求值。
 
 ## JSON
 

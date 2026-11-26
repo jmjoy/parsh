@@ -9,6 +9,18 @@ and background tasks require native capabilities. Collection updates return new
 values; use `set` to replace a binding. In signatures, brackets mark optional
 arguments rather than literal list syntax, and `...` marks repeated arguments.
 
+The scalar conversions, `map/get`, `map/set`, `map/del`, `map/has`,
+`map/get-in`, `map/set-in`, `list/first`, `list/get`, `list/slice`,
+`str/get`, `str/slice`, `str/split`, `str/join`, `str/replace`,
+`bytes/slice`, `http/request`, `http/get`, and `http/post` accept keyword
+arguments. Use the names shown in their signatures. For the first parameter of
+`map/get`, `map/set`, `map/del`, and `map/has`, use `&map`.
+
+```parsh
+(dump (map/get {name parsh} missing &default unknown))
+(dump (str/replace "a-b" &to "/" &from "-"))
+```
+
 ## Module namespaces
 
 Text, list, and map operations use `module/member` names, such as
@@ -284,7 +296,7 @@ propagates its errors:
 
 Results are `"parsh"` and `(#1)`. A stored nil value counts as present and returns
 nil, but the explicit default still runs. Function references and `apply` follow
-the same rule. Defaults declared with `&optional` run only when an argument is omitted.
+the same rule. Defaults declared with `&opt` run only when an argument is omitted.
 
 ## JSON
 

@@ -72,17 +72,16 @@ description: "词法函数、条件分支、顺序求值与循环。"
 (let add (function +))
 (dump (apply $add #1 [#2 #3]))
 
-(defn sum (first &optional (second #0) &rest more)
+(defn sum (first &opt (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
 (dump (sum #1 #2 #3 #4))
 ```
 
-参数顺序为必选参数、`&optional`、`&rest name`。可选参数可以只写名字，缺省为 nil；
+参数顺序为必选参数、`&opt`、`&rest name`。可选参数可以只写名字，缺省为 nil；
 `(name default)` 的默认表达式仅在缺参时、每次调用中求值，可以访问前面的参数和捕获环境。
 可选参数按位置依次消费实参，剩余实参组成 rest 列表；列表实参保持为一个完整值。
-`apply` 将最后一个列表展开为实参，并允许在列表前提供固定实参，所有值都不会再次解析或求值。
 
 普通数据继续采用值语义；复制函数值保留相同的函数身份和捕获环境。
 `eq` 按函数身份比较；函数引用保留取得时的定义，后续重定义不会改变已有引用。
@@ -95,6 +94,29 @@ description: "词法函数、条件分支、顺序求值与循环。"
 嵌套表达式和重定向，不会退出调用方函数。在函数外使用会报错。
 命令表达式作为返回值时继续输出，并直接返回 `CallResult`；文本捕获必须显式调用。
 宏体也可用 return 提前返回表单；宏展开代码中的 return 则作用于调用方函数。
+
+## 关键字参数
+
+在调用处用 `&name 表达式` 按形参名传值。必选参数和可选参数都可以这样传。
+先写位置参数，再写关键字参数，关键字之间的顺序任意。`&rest` 收集多余的位置实参。
+
+```parsh
+(defn greet (name &opt (greeting Hello) (punctuation "!"))
+  (str $greeting ", " $name $punctuation))
+
+(dump (greet parsh &punctuation "."))
+(dump (greet &greeting Hi &name parsh))
+(dump (apply greet [parsh] &greeting Hi))
+```
+
+直接调用时，未知关键字、重复绑定和缺参会在实参求值前报错。
+显式实参按书写顺序各求值一次。省略可选参数时取默认值，显式传入 `#nil` 则绑定为 nil。
+
+关键字用未加引号的裸词表示，`&` 后的名称遵循变量命名规则。
+要传入文本 `&greeting`，可写成 `"&greeting"`，也可传入保存该文本的变量。
+使用 `apply` 时，把固定位置参数和待展开的列表写在关键字参数前。
+列表里的值按位置传入，后面的关键字参数按名称转发。
+别名和 `partial` 可以预设目标接受的关键字参数。
 
 ## 观察返回值
 

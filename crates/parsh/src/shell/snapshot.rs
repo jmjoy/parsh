@@ -1,5 +1,5 @@
 //! Owned graph transfer. No Rc, RefCell, or live interpreter crosses a thread boundary.
-use super::functions::Callable;
+use super::functions::{Callable, PartialCall};
 use super::*;
 
 #[derive(Clone)]
@@ -32,6 +32,11 @@ struct Definition {
 enum FrozenFunction {
     User(String, Definition),
     Builtin(String),
+    Partial {
+        name: String,
+        closure: usize,
+        preset_markers: Option<Vec<(usize, String)>>,
+    },
     ExternalAlias(String, Vec<String>),
 }
 
@@ -111,6 +116,15 @@ impl Builder {
                 FrozenFunction::User(name.clone(), self.definition(definition))
             }
             Callable::Builtin(name) => FrozenFunction::Builtin(name.clone()),
+            Callable::Partial(PartialCall {
+                name,
+                closure,
+                preset_markers,
+            }) => FrozenFunction::Partial {
+                name: name.clone(),
+                closure: self.scope(closure),
+                preset_markers: preset_markers.clone(),
+            },
             Callable::ExternalAlias { name, prefix } => {
                 FrozenFunction::ExternalAlias(name.clone(), prefix.clone())
             }
@@ -226,6 +240,15 @@ impl Frozen {
                 FrozenFunction::Builtin(name) => {
                     FunctionValue(Rc::new(Callable::Builtin(name.clone())))
                 }
+                FrozenFunction::Partial {
+                    name,
+                    closure,
+                    preset_markers,
+                } => FunctionValue(Rc::new(Callable::Partial(PartialCall {
+                    name: name.clone(),
+                    closure: restored.scopes[*closure].clone(),
+                    preset_markers: preset_markers.clone(),
+                }))),
                 FrozenFunction::ExternalAlias(name, prefix) => {
                     FunctionValue::external_alias(name, prefix.clone())
                 }

@@ -1,7 +1,13 @@
 use std::cmp::Ordering;
 
-use super::{Env, Error, EvalResult, Mode, Number, Shell, Value, bytes, http, json};
-use crate::{reader::Expr, streams::Io};
+use super::{
+    ArgumentBinding, Env, Error, EvalResult, Mode, Number, Shell, Value, bytes,
+    functions::keyword_marker, http, json,
+};
+use crate::{
+    reader::{Expr, Kind},
+    streams::Io,
+};
 
 pub(super) const VALUE_BUILTINS: &[&str] = &[
     ".",
@@ -292,6 +298,46 @@ impl Arguments<'_> {
     }
 }
 
+impl<'a> Arguments<'a> {
+    pub(super) fn source(self) -> Option<&'a [Expr]> {
+        match self {
+            Self::Expressions(args) | Self::Evaluated(_, args) => Some(args),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub(super) fn positional_count(self) -> usize {
+        self.source()
+            .and_then(|source| source.iter().position(|arg| keyword_marker(arg).is_some()))
+            .unwrap_or_else(|| self.len())
+    }
+}
+
+// These signatures opt ordinary builtins into named argument binding.
+pub(super) fn parameter_names(name: &str) -> Option<&'static [&'static str]> {
+    Some(match name {
+        "int" | "float" | "bool" => &["value"],
+        "map/get" => &["map", "key", "default"],
+        "map/set" => &["map", "key", "value"],
+        "map/del" | "map/has" => &["map", "key"],
+        "map/get-in" => &["m", "path", "default"],
+        "map/set-in" => &["m", "path", "value"],
+        "list/first" => &["xs", "default"],
+        "list/get" => &["xs", "index", "default"],
+        "list/slice" => &["xs", "start", "end"],
+        "str/get" => &["text", "index", "default"],
+        "str/slice" => &["text", "start", "end"],
+        "str/split" => &["text", "separator"],
+        "str/join" => &["texts", "separator"],
+        "str/replace" => &["text", "from", "to"],
+        "bytes/slice" => &["value", "start", "end"],
+        "http/request" => &["method", "url", "body", "headers"],
+        "http/get" => &["url", "headers"],
+        "http/post" => &["url", "body", "headers"],
+        _ => return None,
+    })
+}
+
 impl Value {
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -368,7 +414,42 @@ impl Shell {
         io: &Io,
     ) -> EvalResult<Value> {
         let (min, max) = arity(name);
+        if let Some(names) = parameter_names(name)
+            && args.positional_count() < args.len()
+        {
+            let binding = ArgumentBinding::new(expr, args, names.iter().copied(), min, max)?;
+            let operands = binding.collect(|index| {
+                let value = args.value(self, index, env, io)?;
+                Ok::<_, super::Signal>((value, args.at(expr, index).clone()))
+            })?;
+            // http/request accepts nil for the optional body. It can be omitted
+            // when headers are passed by name.
+            let (values, sources): (Vec<_>, Vec<_>) = operands
+                .into_iter()
+                .map(|operand| operand.unwrap_or_else(|| (Value::Nil, expr.clone())))
+                .unzip();
+            return self.call_positional_builtin(
+                expr,
+                name,
+                Arguments::Evaluated(&values, &sources),
+                env,
+                mode,
+                io,
+            );
+        }
         Self::arity_count(expr, args.len(), min, max)?;
+        self.call_positional_builtin(expr, name, args, env, mode, io)
+    }
+
+    fn call_positional_builtin(
+        &mut self,
+        expr: &Expr,
+        name: &str,
+        args: Arguments<'_>,
+        env: &Env,
+        mode: Mode,
+        io: &Io,
+    ) -> EvalResult<Value> {
         if super::functional::NAMES.contains(&name) {
             return self.functional_builtin(expr, name, args, env, mode, io);
         }
@@ -563,20 +644,7 @@ impl Shell {
                 };
                 Ok(Value::Bool(!condition))
             }
-            "apply" => {
-                let mut values = args.values(self, env, io)?;
-                let last = values.pop().unwrap();
-                let callee = values.remove(0);
-                let Value::List(tail) = last else {
-                    return Err(Error::new(
-                        args.at(expr, args.len() - 1),
-                        "apply expects a final list argument",
-                    )
-                    .into());
-                };
-                values.extend(tail);
-                self.call_value(expr, callee, Arguments::Values(&values), env, mode, io)
-            }
+            "apply" => self.apply(expr, args, env, mode, io),
             "list/map" | "list/filter" | "list/find" | "list/fold" | "list/any" | "list/all"
             | "list/reverse" | "list/contains" => {
                 self.list_transform(expr, name, args, env, mode, io)
@@ -623,6 +691,54 @@ impl Shell {
                 }))
             }
         }
+    }
+
+    fn apply(
+        &mut self,
+        expr: &Expr,
+        args: Arguments<'_>,
+        env: &Env,
+        mode: Mode,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        let mut values = args.values(self, env, io)?;
+        let callee = values.remove(0);
+        let first_keyword = args.source().and_then(|source| {
+            (1..source.len()).find(|&index| keyword_marker(&source[index]).is_some())
+        });
+        let positional = first_keyword
+            .filter(|_| self.accepts_keyword_arguments(expr, &callee))
+            .unwrap_or(args.len());
+        Self::arity_count(expr, positional, 2, usize::MAX)?;
+        let keywords = values.split_off(positional - 1);
+        let Value::List(tail) = values.pop().unwrap() else {
+            return Err(Error::new(
+                args.at(expr, positional - 1),
+                "apply expects a final list argument",
+            )
+            .into());
+        };
+        values.extend(tail);
+        if keywords.is_empty() {
+            return self.call_value(expr, callee, Arguments::Values(&values), env, mode, io);
+        }
+
+        let source = args.source().unwrap();
+        let mut sources = source[1..positional - 1].to_vec();
+        sources.resize_with(values.len(), || Expr {
+            kind: Kind::Nil,
+            offset: source[positional - 1].offset,
+        });
+        sources.extend_from_slice(&source[positional..]);
+        values.extend(keywords);
+        self.call_value(
+            expr,
+            callee,
+            Arguments::Evaluated(&values, &sources),
+            env,
+            mode,
+            io,
+        )
     }
 
     fn numeric_builtin(

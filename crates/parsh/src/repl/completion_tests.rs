@@ -338,6 +338,31 @@ fn module_prefixes_list_members_in_commands_and_function_references() {
 }
 
 #[test]
+fn keyword_completion_uses_unbound_parameters() {
+    let mut repl = Repl::new();
+    execute(
+        &mut repl,
+        "(defn greet (name &opt salutation suffix &rest tail) #nil)",
+    );
+    for (source, completed) in [
+        ("greet kim &sal", "greet kim &salutation "),
+        (
+            "greet &name kim &salutation hi &",
+            "greet &name kim &salutation hi &suffix ",
+        ),
+        ("greet kim &na", "greet kim &na"),
+        ("greet kim &ta", "greet kim &ta"),
+        ("greet kim &salutation &suf", "greet kim &salutation &suf"),
+        ("map/get {} key &def", "map/get {} key &default "),
+    ] {
+        repl.input(Key::ClearInput);
+        repl.paste(source);
+        repl.input(Key::Tab);
+        assert_eq!(repl.session.input.body, completed, "{source}");
+    }
+}
+
+#[test]
 fn new_functions_and_parameter_declarations_complete_without_execution() {
     let mut repl = Repl::new();
     execute(&mut repl, "(defn custom-fn () (str result))");
@@ -347,13 +372,10 @@ fn new_functions_and_parameter_declarations_complete_without_execution() {
         ("function custom-f", "function custom-fn "),
         ("function map/ge", "function map/get"),
         ("function defma", "function defma"),
-        ("fn (x &op", "fn (x &optional "),
+        ("fn (x &op", "fn (x &opt "),
         ("defmacro m (x &re", "defmacro m (x &rest "),
-        ("fn (&optional (x (str/li", "fn (&optional (x (str/lines "),
-        (
-            "defn f (&optional (x (str/li",
-            "defn f (&optional (x (str/lines ",
-        ),
+        ("fn (&opt (x (str/li", "fn (&opt (x (str/lines "),
+        ("defn f (&opt (x (str/li", "defn f (&opt (x (str/lines "),
     ] {
         repl.input(Key::ClearInput);
         repl.paste(source);

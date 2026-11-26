@@ -82,20 +82,18 @@ passed, returned, and called through expressions:
 (let add (function +))
 (dump (apply $add #1 [#2 #3]))
 
-(defn sum (first &optional (second #0) &rest more)
+(defn sum (first &opt (second #0) &rest more)
   (let result (+ $first $second))
   (for n $more (set result (+ $result $n)))
   (return $result))
 (dump (sum #1 #2 #3 #4))
 ```
 
-Parameters appear in this order: required, `&optional`, then `&rest name`.
+Parameters appear in this order: required, `&opt`, then `&rest name`.
 An optional bare name defaults to nil. A `(name default)` expression runs only
 when that argument is omitted, once per call, and can read preceding parameters
 and captured bindings. Optional parameters consume positional arguments first;
 remaining arguments form the rest list. A list argument remains one value.
-`apply` expands its final list into arguments, optionally preceded by fixed
-arguments. Values are never parsed or evaluated again.
 
 Ordinary data retains value semantics; copies of a function retain its identity
 and captured environment. `eq` compares function identity. A reference retains
@@ -111,6 +109,32 @@ function through loops, nested expressions, and redirections. It does not exit
 the caller. Using return outside a function is an error. Returned command
 expressions stream output and return `CallResult`; text capture is explicit. A macro body can
 also return its expansion early; return in expanded code belongs to the caller.
+
+## Keyword arguments
+
+Use `&name expression` to pass an argument by parameter name. Required and
+optional parameters both accept keywords. Put positional arguments first, then
+write the keywords in any order. `&rest` collects extra positional values.
+
+```parsh
+(defn greet (name &opt (greeting Hello) (punctuation "!"))
+  (str $greeting ", " $name $punctuation))
+
+(dump (greet parsh &punctuation "."))
+(dump (greet &greeting Hi &name parsh))
+(dump (apply greet [parsh] &greeting Hi))
+```
+
+Direct calls check for unknown keywords, repeated bindings, and missing
+arguments before evaluating the arguments once in written order. Omitted
+optional parameters use their defaults. An explicit `#nil` supplies a value.
+
+An unquoted keyword name follows the same rules as a variable name. To pass the
+text `&greeting`, use `"&greeting"` or a variable holding that text.
+With `apply`, put fixed positional arguments and the list to expand before
+any keyword pairs. The list supplies positional values, and `apply` forwards
+the keyword pairs to the target. Aliases and `partial` can preset keyword
+arguments for a target that accepts them.
 
 ## See the return value
 

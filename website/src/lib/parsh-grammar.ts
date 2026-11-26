@@ -51,6 +51,10 @@ export default {
       match: "(?<=\\()(?:[.+*/=-]|!=|[<>]=?|\\||<-(?:out|err|result)|(?:out|err)->>?|in<-)(?=[\\s()\\[\\]{}\"'])",
     },
     { name: "entity.name.function.parsh", match: "(?<=\\()[^\\s()\\[\\]{}\"'$]+" },
+    {
+      name: "variable.parameter.parsh",
+      match: "(?<![^\\s()\\[\\]{}\"'`,])&[\\p{Alphabetic}_][\\p{Alphabetic}\\p{Number}_]*(?=[\\s()\\[\\]{}\"',]|$)",
+    },
     { name: "punctuation.section.parens.parsh", match: "[()\\[\\]{}]" },
     { name: "punctuation.section.parsh", match: "`" },
   ],
@@ -71,7 +75,7 @@ export default {
       patterns: [
         { include: "#comment" },
         { include: "#string" },
-        { name: "keyword.control.parsh", match: "&(?:optional|rest)(?=[\\s()])" },
+        { name: "keyword.control.parsh", match: "&(?:opt|rest)(?=[\\s()])" },
         {
           begin: "(\\()([^\\s()\\[\\]{}\"'$]+)",
           beginCaptures: {

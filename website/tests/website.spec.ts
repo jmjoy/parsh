@@ -118,7 +118,7 @@ test("function values, optional and rest parameters, and the standard library sh
   await playground(page);
   await execute(page, `
     (defn counter (n)
-      (fn (&optional (step #1) &rest extra)
+      (fn (&opt (step #1) &rest extra)
         (set n (+ $n $step))
         (for amount $extra (set n (+ $n $amount)))
         (return $n)))

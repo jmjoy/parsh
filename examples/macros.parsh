@@ -18,7 +18,7 @@
 (; Optional macro parameters run their defaults during expansion, while rest
    collects the remaining forms for unquote-splicing. )
 (defmacro when-labeled
-  (condition &optional (label (quote "when-labeled")) &rest body)
+  (condition &opt (label (quote "when-labeled")) &rest body)
   `(if ,$condition
        (do (echo ,$label) ,@$body)))
 (when-labeled #true)

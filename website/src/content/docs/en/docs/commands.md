@@ -41,6 +41,9 @@ return those names.
 
 ## Aliases
 
+External programs receive bare words such as `&name` and `:8080` as text
+arguments.
+
 Use `alias` to name a single command call with preset arguments. Additional
 arguments go after the preset arguments.
 

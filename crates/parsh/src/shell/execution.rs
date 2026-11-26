@@ -391,6 +391,9 @@ impl Shell {
                 Ok(self.commands(expr, &[argv], mode, io)?)
             }
             Value::Text(name) => {
+                if let Some(fields) = self.structs.get(&name).map(|def| def.fields.clone()) {
+                    return self.construct_struct(expr, &name, fields, args, env, io);
+                }
                 // Bind already evaluated values, never turn them back into source.
                 let values = args.values(self, env, io)?;
                 let local = self.child_scope(env);

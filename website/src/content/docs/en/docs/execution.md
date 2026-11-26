@@ -75,7 +75,7 @@ Results are `"hello"`, `" hello\n"`, `"2068656c6c6f0a"`, and `" hello\n"`.
 | Call | Arguments and result |
 | --- | --- |
 | `(command name)` | One nonempty text program name; returns `<command name>` |
-| `(apply callee fixed... args)` | Expands only the final list into call arguments |
+| `(apply callee fixed... args [&name value ...])` | Expands the last positional list and forwards keyword pairs for targets that accept them |
 | `(<-out [options] (command args...))` | Captured stdout, with trimmed text by default or raw bytes |
 | `(<-err [options] (command args...))` | Captured stderr, with trimmed text by default or raw bytes |
 | `(<-result [options] (command args...))` | Complete synchronous `CallResult` with both streams |

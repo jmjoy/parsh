@@ -78,7 +78,7 @@ impl Shell {
         }
         let function = match external {
             Some(prefix) => FunctionValue::external_alias(name, prefix),
-            None => self.partial_function(name, target, values, env),
+            None => self.partial_function(definition, name, target, values, Some(arguments), env),
         };
         self.aliases.insert(
             name.to_owned(),

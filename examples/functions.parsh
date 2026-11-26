@@ -30,7 +30,7 @@
 
 (; Closures retain captured bindings; optional defaults run only when omitted. )
 (defn accumulator (initial)
-  (fn (&optional (step #1) &rest more)
+  (fn (&opt (step #1) &rest more)
     (set initial (+ $initial $step))
     (for amount $more (set initial (+ $initial $amount)))
     (return $initial)))

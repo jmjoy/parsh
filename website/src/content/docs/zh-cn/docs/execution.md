@@ -63,7 +63,7 @@ parsh 先在外围 I/O 中求值选项，再设置捕获并求值主体。求值
 | 调用 | 参数与返回值 |
 | --- | --- |
 | `(command name)` | 非空文本程序名，返回 `<command name>` |
-| `(apply callee fixed... args)` | 仅把最后一个列表展开为调用参数 |
+| `(apply callee fixed... args [&name value ...])` | 展开最后一个位置列表，并向支持关键字的目标转发后续关键字参数 |
 | `(<-out [options] (command args...))` | 捕获 stdout，默认裁剪文本，也可选择原始 bytes |
 | `(<-err [options] (command args...))` | 捕获 stderr，默认裁剪文本，也可选择原始 bytes |
 | `(<-result [options] (command args...))` | 返回包含两路输出的完整同步 `CallResult` |

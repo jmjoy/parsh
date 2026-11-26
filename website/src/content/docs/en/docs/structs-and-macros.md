@@ -135,14 +135,18 @@ form or a list of quoted forms.
 ```
 
 Explicit macro arguments remain unevaluated forms. `&rest` collects a list of
-forms; omitted `&optional` defaults run during macro execution and can read
+forms; omitted `&opt` defaults run during macro execution and can read
 preceding parameters. Bare optional parameters default to nil. Return in a macro
 body returns its expansion; return, break, and continue in expanded code act on
 the caller's function or loop.
 
+Macros accept `&name expression` for required and optional parameters. The
+keyword value reaches the macro as a Form. Struct constructors accept keywords
+by field name, such as `(Point &y #4 &x #3)`.
+
 ## Limits
 
-- Macro parameters support `&optional` and `&rest` like functions; arguments remain unevaluated forms.
+- Macro parameters support `&opt` and `&rest` like functions; arguments remain unevaluated forms.
 - Macros and structs are defined globally, even inside a function body.
 - There is no hygiene: templates insert forms verbatim into the caller scope.
 - Macros and struct members cannot be used as pipeline stages.

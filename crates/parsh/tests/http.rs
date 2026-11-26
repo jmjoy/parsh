@@ -95,6 +95,11 @@ fn http_builtins_return_structured_responses_and_preserve_json_bytes() {
                     }
                     ("PUT", "/put") => {
                         assert!(body.is_empty());
+                        assert!(
+                            headers
+                                .iter()
+                                .any(|(name, value)| { name == "x-test" && value == "keyword" })
+                        );
                         respond(stream, "204 No Content", &[], b"");
                     }
                     ("GET", "/status") => {
@@ -110,7 +115,7 @@ fn http_builtins_return_structured_responses_and_preserve_json_bytes() {
         r#"
         (let get (http/get "{base}/get" (map "accept" ["application/json"])))
         (let post (http/post "{base}/post" "{{\"sent\":true}}" (map "content-type" ["application/json"])))
-        (let put (http/request "PUT" "{base}/put" #nil {{}}))
+        (let put (http/request "PUT" &headers {{x-test [keyword]}} &url "{base}/put"))
         (let missing (http/get "{base}/status"))
         (printf "%s\n"
           (list

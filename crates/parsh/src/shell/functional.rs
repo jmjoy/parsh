@@ -1,10 +1,11 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, rc::Rc};
 
 use indexmap::IndexMap;
 
 use super::{
     Arguments, Env, Error, EvalResult, Function, FunctionValue, Mode, Number, Parameters, Scope,
     Shell, Value,
+    functions::{Callable, PartialCall, keyword_marker},
 };
 use crate::{
     reader::{Expr, Kind, Read, Reader},
@@ -33,6 +34,9 @@ pub(super) const NAMES: &[&str] = &[
     "map/set-in",
     "map/update-in",
 ];
+
+const PARTIAL_CALLEE: &str = "\0partial_callee";
+const PARTIAL_ARGUMENTS: &str = "\0partial_arguments";
 
 impl Shell {
     /// Adapters are ordinary lexical closures, including when transferred to a task.
@@ -68,17 +72,87 @@ impl Shell {
 
     pub(super) fn partial_function(
         &mut self,
+        expr: &Expr,
         name: &str,
         callee: Value,
         bound: Vec<Value>,
+        source: Option<&[Expr]>,
         env: &Env,
     ) -> FunctionValue {
-        self.adapter(
-            name,
-            "(fn (&rest args) (apply $callee (list/concat $bound $args)))",
-            vec![("callee", callee), ("bound", Value::List(bound))],
-            env,
-        )
+        let preset_markers = self.accepts_keyword_arguments(expr, &callee).then(|| {
+            source
+                .unwrap_or_default()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, expr)| {
+                    keyword_marker(expr).map(|name| (index, name.to_owned()))
+                })
+                .collect()
+        });
+        let captured = self.capture_scope(env);
+        let closure = self.child_scope(&captured);
+        Scope::bind(&closure, PARTIAL_CALLEE, callee);
+        Scope::bind(&closure, PARTIAL_ARGUMENTS, Value::List(bound));
+        FunctionValue(Rc::new(Callable::Partial(PartialCall {
+            name: name.into(),
+            closure,
+            preset_markers,
+        })))
+    }
+
+    pub(super) fn call_partial(
+        &mut self,
+        expr: &Expr,
+        partial: &PartialCall,
+        args: Arguments<'_>,
+        env: &Env,
+        mode: Mode,
+        io: &Io,
+    ) -> EvalResult<Value> {
+        let mut values = args.values(self, env, io)?;
+        let callee =
+            Scope::get(&partial.closure, PARTIAL_CALLEE).expect("partial captures its callee");
+        let Some(Value::List(mut bound)) = Scope::get(&partial.closure, PARTIAL_ARGUMENTS) else {
+            unreachable!("partial captures its preset arguments");
+        };
+        let local = self.child_scope(&partial.closure);
+        let call_scope = self.child_scope(&local);
+        let mut source = Vec::new();
+        if let Some(markers) = &partial.preset_markers {
+            let positional = args.positional_count();
+            if !markers.is_empty() || positional < args.len() {
+                let bound_positional = markers.first().map_or(bound.len(), |(index, _)| *index);
+                let bound_keywords = bound.split_off(bound_positional);
+                let keywords = values.split_off(positional);
+                let placeholder = Expr {
+                    kind: Kind::Nil,
+                    offset: expr.offset,
+                };
+                let start = bound_positional + positional;
+                source.resize(start + bound_keywords.len(), placeholder);
+                for (index, name) in markers {
+                    source[start + index - bound_positional].kind = Kind::Word(format!("&{name}"));
+                }
+                if let Some(args) = args.source() {
+                    source[bound_positional..start].clone_from_slice(&args[..positional]);
+                    source.extend_from_slice(&args[positional..]);
+                }
+                values.extend(bound_keywords);
+                values.extend(keywords);
+            }
+        }
+        bound.extend(values);
+        let arguments = if source.is_empty() {
+            Arguments::Values(&bound)
+        } else {
+            Arguments::Evaluated(&bound, &source)
+        };
+        let positions = Self::capture_positions(io);
+        let mut result = self.function_boundary(expr, &partial.name, |shell| {
+            shell.call_value(expr, callee, arguments, &call_scope, mode, io)
+        });
+        self.publish_invocation(expr, &mut result, io, positions);
+        result
     }
 
     pub(super) fn functional_builtin(
@@ -103,9 +177,11 @@ impl Shell {
             "partial" => {
                 let callee = self.resolve_callable(args.at(expr, 0), values[0].clone())?;
                 Ok(Value::Function(self.partial_function(
+                    expr,
                     name,
                     callee,
                     values[1..].to_vec(),
+                    args.source().map(|source| &source[1..]),
                     env,
                 )))
             }

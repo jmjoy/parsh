@@ -200,10 +200,8 @@ impl Shell {
                 let Some(definition) = self.macros.get(name).cloned() else {
                     return Ok(values[0].clone());
                 };
-                let arguments = parts[1..]
-                    .iter()
-                    .map(|node| Value::Form(Box::new(node.clone())))
-                    .collect();
+                let arguments = Self::macro_arguments(expr, &definition, &parts[1..])
+                    .map_err(|error| Error::new(expr, error.message))?;
                 let expanded = self.function_body(
                     expr,
                     &format!("macro {name}"),
